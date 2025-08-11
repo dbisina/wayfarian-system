@@ -1,0 +1,164 @@
+// server/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  firebaseUid     String   @unique
+  email           String?  @unique
+  phoneNumber     String?  @unique
+  displayName     String?
+  photoURL        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Profile stats
+  totalDistance   Float    @default(0)
+  totalTime       Int      @default(0) // in seconds
+  topSpeed        Float    @default(0)
+  totalTrips      Int      @default(0)
+  
+  // Relationships
+  journeys        Journey[]
+  photos          Photo[]
+  groupMemberships GroupMember[]
+  createdGroups   Group[]  @relation("GroupCreator")
+  
+  @@map("users")
+}
+
+model Journey {
+  id              String   @id @default(cuid())
+  userId          String
+  title           String?
+  startTime       DateTime
+  endTime         DateTime?
+  status          JourneyStatus @default(ACTIVE)
+  
+  // Journey stats
+  totalDistance   Float    @default(0)
+  totalTime       Int      @default(0) // in seconds
+  avgSpeed        Float    @default(0)
+  topSpeed        Float    @default(0)
+  
+  // Route data
+  startLatitude   Float
+  startLongitude  Float
+  endLatitude     Float?
+  endLongitude    Float?
+  routePoints     Json?    // Array of GPS coordinates
+  
+  // Metadata
+  vehicle         String?  // bike, car, truck, etc.
+  weatherData     Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Group journey
+  groupId         String?
+  
+  // Relationships
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group           Group?   @relation(fields: [groupId], references: [id])
+  photos          Photo[]
+  
+  @@map("journeys")
+}
+
+model Photo {
+  id              String   @id @default(cuid())
+  userId          String
+  journeyId       String?
+  
+  // File info
+  filename        String
+  originalName    String?
+  firebasePath    String   // Path in Firebase Storage
+  mimeType        String
+  fileSize        Int
+  
+  // Photo metadata
+  latitude        Float?
+  longitude       Float?
+  takenAt         DateTime
+  deviceInfo      Json?
+  
+  // Processing
+  thumbnailPath   String?
+  isProcessed     Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relationships
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journey         Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  
+  @@map("photos")
+}
+
+model Group {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  code            String   @unique // Join code
+  creatorId       String
+  isActive        Boolean  @default(true)
+  maxMembers      Int      @default(10)
+  
+  // Group settings
+  allowLocationSharing Boolean @default(true)
+  isPrivate       Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relationships
+  creator         User     @relation("GroupCreator", fields: [creatorId], references: [id])
+  members         GroupMember[]
+  journeys        Journey[]
+  
+  @@map("groups")
+}
+
+model GroupMember {
+  id              String   @id @default(cuid())
+  userId          String
+  groupId         String
+  role            GroupRole @default(MEMBER)
+  joinedAt        DateTime @default(now())
+  
+  // Real-time tracking
+  lastLatitude    Float?
+  lastLongitude   Float?
+  lastSeen        DateTime?
+  isLocationShared Boolean @default(false)
+  
+  // Relationships
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+// Enums
+enum JourneyStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum GroupRole {
+  CREATOR
+  ADMIN
+  MEMBER
+}
