@@ -12,55 +12,91 @@ const prisma = new PrismaClient();
 const createGroup = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, description, maxMembers, isPrivate } = req.body;
-
+    const { 
+      name, 
+      description, 
+      maxMembers = 10, 
+      isPrivate = false,
+      allowLocationSharing = true 
+    } = req.body;
+    
     // Generate unique group code
     let code;
     let isUnique = false;
+    let attempts = 0;
     
-    while (!isUnique) {
+    while (!isUnique && attempts < 5) {
       code = generateRandomString(6);
-      const existing = await prisma.group.findUnique({
-        where: { code }
+      const existingGroup = await prisma.group.findUnique({
+        where: { code },
       });
-      if (!existing) isUnique = true;
+      
+      if (!existingGroup) {
+        isUnique = true;
+      }
+      attempts++;
     }
-
-    // Create group
+    
+    if (!isUnique) {
+      return res.status(500).json({
+        error: 'Failed to generate unique group code',
+        message: 'Please try again',
+      });
+    }
+    
+    // Create group with creator as first member
     const group = await prisma.group.create({
       data: {
         name,
         description,
         code,
         creatorId: userId,
-        maxMembers: maxMembers || 10,
-        isPrivate: isPrivate || false,
-      }
+        maxMembers: parseInt(maxMembers),
+        isPrivate,
+        allowLocationSharing,
+        members: {
+          create: {
+            userId,
+            role: 'CREATOR',
+          },
+        },
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: { members: true },
+        },
+      },
     });
-
-    // Add creator as member
-    await prisma.groupMember.create({
-      data: {
-        userId,
-        groupId: group.id,
-        role: 'CREATOR'
-      }
-    });
-
+    
     res.status(201).json({
       success: true,
       message: 'Group created successfully',
-      group: {
-        ...group,
-        memberCount: 1
-      }
+      group,
     });
-
+    
   } catch (error) {
     console.error('Create group error:', error);
     res.status(500).json({
       error: 'Failed to create group',
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -72,175 +108,207 @@ const joinGroup = async (req, res) => {
   try {
     const userId = req.user.id;
     const { code } = req.body;
-
+    
     // Find group by code
     const group = await prisma.group.findUnique({
       where: { code },
       include: {
         _count: {
-          select: { members: true }
-        }
-      }
+          select: { members: true },
+        },
+      },
     });
-
+    
     if (!group) {
       return res.status(404).json({
-        error: 'Invalid code',
-        message: 'No group found with this code'
+        error: 'Group not found',
+        message: 'Invalid group code',
       });
     }
-
+    
     if (!group.isActive) {
       return res.status(400).json({
         error: 'Group inactive',
-        message: 'This group is no longer active'
+        message: 'This group is no longer active',
       });
     }
-
-    // Check if already a member
-    const existingMember = await prisma.groupMember.findUnique({
+    
+    // Check if user is already a member
+    const existingMembership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: {
           userId,
-          groupId: group.id
-        }
-      }
+          groupId: group.id,
+        },
+      },
     });
-
-    if (existingMember) {
+    
+    if (existingMembership) {
       return res.status(400).json({
-        error: 'Already a member',
-        message: 'You are already a member of this group'
+        error: 'Already member',
+        message: 'You are already a member of this group',
       });
     }
-
+    
     // Check if group is full
     if (group._count.members >= group.maxMembers) {
       return res.status(400).json({
         error: 'Group full',
-        message: 'This group has reached its maximum capacity'
+        message: 'This group has reached its maximum capacity',
       });
     }
-
+    
     // Add user to group
     const membership = await prisma.groupMember.create({
       data: {
         userId,
         groupId: group.id,
-        role: 'MEMBER'
+        role: 'MEMBER',
       },
       include: {
-        group: true
-      }
+        group: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              },
+            },
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    displayName: true,
+                    photoURL: true,
+                  },
+                },
+              },
+            },
+            _count: {
+              select: { members: true },
+            },
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
+      },
     });
-
-    res.json({
+    
+    res.status(201).json({
       success: true,
-      message: 'Joined group successfully',
-      group: membership.group
+      message: 'Successfully joined group',
+      group: membership.group,
+      membership,
     });
-
+    
   } catch (error) {
     console.error('Join group error:', error);
     res.status(500).json({
       error: 'Failed to join group',
-      message: error.message
+      message: error.message,
     });
   }
 };
 
 /**
- * Leave a group
+ * Get group details
  */
-const leaveGroup = async (req, res) => {
+const getGroup = async (req, res) => {
   try {
-    const userId = req.user.id;
     const { groupId } = req.params;
-
-    // Check membership
+    const userId = req.user.id;
+    
+    // Verify user is member of the group
     const membership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: {
           userId,
-          groupId
-        }
-      }
+          groupId,
+        },
+      },
     });
-
+    
     if (!membership) {
-      return res.status(404).json({
-        error: 'Not a member',
-        message: 'You are not a member of this group'
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'You are not a member of this group',
       });
     }
-
-    // Check if user is creator
-    if (membership.role === 'CREATOR') {
-      // Transfer ownership or delete group if last member
-      const memberCount = await prisma.groupMember.count({
-        where: { groupId }
-      });
-
-      if (memberCount === 1) {
-        // Delete group if creator is the only member
-        await prisma.group.delete({
-          where: { id: groupId }
-        });
-      } else {
-        // Transfer ownership to next admin or member
-        const nextOwner = await prisma.groupMember.findFirst({
-          where: {
-            groupId,
-            userId: { not: userId },
-            role: 'ADMIN'
-          }
-        });
-
-        if (nextOwner) {
-          await prisma.groupMember.update({
-            where: { id: nextOwner.id },
-            data: { role: 'CREATOR' }
-          });
-        } else {
-          // Make the oldest member the new creator
-          const oldestMember = await prisma.groupMember.findFirst({
-            where: {
-              groupId,
-              userId: { not: userId }
+    
+    // Get group with members
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+                totalDistance: true,
+                totalTrips: true,
+                topSpeed: true,
+              },
             },
-            orderBy: { joinedAt: 'asc' }
-          });
-
-          if (oldestMember) {
-            await prisma.groupMember.update({
-              where: { id: oldestMember.id },
-              data: { role: 'CREATOR' }
-            });
-          }
-        }
-      }
-    }
-
-    // Remove user from group
-    await prisma.groupMember.delete({
-      where: {
-        userId_groupId: {
-          userId,
-          groupId
-        }
-      }
+          },
+          orderBy: { joinedAt: 'asc' },
+        },
+        journeys: {
+          where: {
+            status: 'ACTIVE',
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: { 
+            members: true,
+            journeys: true,
+          },
+        },
+      },
     });
-
+    
+    if (!group) {
+      return res.status(404).json({
+        error: 'Group not found',
+        message: 'Group not found',
+      });
+    }
+    
     res.json({
       success: true,
-      message: 'Left group successfully'
+      group,
+      userMembership: membership,
     });
-
+    
   } catch (error) {
-    console.error('Leave group error:', error);
+    console.error('Get group error:', error);
     res.status(500).json({
-      error: 'Failed to leave group',
-      message: error.message
+      error: 'Failed to get group',
+      message: error.message,
     });
   }
 };
@@ -251,108 +319,214 @@ const leaveGroup = async (req, res) => {
 const getUserGroups = async (req, res) => {
   try {
     const userId = req.user.id;
-
-    const memberships = await prisma.groupMember.findMany({
-      where: { userId },
-      include: {
-        group: {
-          include: {
-            _count: {
-              select: { members: true }
-            }
-          }
-        }
-      },
-      orderBy: { joinedAt: 'desc' }
-    });
-
-    const groups = memberships.map(m => ({
-      ...m.group,
-      role: m.role,
-      joinedAt: m.joinedAt,
-      memberCount: m.group._count.members
+    const { page = 1, limit = 20, status = 'active' } = req.query;
+    
+    const skip = (page - 1) * limit;
+    
+    const whereClause = {
+      userId,
+      ...(status === 'active' && {
+        group: { isActive: true },
+      }),
+    };
+    
+    const [memberships, total] = await Promise.all([
+      prisma.groupMember.findMany({
+        where: whereClause,
+        include: {
+          group: {
+            include: {
+              creator: {
+                select: {
+                  id: true,
+                  displayName: true,
+                  photoURL: true,
+                },
+              },
+              _count: {
+                select: { 
+                  members: true,
+                  journeys: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { joinedAt: 'desc' },
+        skip: parseInt(skip),
+        take: parseInt(limit),
+      }),
+      prisma.groupMember.count({ where: whereClause }),
+    ]);
+    
+    const groups = memberships.map(membership => ({
+      ...membership.group,
+      userRole: membership.role,
+      joinedAt: membership.joinedAt,
     }));
-
+    
     res.json({
       success: true,
       groups,
-      count: groups.length
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
-
+    
   } catch (error) {
     console.error('Get user groups error:', error);
     res.status(500).json({
-      error: 'Failed to get groups',
-      message: error.message
+      error: 'Failed to get user groups',
+      message: error.message,
     });
   }
 };
 
 /**
- * Get group details
+ * Update group settings
  */
-const getGroupDetails = async (req, res) => {
+const updateGroup = async (req, res) => {
   try {
-    const userId = req.user.id;
     const { groupId } = req.params;
-
-    // Check if user is member
+    const userId = req.user.id;
+    const { 
+      name, 
+      description, 
+      maxMembers, 
+      allowLocationSharing,
+      isPrivate 
+    } = req.body;
+    
+    // Verify user is creator or admin
     const membership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: {
           userId,
-          groupId
-        }
-      }
+          groupId,
+        },
+      },
     });
-
-    if (!membership) {
+    
+    if (!membership || !['CREATOR', 'ADMIN'].includes(membership.role)) {
       return res.status(403).json({
         error: 'Access denied',
-        message: 'You are not a member of this group'
+        message: 'Only group creators and admins can update group settings',
       });
     }
-
-    const group = await prisma.group.findUnique({
+    
+    // Update group
+    const updatedGroup = await prisma.group.update({
       where: { id: groupId },
+      data: {
+        ...(name && { name }),
+        ...(description !== undefined && { description }),
+        ...(maxMembers && { maxMembers: parseInt(maxMembers) }),
+        ...(allowLocationSharing !== undefined && { allowLocationSharing }),
+        ...(isPrivate !== undefined && { isPrivate }),
+        updatedAt: new Date(),
+      },
       include: {
         creator: {
           select: {
             id: true,
             displayName: true,
-            photoURL: true
-          }
+            photoURL: true,
+          },
         },
         _count: {
-          select: {
-            members: true,
-            journeys: true
-          }
-        }
-      }
+          select: { members: true },
+        },
+      },
     });
-
-    if (!group) {
-      return res.status(404).json({
-        error: 'Group not found'
-      });
-    }
-
+    
     res.json({
       success: true,
-      group: {
-        ...group,
-        userRole: membership.role,
-        memberCount: group._count.members,
-        journeyCount: group._count.journeys
-      }
+      message: 'Group updated successfully',
+      group: updatedGroup,
     });
-
+    
   } catch (error) {
-    console.error('Get group details error:', error);
+    console.error('Update group error:', error);
     res.status(500).json({
-      error: 'Failed to get group details',
-      message: error.message
+      error: 'Failed to update group',
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Leave group
+ */
+const leaveGroup = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+    
+    // Get membership
+    const membership = await prisma.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+      include: {
+        group: {
+          include: {
+            _count: {
+              select: { members: true },
+            },
+          },
+        },
+      },
+    });
+    
+    if (!membership) {
+      return res.status(404).json({
+        error: 'Membership not found',
+        message: 'You are not a member of this group',
+      });
+    }
+    
+    // Prevent creator from leaving if there are other members
+    if (membership.role === 'CREATOR' && membership.group._count.members > 1) {
+      return res.status(400).json({
+        error: 'Cannot leave group',
+        message: 'Group creators must transfer ownership or delete the group before leaving',
+      });
+    }
+    
+    // If creator is leaving and they're the only member, delete the group
+    if (membership.role === 'CREATOR' && membership.group._count.members === 1) {
+      await prisma.group.update({
+        where: { id: groupId },
+        data: { isActive: false },
+      });
+    }
+    
+    // Remove membership
+    await prisma.groupMember.delete({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    
+    res.json({
+      success: true,
+      message: 'Successfully left group',
+    });
+    
+  } catch (error) {
+    console.error('Leave group error:', error);
+    res.status(500).json({
+      error: 'Failed to leave group',
+      message: error.message,
     });
   }
 };
@@ -362,26 +536,27 @@ const getGroupDetails = async (req, res) => {
  */
 const getGroupMembers = async (req, res) => {
   try {
-    const userId = req.user.id;
     const { groupId } = req.params;
-
-    // Check if user is member
+    const userId = req.user.id;
+    
+    // Verify user is member of the group
     const membership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: {
           userId,
-          groupId
-        }
-      }
+          groupId,
+        },
+      },
     });
-
+    
     if (!membership) {
       return res.status(403).json({
         error: 'Access denied',
-        message: 'You are not a member of this group'
+        message: 'You are not a member of this group',
       });
     }
-
+    
+    // Get all group members
     const members = await prisma.groupMember.findMany({
       where: { groupId },
       include: {
@@ -392,127 +567,125 @@ const getGroupMembers = async (req, res) => {
             photoURL: true,
             totalDistance: true,
             totalTrips: true,
-            topSpeed: true
-          }
-        }
+            topSpeed: true,
+            createdAt: true,
+          },
+        },
       },
-      orderBy: { joinedAt: 'asc' }
+      orderBy: [
+        { role: 'asc' }, // Creators first, then admins, then members
+        { joinedAt: 'asc' },
+      ],
     });
-
+    
+    // Add online status and current journey info
+    const membersWithStatus = members.map(member => ({
+      ...member,
+      isOnline: member.lastSeen && (new Date() - new Date(member.lastSeen)) < 5 * 60 * 1000, // 5 minutes
+      isCurrentUser: member.userId === userId,
+    }));
+    
     res.json({
       success: true,
-      members: members.map(m => ({
-        ...m.user,
-        role: m.role,
-        joinedAt: m.joinedAt,
-        lastSeen: m.lastSeen,
-        isLocationShared: m.isLocationShared
-      })),
-      count: members.length
+      members: membersWithStatus,
+      totalMembers: members.length,
     });
-
+    
   } catch (error) {
     console.error('Get group members error:', error);
     res.status(500).json({
-      error: 'Failed to get members',
-      message: error.message
+      error: 'Failed to get group members',
+      message: error.message,
     });
   }
 };
 
 /**
- * Update group details
+ * Remove member from group (admin/creator only)
  */
-const updateGroup = async (req, res) => {
+const removeMember = async (req, res) => {
   try {
+    const { groupId, memberId } = req.params;
     const userId = req.user.id;
-    const { groupId } = req.params;
-    const { name, description, maxMembers, isPrivate } = req.body;
-
-    // Check if user is creator or admin
-    const membership = await prisma.groupMember.findUnique({
+    
+    // Verify user is creator or admin
+    const userMembership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: {
           userId,
-          groupId
-        }
-      }
+          groupId,
+        },
+      },
     });
-
-    if (!membership || (membership.role !== 'CREATOR' && membership.role !== 'ADMIN')) {
+    
+    if (!userMembership || !['CREATOR', 'ADMIN'].includes(userMembership.role)) {
       return res.status(403).json({
-        error: 'Permission denied',
-        message: 'Only group creator or admin can update group'
+        error: 'Access denied',
+        message: 'Only group creators and admins can remove members',
       });
     }
-
-    const updatedGroup = await prisma.group.update({
-      where: { id: groupId },
-      data: {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-        ...(maxMembers && { maxMembers }),
-        ...(isPrivate !== undefined && { isPrivate }),
-        updatedAt: new Date()
-      }
+    
+    // Cannot remove yourself
+    if (memberId === userId) {
+      return res.status(400).json({
+        error: 'Invalid operation',
+        message: 'Cannot remove yourself. Use leave group instead',
+      });
+    }
+    
+    // Get target member
+    const targetMembership = await prisma.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId: memberId,
+          groupId,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+      },
     });
-
-    res.json({
-      success: true,
-      message: 'Group updated successfully',
-      group: updatedGroup
-    });
-
-  } catch (error) {
-    console.error('Update group error:', error);
-    res.status(500).json({
-      error: 'Failed to update group',
-      message: error.message
-    });
-  }
-};
-
-/**
- * Delete a group
- */
-const deleteGroup = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { groupId } = req.params;
-
-    // Check if user is creator
-    const group = await prisma.group.findUnique({
-      where: { id: groupId }
-    });
-
-    if (!group) {
+    
+    if (!targetMembership) {
       return res.status(404).json({
-        error: 'Group not found'
+        error: 'Member not found',
+        message: 'Member not found in this group',
       });
     }
-
-    if (group.creatorId !== userId) {
+    
+    // Creators cannot be removed by admins
+    if (targetMembership.role === 'CREATOR' && userMembership.role !== 'CREATOR') {
       return res.status(403).json({
-        error: 'Permission denied',
-        message: 'Only group creator can delete the group'
+        error: 'Access denied',
+        message: 'Cannot remove group creator',
       });
     }
-
-    // Delete group (cascade will handle members and journeys)
-    await prisma.group.delete({
-      where: { id: groupId }
+    
+    // Remove member
+    await prisma.groupMember.delete({
+      where: {
+        userId_groupId: {
+          userId: memberId,
+          groupId,
+        },
+      },
     });
-
+    
     res.json({
       success: true,
-      message: 'Group deleted successfully'
+      message: `${targetMembership.user.displayName} has been removed from the group`,
     });
-
+    
   } catch (error) {
-    console.error('Delete group error:', error);
+    console.error('Remove member error:', error);
     res.status(500).json({
-      error: 'Failed to delete group',
-      message: error.message
+      error: 'Failed to remove member',
+      message: error.message,
     });
   }
 };
@@ -520,10 +693,10 @@ const deleteGroup = async (req, res) => {
 module.exports = {
   createGroup,
   joinGroup,
-  leaveGroup,
+  getGroup,
   getUserGroups,
-  getGroupDetails,
-  getGroupMembers,
   updateGroup,
-  deleteGroup
+  leaveGroup,
+  getGroupMembers,
+  removeMember,
 };
