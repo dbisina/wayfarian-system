@@ -10,6 +10,7 @@ interface AchievementCardProps {
   title: string;
   description: string;
   imageUrl: string;
+  key?: string;
 }
 
 const AchievementCard = ({ title, description, imageUrl }: AchievementCardProps): React.JSX.Element => {
