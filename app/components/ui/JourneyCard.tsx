@@ -19,7 +19,7 @@ const JourneyCard = ({ title, stats, imageUrl }: JourneyCardProps): React.JSX.El
         source={{ uri: imageUrl }} 
         style={styles.image}
         onError={(error) => console.log('Image load error:', error)}
-        defaultSource={require('../../assets/placeholder-journey.png')}
+        defaultSource={require('../../assets/placeholder-journey.jpg')}
       />
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>

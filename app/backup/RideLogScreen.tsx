@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import BottomNavigation from '../components/BottomNavigation';
+// BottomNavigation component not available in this project
 
 interface RideLogScreenProps {
   onTabPress?: (tab: string) => void;
@@ -167,7 +167,7 @@ const RideLogScreen = ({onTabPress}: RideLogScreenProps): JSX.Element => {
         </TouchableOpacity>
       </ScrollView>
 
-      <BottomNavigation activeTab="log" onTabPress={onTabPress} />
+      {/* BottomNavigation component not available in this project */}
     </View>
   );
 };

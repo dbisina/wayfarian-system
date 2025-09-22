@@ -4,14 +4,13 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import Header from '../components/Header';
-import UserProfile from '../components/UserProfile';
-import StatsGrid from '../components/StatsGrid';
-import XPProgress from '../components/XPProgress';
-import Achievements from '../components/Achievements';
-import PastJourneys from '../components/PastJourneys';
-import StartJourneyButton from '../components/StartJourneyButton';
-import BottomNavigation from '../components/BottomNavigation';
+import Header from '../components/ui/Header';
+import UserProfile from '../components/ui/UserProfile';
+import StatsGrid from '../components/ui/StatsGrid';
+import XPProgress from '../components/ui/XPProgress';
+import Achievements from '../components/ui/Achievements';
+import PastJourneys from '../components/ui/PastJourneys';
+import StartJourneyButton from '../components/ui/StartJourneyButton';
 
 interface HomeScreenProps {
   onTabPress?: (tab: string) => void;
@@ -33,7 +32,7 @@ const HomeScreen = ({onTabPress}: HomeScreenProps): JSX.Element => {
         <PastJourneys onSeeAllPress={() => onTabPress?.('log')} />
         <StartJourneyButton />
       </ScrollView>
-      <BottomNavigation activeTab="home" onTabPress={onTabPress} />
+      {/* BottomNavigation component not available in this project */}
     </View>
   );
 };

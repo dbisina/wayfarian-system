@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import MapView, {Marker, PROVIDER_GOOGLE} from 'react-native-maps';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import BottomNavigation from '../components/BottomNavigation';
+// BottomNavigation component not available in this project
 
 const {width, height} = Dimensions.get('window');
 
@@ -215,7 +215,7 @@ const MapScreen = ({onStartJourney}: MapScreenProps): JSX.Element => {
         <Text style={styles.highwayText}>1</Text>
       </View>
 
-      <BottomNavigation activeTab="map" />
+      {/* BottomNavigation component not available in this project */}
     </View>
   );
 };

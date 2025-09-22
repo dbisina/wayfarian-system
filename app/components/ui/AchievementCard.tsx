@@ -20,7 +20,7 @@ const AchievementCard = ({ title, description, imageUrl }: AchievementCardProps)
         source={{ uri: imageUrl }} 
         style={styles.image}
         onError={(error) => console.log('Image load error:', error)}
-        defaultSource={require('../../assets/placeholder-achievement.png')}
+        defaultSource={require('../../assets/placeholder-achievement.jpg')}
       />
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>

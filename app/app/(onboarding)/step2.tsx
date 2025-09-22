@@ -18,7 +18,7 @@ export default function OnboardingScreen2() {
   };
 
   const handleSkip = () => {
-    router.replace('/(auth)');
+    router.replace('/(auth)/login');
   };
 
   return (

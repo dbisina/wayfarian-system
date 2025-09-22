@@ -14,11 +14,11 @@ const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
 export default function OnboardingScreen3() {
   const handleGetStarted = () => {
-    router.replace('/(auth)');
+    router.replace('/(auth)/login');
   };
 
   const handleSkip = () => {
-    router.replace('/(auth)');
+    router.replace('/(auth)/login');
   };
 
   return (

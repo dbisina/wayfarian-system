@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function RideLogScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('solo');
 
   const badges = [
@@ -62,7 +64,7 @@ export default function RideLogScreen(): React.JSX.Element {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}

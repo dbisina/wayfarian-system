@@ -30,7 +30,7 @@ const LeaderboardItem = ({
           source={{ uri: avatar }} 
           style={styles.avatar}
           onError={(error) => console.log('Avatar load error:', error)}
-          defaultSource={require('../../assets/placeholder-avatar.png')}
+          defaultSource={require('../../assets/placeholder-avatar.jpg')}
         />
         <View style={styles.userInfo}>
           <Text style={styles.rank}>{rank}</Text>

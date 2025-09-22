@@ -19,7 +19,7 @@ interface PastJourneysScreenProps {
   onBackPress?: () => void;
 }
 
-const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX.Element => {
+const PastJourneysScreen = ({ onBackPress = () => {} }: PastJourneysScreenProps): React.JSX.Element => {
   const journeys: Journey[] = [
     {
       id: '1',

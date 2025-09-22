@@ -6,9 +6,12 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GroupCard from '../../components/ui/GroupCard';
 
 export default function GroupsScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
+  
   const myGroups = [
     {
       id: '1',
@@ -25,7 +28,7 @@ export default function GroupsScreen(): React.JSX.Element {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.content}>
         <View style={styles.myGroupsSection}>
           <View style={styles.groupsList}>

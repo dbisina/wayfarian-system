@@ -6,9 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import Header from '../components/Header';
-import BottomNavigation from '../components/BottomNavigation';
-import GroupCard from '../components/GroupCard';
+import Header from '../components/ui/Header';
+import GroupCard from '../components/ui/GroupCard';
 
 interface GroupsScreenProps {
   onTabPress?: (tab: string) => void;
@@ -64,7 +63,7 @@ const GroupsScreen = ({onTabPress, onCreateGroup, onGroupDetail}: GroupsScreenPr
           </View>
         </View>
       </View>
-      <BottomNavigation activeTab="people" onTabPress={onTabPress} />
+      {/* BottomNavigation component not available in this project */}
     </View>
   );
 };

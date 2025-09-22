@@ -6,9 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import Header from '../components/Header';
-import BottomNavigation from '../components/BottomNavigation';
-import LeaderboardItem from '../components/LeaderboardItem';
+import Header from '../components/ui/Header';
+import LeaderboardItem from '../components/ui/LeaderboardItem';
 
 interface LeaderboardScreenProps {
   onTabPress?: (tab: string) => void;
@@ -162,7 +161,7 @@ const LeaderboardScreen = ({onTabPress}: LeaderboardScreenProps): JSX.Element =>
         ))}
       </ScrollView>
 
-      <BottomNavigation activeTab="trophy" onTabPress={onTabPress} />
+      {/* BottomNavigation component not available in this project */}
     </View>
   );
 };

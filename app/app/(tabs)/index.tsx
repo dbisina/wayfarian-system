@@ -5,6 +5,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import UserProfile from '../../components/ui/UserProfile';
 import StatsGrid from '../../components/ui/StatsGrid';
 import XPProgress from '../../components/ui/XPProgress';
@@ -13,8 +14,10 @@ import PastJourneys from '../../components/ui/PastJourneys';
 import StartJourneyButton from '../../components/ui/StartJourneyButton';
 
 export default function HomeScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
+  
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}

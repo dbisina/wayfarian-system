@@ -6,10 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Header from '../../components/ui/Header';
 import LeaderboardItem from '../../components/ui/LeaderboardItem';
 
 export default function LeaderboardScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'friends' | 'global'>('friends');
 
   const friendsData = [
@@ -111,7 +113,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
   const currentData = activeTab === 'friends' ? friendsData : globalData;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
