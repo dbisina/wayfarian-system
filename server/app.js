@@ -395,7 +395,7 @@ app.use((err, req, res, next) => {
     return res.status(409).json({
       error: 'Conflict',
       message: 'A record with this information already exists',
-    });
+    });`
   }
   
   if (err.code === 'P2025') { // Prisma record not found
