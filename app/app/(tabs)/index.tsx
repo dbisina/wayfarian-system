@@ -5,7 +5,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import Header from '../../components/ui/Header';
 import UserProfile from '../../components/ui/UserProfile';
 import StatsGrid from '../../components/ui/StatsGrid';
 import XPProgress from '../../components/ui/XPProgress';
@@ -16,7 +15,6 @@ import StartJourneyButton from '../../components/ui/StartJourneyButton';
 export default function HomeScreen(): React.JSX.Element {
   return (
     <View style={styles.container}>
-      <Header onSettingsPress={() => router.push('/settings')} />
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}

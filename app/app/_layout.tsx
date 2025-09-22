@@ -24,8 +24,8 @@ export default function RootLayout() {
         // Simulate checking auth status
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // For now, we'll start with unauthenticated state
-        // In a real app, you'd check your auth token here
+        // For now, we'll start with onboarding not completed
+        // In a real app, you'd check your auth token and onboarding status here
         setIsAuthenticated(false);
         setHasCompletedOnboarding(false);
       } catch (error) {
@@ -45,10 +45,10 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        {!isAuthenticated ? (
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        ) : !hasCompletedOnboarding ? (
+        {!hasCompletedOnboarding ? (
           <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+        ) : !isAuthenticated ? (
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         ) : (
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         )}

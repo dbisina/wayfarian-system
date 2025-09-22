@@ -16,7 +16,12 @@ interface AchievementCardProps {
 const AchievementCard = ({ title, description, imageUrl }: AchievementCardProps): React.JSX.Element => {
   return (
     <View style={styles.container}>
-      <Image source={{ uri: imageUrl }} style={styles.image} />
+      <Image 
+        source={{ uri: imageUrl }} 
+        style={styles.image}
+        onError={(error) => console.log('Image load error:', error)}
+        defaultSource={require('../../assets/placeholder-achievement.png')}
+      />
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.description}>{description}</Text>

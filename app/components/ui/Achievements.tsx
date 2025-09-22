@@ -31,7 +31,6 @@ const Achievements = (): React.JSX.Element => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Achievements</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -54,15 +53,6 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 20,
     paddingBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    lineHeight: 28,
-    paddingHorizontal: 16,
-    marginBottom: 16,
   },
   scrollContent: {
     paddingHorizontal: 16,

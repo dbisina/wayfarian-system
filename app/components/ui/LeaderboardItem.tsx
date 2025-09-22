@@ -26,7 +26,12 @@ const LeaderboardItem = ({
   return (
     <View style={[styles.container, isCurrentUser && styles.currentUserContainer]}>
       <View style={styles.leftSection}>
-        <Image source={{ uri: avatar }} style={styles.avatar} />
+        <Image 
+          source={{ uri: avatar }} 
+          style={styles.avatar}
+          onError={(error) => console.log('Avatar load error:', error)}
+          defaultSource={require('../../assets/placeholder-avatar.png')}
+        />
         <View style={styles.userInfo}>
           <Text style={styles.rank}>{rank}</Text>
           <Text style={[styles.name, isCurrentUser && styles.currentUserName]}>

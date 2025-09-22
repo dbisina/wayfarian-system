@@ -20,7 +20,7 @@ const Header = ({ onSettingsPress, title = 'Groups' }: HeaderProps): React.JSX.E
         <Text style={styles.title}>{title}</Text>
       </View>
       <TouchableOpacity style={styles.settingsButton} onPress={onSettingsPress}>
-        <Icon name="settings" size={20.1} color="#1D1B20" />
+        <MaterialIcons name="settings" size={20.1} color="#1D1B20" />
       </TouchableOpacity>
     </View>
   );

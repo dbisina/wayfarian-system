@@ -112,14 +112,6 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerContainer}>
-        <View style={styles.avatar} />
-        <Text style={styles.title}>Leaderboard</Text>
-        <TouchableOpacity style={styles.settingsButton}>
-          <Text style={styles.settingsIcon}>⚙️</Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
@@ -166,40 +158,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F6F6F6',
   },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 27,
-    backgroundColor: '#F6F6F6',
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#D9D9D9',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-  },
-  settingsButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIcon: {
-    fontSize: 18,
-  },
   tabContainer: {
     flexDirection: 'row',
     marginHorizontal: 16,
+    marginTop: 20,
     marginBottom: 24,
     backgroundColor: 'transparent',
   },

@@ -9,7 +9,6 @@ import {
 const XPProgress = (): React.JSX.Element => {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>XP Progress</Text>
       <Image
         source={{ uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-08-13/Uo9gChcj66.svg' }}
         style={styles.progressBar}
@@ -24,13 +23,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    lineHeight: 24,
   },
   progressBar: {
     width: '100%',

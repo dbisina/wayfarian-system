@@ -63,18 +63,6 @@ export default function RideLogScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.avatar} />
-        <Text style={styles.title}>Ride Log</Text>
-        <TouchableOpacity style={styles.settingsButton}>
-          <Image 
-            source={{uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/WCJWRvJaAY.svg'}}
-            style={styles.settingsIcon}
-          />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -83,7 +71,6 @@ export default function RideLogScreen(): React.JSX.Element {
         {/* Progress Card */}
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Progess</Text>
             <Text style={styles.explorerBadge}>Explorer</Text>
           </View>
           <Text style={styles.progressSubtitle}>The road is your XP keep going buddy!</Text>
@@ -97,7 +84,6 @@ export default function RideLogScreen(): React.JSX.Element {
         
         {/* Badges Section */}
         <View style={styles.badgesSection}>
-          <Text style={styles.sectionTitle}>Badges earned</Text>
           <View style={styles.badgesGrid}>
             {badges.map((badge) => (
               <View key={badge.id} style={styles.badgeContainer}>
@@ -171,41 +157,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 27,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#D9D9D9',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    textAlign: 'center',
-    flex: 1,
-  },
-  settingsButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIcon: {
-    width: 20,
-    height: 20,
-  },
   scrollView: {
     flex: 1,
   },
@@ -221,15 +172,9 @@ const styles = StyleSheet.create({
   },
   progressHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginBottom: 5,
-  },
-  progressTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
   },
   explorerBadge: {
     fontSize: 12,
@@ -271,13 +216,6 @@ const styles = StyleSheet.create({
   badgesSection: {
     paddingHorizontal: 16,
     paddingTop: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    marginBottom: 16,
   },
   badgesGrid: {
     flexDirection: 'row',

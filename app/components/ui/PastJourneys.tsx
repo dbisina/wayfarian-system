@@ -37,7 +37,6 @@ const PastJourneys = ({ onSeeAllPress }: PastJourneysProps): React.JSX.Element =
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-        <Text style={styles.sectionTitle}>Past Journeys</Text>
         <TouchableOpacity 
           style={styles.seeAllButton}
           onPress={onSeeAllPress}

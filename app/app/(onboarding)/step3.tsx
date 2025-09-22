@@ -12,9 +12,9 @@ import { router } from 'expo-router';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
-export default function OnboardingScreen2() {
-  const handleNext = () => {
-    router.push('/(onboarding)/step3');
+export default function OnboardingScreen3() {
+  const handleGetStarted = () => {
+    router.replace('/(auth)');
   };
 
   const handleSkip = () => {
@@ -26,7 +26,7 @@ export default function OnboardingScreen2() {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ImageBackground
         source={{
-          uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-16/gfiRO6qmSE.png'
+          uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-16/Y8uOfUFSkG.png'
         }}
         style={styles.backgroundImage}
         resizeMode="cover"
@@ -42,9 +42,9 @@ export default function OnboardingScreen2() {
 
           {/* Main Content */}
           <View style={styles.content}>
-            <Text style={styles.mainTitle}>The Thrill Unfolds.</Text>
+            <Text style={styles.mainTitle}>The Challenge Awaits.</Text>
             <Text style={styles.description}>
-              Track speed, distance & time. Dominate leaderboards locally and globally.
+              Solo rides. Group rides. Extra challenges. Earn rewards as you travel.
             </Text>
           </View>
 
@@ -57,9 +57,9 @@ export default function OnboardingScreen2() {
               </View>
             </View>
 
-            {/* Next Button */}
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>Next</Text>
+            {/* Get Started Button */}
+            <TouchableOpacity style={styles.getStartedButton} onPress={handleGetStarted}>
+              <Text style={styles.getStartedButtonText}>Get Started</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -155,12 +155,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: {
-    width: 19.79,
+    width: 30,
     height: 3,
     backgroundColor: '#FFFFFF',
     borderRadius: 3,
   },
-  nextButton: {
+  getStartedButton: {
     backgroundColor: '#FF6B35',
     width: 348,
     height: 39,
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  nextButtonText: {
+  getStartedButtonText: {
     fontFamily: 'Poppins',
     fontSize: 16,
     fontWeight: '500',

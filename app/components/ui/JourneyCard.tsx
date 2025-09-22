@@ -15,7 +15,12 @@ interface JourneyCardProps {
 const JourneyCard = ({ title, stats, imageUrl }: JourneyCardProps): React.JSX.Element => {
   return (
     <View style={styles.container}>
-      <Image source={{ uri: imageUrl }} style={styles.image} />
+      <Image 
+        source={{ uri: imageUrl }} 
+        style={styles.image}
+        onError={(error) => console.log('Image load error:', error)}
+        defaultSource={require('../../assets/placeholder-journey.png')}
+      />
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.stats}>{stats}</Text>

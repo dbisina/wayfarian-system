@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
-import Header from '../../components/ui/Header';
 import GroupCard from '../../components/ui/GroupCard';
 
 export default function GroupsScreen(): React.JSX.Element {
@@ -27,11 +26,8 @@ export default function GroupsScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <Header title="Groups" />
       <View style={styles.content}>
         <View style={styles.myGroupsSection}>
-          <Text style={styles.sectionTitle}>My Groups</Text>
-          
           <View style={styles.groupsList}>
             {myGroups.map((group) => (
               <GroupCard
@@ -46,8 +42,6 @@ export default function GroupsScreen(): React.JSX.Element {
         </View>
 
         <View style={styles.createJoinSection}>
-          <Text style={styles.sectionTitle}>Create or Join</Text>
-          
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.createButton} onPress={() => router.push('/new-group')}>
               <Text style={styles.createButtonText}>Create Group</Text>
@@ -75,14 +69,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingHorizontal: 16,
     paddingBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    lineHeight: 28,
-    marginBottom: 12,
   },
   groupsList: {
     gap: 0,
