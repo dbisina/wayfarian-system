@@ -9,15 +9,10 @@ import {
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
 export default function OnboardingScreen() {
-  const handleNext = () => {
-    router.push('/(onboarding)/step2');
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -57,9 +52,9 @@ export default function OnboardingScreen() {
               <Text style={styles.featureText}>START YOUR STORY</Text>
             </View>
 
-            <View style={[styles.featureCard, styles.featureCardReversed]}>
-              <Text style={styles.featureTextReversed}>TRAVEL THE WORLD</Text>
-              <View style={styles.iconContainerReversed}>
+            <View style={styles.featureCard}>
+              <Text style={styles.featureText}>TRAVEL THE WORLD</Text>
+              <View style={styles.iconContainer}>
                 <View style={styles.iconBackground}>
                   <View style={styles.locationIcon} />
                 </View>
@@ -76,7 +71,7 @@ export default function OnboardingScreen() {
             </View>
 
             {/* Next Button */}
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+            <TouchableOpacity style={styles.nextButton}>
               <Text style={styles.nextText}>Next</Text>
             </TouchableOpacity>
           </View>
@@ -98,7 +93,6 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     paddingHorizontal: 16,
-    justifyContent: 'space-between',
   },
   header: {
     flexDirection: 'row',
@@ -131,8 +125,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   content: {
-    flex: 1,
-    justifyContent: 'center',
+    marginBottom: 120,
   },
   mainTitle: {
     fontFamily: 'Poppins',
@@ -154,10 +147,10 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   featuresContainer: {
-    marginTop: 40,
+    marginBottom: 80,
   },
   featureCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 20,
     height: 74,
     flexDirection: 'row',
@@ -165,39 +158,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 25,
     position: 'relative',
-    transform: [{ rotate: '2deg' }],
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   iconContainer: {
     position: 'absolute',
-    left: 20,
   },
   iconBackground: {
-    backgroundColor: '#FFD700',
+    backgroundColor: '#F9A825',
     borderRadius: 15,
     width: 45,
     height: 45,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
   locationIcon: {
-    width: 20,
-    height: 20,
+    width: 27,
+    height: 27,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#FFD700',
+    borderRadius: 13.5,
   },
   featureText: {
     fontFamily: 'Poppins',
@@ -205,22 +182,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
     lineHeight: 24,
-    marginLeft: 70,
-  },
-  featureCardReversed: {
-    transform: [{ rotate: '-2deg' }],
-  },
-  featureTextReversed: {
-    fontFamily: 'Poppins',
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    lineHeight: 24,
-    marginRight: 70,
-  },
-  iconContainerReversed: {
-    position: 'absolute',
-    right: 20,
   },
   bottomSection: {
     alignItems: 'center',

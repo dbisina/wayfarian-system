@@ -152,7 +152,7 @@ export default function RideLogScreen(): React.JSX.Element {
 
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {

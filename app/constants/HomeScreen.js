@@ -9,216 +9,8 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 
-// Enhanced Speedometer Component - Premium Toyota Corolla Style
-const Speedometer = ({ value, maxValue = 300, size = 90 }) => {
-  const radius = (size - 24) / 2;
-  const centerX = size / 2;
-  const centerY = size / 2;
-  
-  // Calculate color based on speed percentage - Enhanced Toyota style
-  const speedPercentage = value / maxValue;
-  let color = '#00E676'; // Bright green for low speeds
-  let colorStop1 = '#00C851';
-  let colorStop2 = '#00E676';
-  
-  if (speedPercentage > 0.8) {
-    color = '#FF1744'; // Bright red for high speeds
-    colorStop1 = '#FF1744';
-    colorStop2 = '#FF5722';
-  } else if (speedPercentage > 0.6) {
-    color = '#FF9800'; // Orange for medium-high speeds
-    colorStop1 = '#FF9800';
-    colorStop2 = '#FFC107';
-  } else if (speedPercentage > 0.3) {
-    color = '#FFC107'; // Yellow for medium speeds
-    colorStop1 = '#FFC107';
-    colorStop2 = '#FFEB3B';
-  }
-
-  // Create semi-circle arc path - Enhanced Toyota Corolla style (180 degrees)
-  const startAngle = -90; // Start from left
-  const endAngle = 90; // End at right
-  const angleRange = endAngle - startAngle;
-  const currentAngle = startAngle + (speedPercentage * angleRange);
-  
-  // Convert angles to radians
-  const startRad = (startAngle * Math.PI) / 180;
-  const endRad = (endAngle * Math.PI) / 180;
-  const currentRad = (currentAngle * Math.PI) / 180;
-  
-  // Calculate arc path
-  const createArcPath = (startRad, endRad, radius) => {
-    const x1 = centerX + radius * Math.cos(startRad);
-    const y1 = centerY + radius * Math.sin(startRad);
-    const x2 = centerX + radius * Math.cos(endRad);
-    const y2 = centerY + radius * Math.sin(endRad);
-    
-    const largeArcFlag = endRad - startRad <= Math.PI ? "0" : "1";
-    
-    return `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`;
-  };
-
-  const backgroundPath = createArcPath(startRad, endRad, radius);
-  const progressPath = createArcPath(startRad, currentRad, radius);
-
-  return (
-    <View style={styles.speedometerContainer}>
-      <Svg width={size} height={size} style={styles.speedometer}>
-        <Defs>
-          {/* Gradient for progress arc */}
-          <SvgLinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={colorStop1} stopOpacity="1" />
-            <Stop offset="100%" stopColor={colorStop2} stopOpacity="1" />
-          </SvgLinearGradient>
-          
-          {/* Gradient for background arc */}
-          <SvgLinearGradient id="backgroundGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor="#F5F5F5" stopOpacity="1" />
-            <Stop offset="100%" stopColor="#E0E0E0" stopOpacity="1" />
-          </SvgLinearGradient>
-        </Defs>
-        
-        {/* Background arc with gradient */}
-        <Path
-          d={backgroundPath}
-          stroke="url(#backgroundGradient)"
-          strokeWidth="14"
-          fill="transparent"
-          strokeLinecap="round"
-        />
-        
-        {/* Progress arc with gradient */}
-        <Path
-          d={progressPath}
-          stroke="url(#progressGradient)"
-          strokeWidth="14"
-          fill="transparent"
-          strokeLinecap="round"
-        />
-        
-        {/* Inner highlight arc */}
-        <Path
-          d={backgroundPath}
-          stroke="rgba(255, 255, 255, 0.4)"
-          strokeWidth="2"
-          fill="transparent"
-          strokeLinecap="round"
-        />
-        
-        {/* Major speed markers - Enhanced style */}
-        {[0, 60, 120, 180, 240, 300].map((mark, index) => {
-          const angle = startAngle + (mark / maxValue) * angleRange;
-          const rad = (angle * Math.PI) / 180;
-          const markerRadius = radius - 12;
-          const x1 = centerX + markerRadius * Math.cos(rad);
-          const y1 = centerY + markerRadius * Math.sin(rad);
-          const x2 = centerX + (markerRadius + 10) * Math.cos(rad);
-          const y2 = centerY + (markerRadius + 10) * Math.sin(rad);
-          
-          return (
-            <Path
-              key={index}
-              d={`M ${x1} ${y1} L ${x2} ${y2}`}
-              stroke="#2C2C2C"
-              strokeWidth="4"
-              strokeLinecap="round"
-            />
-          );
-        })}
-        
-        {/* Minor speed markers - Enhanced style */}
-        {[20, 40, 80, 100, 140, 160, 200, 220, 260, 280].map((mark, index) => {
-          const angle = startAngle + (mark / maxValue) * angleRange;
-          const rad = (angle * Math.PI) / 180;
-          const markerRadius = radius - 8;
-          const x1 = centerX + markerRadius * Math.cos(rad);
-          const y1 = centerY + markerRadius * Math.sin(rad);
-          const x2 = centerX + (markerRadius + 5) * Math.cos(rad);
-          const y2 = centerY + (markerRadius + 5) * Math.sin(rad);
-          
-          return (
-            <Path
-              key={index}
-              d={`M ${x1} ${y1} L ${x2} ${y2}`}
-              stroke="#666666"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          );
-        })}
-        
-        {/* Speed labels - Enhanced with better typography */}
-        {[0, 60, 120, 180, 240, 300].map((mark, index) => {
-          const angle = startAngle + (mark / maxValue) * angleRange;
-          const rad = (angle * Math.PI) / 180;
-          const labelRadius = radius - 28;
-          const x = centerX + labelRadius * Math.cos(rad);
-          const y = centerY + labelRadius * Math.sin(rad);
-          
-          return (
-            <SvgText
-              key={index}
-              x={x}
-              y={y + 6}
-              fontSize="11"
-              fontWeight="700"
-              fill="#1A1A1A"
-              textAnchor="middle"
-            >
-              {mark}
-            </SvgText>
-          );
-        })}
-        
-        {/* Center circle with enhanced styling */}
-        <Circle
-          cx={centerX}
-          cy={centerY}
-          r="8"
-          fill="#2C2C2C"
-          stroke="#FFFFFF"
-          strokeWidth="3"
-        />
-        
-        {/* Inner center circle */}
-        <Circle
-          cx={centerX}
-          cy={centerY}
-          r="4"
-          fill={color}
-        />
-        
-        {/* Speed value with enhanced styling */}
-        <SvgText
-          x={centerX}
-          y={centerY + 35}
-          fontSize="18"
-          fontWeight="800"
-          fill="#1A1A1A"
-          textAnchor="middle"
-        >
-          {value}
-        </SvgText>
-        
-        {/* Unit label */}
-        <SvgText
-          x={centerX}
-          y={centerY + 50}
-          fontSize="10"
-          fontWeight="600"
-          fill="#666666"
-          textAnchor="middle"
-        >
-          km/h
-        </SvgText>
-      </Svg>
-    </View>
-  );
-};
-
-export default function HomeScreen(): React.JSX.Element {
+const HomeScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -274,11 +66,11 @@ export default function HomeScreen(): React.JSX.Element {
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Avg. Speed</Text>
-              <Speedometer value={55} maxValue={300} size={80} />
+              <Text style={styles.statValue}>55 km/hr</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Max Speed</Text>
-              <Speedometer value={120} maxValue={300} size={80} />
+              <Text style={styles.statValue}>120 km/hr</Text>
             </View>
           </View>
         </View>
@@ -384,6 +176,41 @@ export default function HomeScreen(): React.JSX.Element {
               style={styles.startJourneyIcon}
             />
             <Text style={styles.startJourneyText}>Start Journey</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom Navigation */}
+        <View style={styles.bottomNavigation}>
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/jnVGFJqRME.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItemActive}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/05Cx9SyELM.png' }}
+              style={styles.navIcon}
+            />
+            <Text style={styles.navText}>Map</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/HkNiBEFqps.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/ny4DuYMhm0.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/u5kLMrbVhz.png' }}
+              style={styles.navIcon}
+            />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -657,21 +484,51 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     lineHeight: 24,
   },
-  speedometerContainer: {
+  bottomNavigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    marginHorizontal: 22,
+    marginBottom: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    gap: 33,
+    shadowColor: '#000',
+    shadowOffset: { width: 1, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 2,
-    height: 90,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
-  speedometer: {
-    alignSelf: 'center',
+  navItemActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    gap: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2.2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navIcon: {
+    width: 24,
+    height: 24,
+  },
+  navText: {
+    fontFamily: 'Poppins',
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#000000',
+    lineHeight: 18,
   },
 });
+
+export default HomeScreen;

@@ -12,7 +12,7 @@ import {
 
 const { width: screenWidth } = Dimensions.get('window');
 
-export default function LeaderboardScreen(): React.JSX.Element {
+const LeaderboardScreen = () => {
   const leaderboardData = [
     {
       id: 1,
@@ -155,9 +155,48 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Bottom Navigation */}
+      <View style={styles.bottomNavigation}>
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/Rxex08cWhr.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/V7B7QdBE9q.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/9ACTu7ObcW.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navItemActive}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/1b5sa0F5G2.png' }}
+            style={styles.navIcon}
+          />
+          <Text style={styles.navLabel}>Leaderboard</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/cmCgrNLV5K.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+      </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -299,5 +338,52 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 8,
   },
+  bottomNavigation: {
+    position: 'absolute',
+    bottom: 22,
+    left: 22,
+    right: 22,
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 1, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  navItemActive: {
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2.2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navIcon: {
+    width: 24,
+    height: 24,
+  },
+  navLabel: {
+    fontFamily: 'Poppins',
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#000000',
+    marginLeft: 7,
+  },
 });
 
+export default LeaderboardScreen;

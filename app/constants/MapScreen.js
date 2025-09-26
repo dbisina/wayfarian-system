@@ -8,15 +8,10 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
-import { router } from 'expo-router';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-export default function MapScreen(): React.JSX.Element {
-  const handleStartJourney = () => {
-    router.push('/new-journey');
-  };
-
+const MapScreen = () => {
   return (
     <View style={styles.container}>
       {/* Background Map */}
@@ -54,28 +49,61 @@ export default function MapScreen(): React.JSX.Element {
       </ScrollView>
 
       {/* Floating Action Buttons */}
-      <TouchableOpacity 
-        style={[styles.floatingButton, styles.floatingButton1]}
-        onPress={handleStartJourney}
-      >
+      <TouchableOpacity style={[styles.floatingButton, styles.floatingButton1]}>
         <Image
           source={{ uri: 'https://static.codia.ai/image/2025-09-26/NydH8KLPYS.png' }}
           style={styles.floatingButtonImage}
         />
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={[styles.floatingButton, styles.floatingButton2]}
-        onPress={handleStartJourney}
-      >
+      <TouchableOpacity style={[styles.floatingButton, styles.floatingButton2]}>
         <Image
           source={{ uri: 'https://static.codia.ai/image/2025-09-26/4BNFvkcOE2.png' }}
           style={styles.floatingButtonImage}
         />
       </TouchableOpacity>
+
+      {/* Bottom Navigation */}
+      <View style={styles.bottomNavigation}>
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/o5BUk9vdvW.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.activeNavItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/acZPnbq31G.png' }}
+            style={styles.navIcon}
+          />
+          <Text style={styles.activeNavText}>Map</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/s3XYiRcD5T.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/L2UkYbgM22.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/hc2W5pxgO7.png' }}
+            style={styles.navIcon}
+          />
+        </TouchableOpacity>
+      </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -150,5 +178,61 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
   },
+  bottomNavigation: {
+    position: 'absolute',
+    bottom: 31, // 844 - 763 - 50 = 31
+    left: 22,
+    right: 22,
+    height: 50,
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 1,
+      height: 3,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navItem: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 33,
+  },
+  activeNavItem: {
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 33,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2.2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navIcon: {
+    width: 24,
+    height: 24,
+  },
+  activeNavText: {
+    fontFamily: 'Poppins',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 18,
+    color: '#000000',
+    marginLeft: 7,
+  },
 });
 
+export default MapScreen;

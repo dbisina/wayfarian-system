@@ -33,8 +33,8 @@ export default function NewJourneyScreen() {
       notes,
     });
     
-    // Navigate back to map to start tracking
-    router.back();
+    // Navigate to journey screen to start tracking
+    router.push('/journey');
   };
 
   const handleSaveForLater = () => {

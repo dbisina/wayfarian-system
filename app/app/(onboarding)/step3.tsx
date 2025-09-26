@@ -8,6 +8,7 @@ import {
   ImageBackground,
   StatusBar,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
@@ -31,7 +32,10 @@ export default function OnboardingScreen3() {
         style={styles.backgroundImage}
         resizeMode="cover"
       >
-        <View style={styles.overlay}>
+        <LinearGradient
+          colors={['rgba(0, 0, 0, 0.3)', 'rgba(0, 0, 0, 0.8)']}
+          style={styles.overlay}
+        >
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.logo}>LOGO</Text>
@@ -48,21 +52,21 @@ export default function OnboardingScreen3() {
             </Text>
           </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            {/* Progress Indicator */}
+          {/* Bottom Section */}
+          <View style={styles.bottomSection}>
+            {/* Progress Indicators */}
             <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View style={styles.progressFill} />
-              </View>
+              <View style={styles.progressInactive} />
+              <View style={styles.progressInactive} />
+              <View style={styles.progressActive} />
             </View>
 
             {/* Get Started Button */}
             <TouchableOpacity style={styles.getStartedButton} onPress={handleGetStarted}>
-              <Text style={styles.getStartedButtonText}>Get Started</Text>
+              <Text style={styles.getStartedText}>Get Started</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </LinearGradient>
       </ImageBackground>
     </View>
   );
@@ -74,35 +78,32 @@ const styles = StyleSheet.create({
   },
   backgroundImage: {
     flex: 1,
-    width: screenWidth,
-    height: screenHeight,
+    width: '100%',
+    height: '100%',
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     paddingHorizontal: 16,
-    paddingTop: 32,
-    paddingBottom: 27,
     justifyContent: 'space-between',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 23,
-    marginBottom: 52,
+    paddingTop: 27,
+    marginBottom: 58,
   },
   logo: {
     fontFamily: 'Inter',
     fontSize: 18,
     fontWeight: '400',
-    lineHeight: 22,
     color: '#FFFFFF',
+    lineHeight: 22,
   },
   skipButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 5,
     width: 40,
     height: 18,
@@ -110,69 +111,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   skipText: {
-    fontFamily: 'Poppins',
     fontSize: 10,
-    fontWeight: '600',
-    lineHeight: 15,
     color: '#FFFFFF',
+    lineHeight: 15,
     textAlign: 'center',
   },
   content: {
     flex: 1,
-    justifyContent: 'flex-start',
-    paddingTop: 75,
+    justifyContent: 'center',
   },
   mainTitle: {
     fontFamily: 'Poppins',
-    fontSize: 40,
+    fontSize: 46,
     fontWeight: '500',
-    lineHeight: 60,
     color: '#FFFFBF',
-    marginBottom: 95,
+    lineHeight: 69,
+    marginBottom: 0,
     textShadowColor: 'rgba(0, 0, 0, 0.25)',
-    textShadowOffset: {width: 6, height: 10},
+    textShadowOffset: { width: 6, height: 10 },
     textShadowRadius: 4,
   },
   description: {
     fontFamily: 'Poppins',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '400',
-    lineHeight: 30,
     color: '#FFFFFF',
-    maxWidth: 311,
+    lineHeight: 27,
+    marginTop: 0,
   },
-  footer: {
+  bottomSection: {
     alignItems: 'center',
+    paddingBottom: 25,
   },
   progressContainer: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    marginBottom: 19,
+    gap: 2,
   },
-  progressBar: {
-    width: 30,
+  progressActive: {
+    width: 20,
+    height: 3,
+    backgroundColor: '#F9A825',
+    borderRadius: 3,
+  },
+  progressInactive: {
+    width: 9,
     height: 3,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    width: 30,
-    height: 3,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 3,
   },
   getStartedButton: {
-    backgroundColor: '#FF6B35',
-    width: 348,
-    height: 39,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 40,
+    paddingVertical: 8,
     borderRadius: 20,
+    minWidth: 361,
+    height: 39,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  getStartedButtonText: {
+  getStartedText: {
     fontFamily: 'Poppins',
     fontSize: 16,
     fontWeight: '500',
-    lineHeight: 24,
     color: '#FFFFFF',
+    lineHeight: 23,
   },
 });

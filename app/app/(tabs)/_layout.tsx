@@ -1,7 +1,6 @@
 import { Tabs } from 'expo-router';
 import React, { useState } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, StyleSheet, Text, Image } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -17,13 +16,13 @@ import { TAB_BAR_COLORS, SHADOW_COLORS } from '@/constants/theme';
 function AdaptiveTabIcon({ 
   color, 
   focused, 
-  iconName, 
+  iconSource, 
   title,
   onFocusChange 
 }: {
   color: string;
   focused: boolean;
-  iconName: string;
+  iconSource: string;
   title: string;
   onFocusChange?: (focused: boolean) => void;
 }) {
@@ -80,7 +79,7 @@ function AdaptiveTabIcon({
       {focused ? (
         <Animated.View style={[styles.groupsTab, pillAnimatedStyle]}>
           <Animated.View style={iconAnimatedStyle}>
-            <MaterialIcons name={iconName as any} size={20} color={color} />
+            <Image source={{ uri: iconSource }} style={styles.tabIcon} />
           </Animated.View>
           <Animated.View style={textAnimatedStyle}>
             <Text style={[styles.groupsTabText, { color }]} numberOfLines={1}>
@@ -89,7 +88,7 @@ function AdaptiveTabIcon({
           </Animated.View>
         </Animated.View>
       ) : (
-        <MaterialIcons name={iconName as any} size={24} color={color} />
+        <Image source={{ uri: iconSource }} style={styles.tabIcon} />
       )}
     </View>
   );
@@ -148,7 +147,7 @@ export default function TabLayout() {
             <AdaptiveTabIcon 
               color={color} 
               focused={focused} 
-              iconName="home" 
+              iconSource="https://static.codia.ai/image/2025-09-26/jnVGFJqRME.png" 
               title="Home"
               onFocusChange={(isFocused) => isFocused && setActiveTabIndex(0)}
             />
@@ -163,7 +162,7 @@ export default function TabLayout() {
             <AdaptiveTabIcon 
               color={color} 
               focused={focused} 
-              iconName="map" 
+              iconSource="https://static.codia.ai/image/2025-09-26/05Cx9SyELM.png" 
               title="Map"
               onFocusChange={(isFocused) => isFocused && setActiveTabIndex(1)}
             />
@@ -178,7 +177,7 @@ export default function TabLayout() {
             <AdaptiveTabIcon 
               color={color} 
               focused={focused} 
-              iconName="bar-chart" 
+              iconSource="https://static.codia.ai/image/2025-09-26/HkNiBEFqps.png" 
               title="Log"
               onFocusChange={(isFocused) => isFocused && setActiveTabIndex(2)}
             />
@@ -193,7 +192,7 @@ export default function TabLayout() {
             <AdaptiveTabIcon 
               color={color} 
               focused={focused} 
-              iconName="emoji-events" 
+              iconSource="https://static.codia.ai/image/2025-09-26/ny4DuYMhm0.png" 
               title="Trophy"
               onFocusChange={(isFocused) => isFocused && setActiveTabIndex(3)}
             />
@@ -208,7 +207,7 @@ export default function TabLayout() {
             <AdaptiveTabIcon 
               color={color} 
               focused={focused} 
-              iconName="people" 
+              iconSource="https://static.codia.ai/image/2025-09-26/u5kLMrbVhz.png" 
               title="Groups"
               onFocusChange={(isFocused) => isFocused && setActiveTabIndex(4)}
             />
@@ -227,6 +226,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 40,
+  },
+  tabIcon: {
+    width: 24,
+    height: 24,
   },
   groupsTab: {
     flexDirection: 'row',

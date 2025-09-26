@@ -9,9 +9,8 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 
-export default function GroupDetailScreen() {
+const GroupDetailExpanded = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -27,7 +26,7 @@ export default function GroupDetailScreen() {
           />
           
           {/* Back Button */}
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton}>
             <Image
               source={{ uri: 'https://static.codia.ai/image/2025-09-26/PkQ8JtFpqq.png' }}
               style={styles.backIcon}
@@ -184,7 +183,7 @@ export default function GroupDetailScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -459,3 +458,5 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
 });
+
+export default GroupDetailExpanded;
