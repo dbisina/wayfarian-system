@@ -391,6 +391,157 @@ router.get('/achievements', async (req, res) => {
 });
 
 /**
+ * @route GET /api/user/friends
+ * @desc Get user's friends list
+ * @access Private
+ */
+router.get('/friends', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    
+    // Get friends through group memberships
+    const friends = await prisma.groupMember.findMany({
+      where: {
+        group: {
+          members: {
+            some: { userId }
+          }
+        },
+        userId: { not: userId }
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+            totalDistance: true,
+            totalTime: true,
+            topSpeed: true,
+            totalTrips: true,
+          }
+        }
+      },
+      distinct: ['userId']
+    });
+    
+    // Format friends data
+    const friendsList = friends.map(friend => ({
+      id: friend.user.id,
+      displayName: friend.user.displayName,
+      photoURL: friend.user.photoURL,
+      isOnline: false, // TODO: Implement real-time online status
+      stats: {
+        totalDistance: friend.user.totalDistance,
+        totalTime: friend.user.totalTime,
+        topSpeed: friend.user.topSpeed,
+        totalTrips: friend.user.totalTrips,
+      }
+    }));
+    
+    res.json({
+      success: true,
+      friends: friendsList,
+    });
+    
+  } catch (error) {
+    console.error('Get friends error:', error);
+    res.status(500).json({
+      error: 'Failed to get friends',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route POST /api/user/friends
+ * @desc Add a friend (through group invitation)
+ * @access Private
+ */
+router.post('/friends', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { friendId } = req.body;
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    
+    if (!friendId) {
+      return res.status(400).json({
+        error: 'Missing friend ID',
+        message: 'friendId is required',
+      });
+    }
+    
+    if (friendId === userId) {
+      return res.status(400).json({
+        error: 'Invalid friend ID',
+        message: 'Cannot add yourself as a friend',
+      });
+    }
+    
+    // Check if friend exists
+    const friend = await prisma.user.findUnique({
+      where: { id: friendId },
+      select: { id: true, displayName: true }
+    });
+    
+    if (!friend) {
+      return res.status(404).json({
+        error: 'Friend not found',
+        message: 'User with this ID does not exist',
+      });
+    }
+    
+    // For now, we'll create a simple "friends" group
+    // In a real implementation, you might want a separate friends table
+    const group = await prisma.group.create({
+      data: {
+        name: `Friends: ${friend.displayName}`,
+        description: 'Friends group',
+        creatorId: userId,
+        code: Math.random().toString(36).substring(2, 8).toUpperCase(),
+        maxMembers: 2,
+        isPrivate: true,
+        members: {
+          create: [
+            { userId, role: 'CREATOR' },
+            { userId: friendId, role: 'MEMBER' }
+          ]
+        }
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Friend added successfully',
+      group,
+    });
+    
+  } catch (error) {
+    console.error('Add friend error:', error);
+    res.status(500).json({
+      error: 'Failed to add friend',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * @route DELETE /api/user/profile-picture
  * @desc Remove profile picture
  * @access Private

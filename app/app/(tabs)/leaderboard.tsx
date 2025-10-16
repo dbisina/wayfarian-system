@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,111 +8,89 @@ import {
   TouchableOpacity,
   StatusBar,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
+import { useAuth } from '../../contexts/AuthContext';
+import { useLeaderboard } from '../../hooks/useLeaderboard';
 
-const { width: screenWidth } = Dimensions.get('window');
+// const { width: screenWidth } = Dimensions.get('window');
 
 export default function LeaderboardScreen(): React.JSX.Element {
-  const leaderboardData = [
-    {
-      id: 1,
-      name: 'Liam',
-      rank: '#1',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/9sr6fxuLqr.png',
-      country: 'India',
-      flag: 'https://static.codia.ai/image/2025-09-26/k0CyvvQ1Vs.png',
-    },
-    {
-      id: 2,
-      name: 'Sophia',
-      rank: '#2',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/fQqBEh92h7.png',
-      country: 'Mauritius',
-      flag: 'https://static.codia.ai/image/2025-09-26/Mroy0Gqnga.png',
-    },
-    {
-      id: 3,
-      name: 'Sophia',
-      rank: '#3',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/w8LpZe44ym.png',
-      country: 'Australia',
-      flag: 'https://static.codia.ai/image/2025-09-26/x1qUw3pAsF.png',
-    },
-    {
-      id: 4,
-      name: 'Sophia',
-      rank: '#4',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/v49LekqRWs.png',
-      country: 'Canada',
-      flag: 'https://static.codia.ai/image/2025-09-26/yDYjL514aX.png',
-    },
-    {
-      id: 5,
-      name: 'Sophia',
-      rank: '#5',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/2bmDad7KAE.png',
-      country: 'Brazil',
-      flag: 'https://static.codia.ai/image/2025-09-26/CWH17MJKyF.png',
-    },
-    {
-      id: 6,
-      name: 'Sophia',
-      rank: '#6',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/m9UhuhxJsK.png',
-      country: 'Germany',
-      flag: 'https://static.codia.ai/image/2025-09-26/d26NtUQwX0.png',
-    },
-    {
-      id: 7,
-      name: 'Sophia',
-      rank: '#7',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/Ue9FddReDS.png',
-      country: 'France',
-      flag: 'https://static.codia.ai/image/2025-09-26/6K47N6J3vC.png',
-    },
-    {
-      id: 8,
-      name: 'Sophia',
-      rank: '#8',
-      distance: '2,500 mi',
-      avatar: 'https://static.codia.ai/image/2025-09-26/n7hA8e1NzV.png',
-      country: 'Spain',
-      flag: 'https://static.codia.ai/image/2025-09-26/hWE1huosya.png',
-    },
-  ];
+  const { isAuthenticated } = useAuth();
+  const { friendsData, globalData, loading, error, refreshLeaderboard } = useLeaderboard();
+  const [activeTab, setActiveTab] = useState<'friends' | 'global'>('friends');
+  const [sortBy] = useState<'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime'>('totalDistance');
 
-  const currentUser = {
-    name: 'Me',
-    rank: '#12',
-    distance: '2,500 mi',
-    avatar: 'https://static.codia.ai/image/2025-09-26/ooehuePN8n.png',
-    country: 'USA',
-    flag: 'https://static.codia.ai/image/2025-09-26/d4X25iE9Gs.png',
+  const formatDistance = (distance: number) => {
+    if (distance >= 1000) {
+      return `${(distance / 1000).toFixed(1)}K km`;
+    }
+    return `${distance.toFixed(0)} km`;
   };
 
-  const renderLeaderboardItem = (item, isCurrentUser = false) => (
+  const formatTime = (timeInSeconds: number) => {
+    const hours = Math.floor(timeInSeconds / 3600);
+    const minutes = Math.floor((timeInSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  const formatSpeed = (speed: number) => {
+    return `${speed.toFixed(0)} km/h`;
+  };
+
+  const getDisplayValue = (user: any) => {
+    switch (sortBy) {
+      case 'totalDistance':
+        return formatDistance(user.totalDistance || 0);
+      case 'totalTime':
+        return formatTime(user.totalTime || 0);
+      case 'topSpeed':
+        return formatSpeed(user.topSpeed || 0);
+      case 'totalTrips':
+        return `${user.totalTrips || 0} trips`;
+      default:
+        return formatDistance(user.totalDistance || 0);
+    }
+  };
+
+  const onRefresh = async () => {
+    await refreshLeaderboard(activeTab, sortBy);
+  };
+
+  const currentData = activeTab === 'friends' ? friendsData : globalData;
+
+  const renderLeaderboardItem = (item: any, isCurrentUser = false) => (
     <View key={item.id || 'current-user'} style={styles.leaderboardItem}>
-      <Image source={{ uri: item.avatar }} style={styles.avatar} />
+      <Image 
+        source={{ 
+          uri: item.photoURL || item.avatar || 'https://static.codia.ai/image/2025-09-26/9sr6fxuLqr.png' 
+        }} 
+        style={styles.avatar} 
+      />
       <View style={styles.userInfo}>
         <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
-          {item.name}
+          {item.displayName || item.name || 'User'}
         </Text>
         <View style={styles.countryContainer}>
-          <Image source={{ uri: item.flag }} style={styles.flagIcon} />
-          <Text style={styles.countryText}>{item.country}</Text>
+          {item.flag && <Image source={{ uri: item.flag }} style={styles.flagIcon} />}
+          <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
         </View>
       </View>
-      <Text style={styles.rank}>{item.rank}</Text>
-      <Text style={styles.distance}>{item.distance}</Text>
+      <Text style={styles.rank}>#{item.rank || item.position || 'N/A'}</Text>
+      <Text style={styles.distance}>{getDisplayValue(item)}</Text>
     </View>
   );
+
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>Please log in to view leaderboard</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -134,24 +112,81 @@ export default function LeaderboardScreen(): React.JSX.Element {
       {/* Tab Selector */}
       <View style={styles.tabContainer}>
         <View style={styles.tabSelector}>
-          <TouchableOpacity style={styles.activeTab}>
-            <Text style={styles.activeTabText}>Friends</Text>
+          <TouchableOpacity 
+            style={activeTab === 'friends' ? styles.activeTab : styles.inactiveTab}
+            onPress={() => {
+              setActiveTab('friends');
+              refreshLeaderboard('friends', sortBy);
+            }}
+          >
+            <Text style={activeTab === 'friends' ? styles.activeTabText : styles.inactiveTabText}>
+              Friends
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.inactiveTab}>
-            <Text style={styles.inactiveTabText}>Global</Text>
+          <TouchableOpacity 
+            style={activeTab === 'global' ? styles.activeTab : styles.inactiveTab}
+            onPress={() => {
+              setActiveTab('global');
+              refreshLeaderboard('global', sortBy);
+            }}
+          >
+            <Text style={activeTab === 'global' ? styles.activeTabText : styles.inactiveTabText}>
+              Global
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Current User */}
-        {renderLeaderboardItem(currentUser, true)}
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={onRefresh} />
+        }
+      >
+        {loading && !currentData ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#F9A825" />
+            <Text style={styles.loadingText}>Loading leaderboard...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : currentData ? (
+          <>
+            {/* Current User */}
+            {currentData.currentUser && renderLeaderboardItem(currentData.currentUser, true)}
 
-        {/* Top 20 Section */}
-        <Text style={styles.sectionTitle}>Top 20</Text>
+            {/* Top Section */}
+            <Text style={styles.sectionTitle}>
+              {activeTab === 'friends' ? 'Friends Leaderboard' : 'Global Leaderboard'}
+            </Text>
 
-        {/* Leaderboard List */}
-        {leaderboardData.map((item) => renderLeaderboardItem(item))}
+            {/* Leaderboard List */}
+            {currentData.users && currentData.users.length > 0 ? (
+              currentData.users.map((item) => renderLeaderboardItem(item))
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  {activeTab === 'friends' 
+                    ? 'No friends to compare with yet' 
+                    : 'No global data available'
+                  }
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {activeTab === 'friends' 
+                    ? 'Join groups to see friends on the leaderboard' 
+                    : 'Be the first to appear on the global leaderboard!'
+                  }
+                </Text>
+              </View>
+            )}
+          </>
+        ) : null}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -299,5 +334,72 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 8,
   },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    fontFamily: 'Poppins',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    fontFamily: 'Poppins',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: '#F9A825',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Poppins',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    fontFamily: 'Poppins',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    fontFamily: 'Poppins',
+  },
 });
+
 

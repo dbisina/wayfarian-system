@@ -8,19 +8,64 @@ import {
   TextInput,
   ImageBackground,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login, loginWithGoogle, loginWithApple } = useAuth();
 
-  const handleSignIn = () => {
-    // In a real app, you would authenticate the user here
-    router.replace('/(tabs)');
+  const handleSignIn = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter both email and password');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await login(email, password);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      await loginWithGoogle();
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      if (error.message && !error.message.includes('canceled')) {
+        Alert.alert('Google Sign-In Failed', error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    try {
+      setLoading(true);
+      await loginWithApple();
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      if (error.message && !error.message.includes('canceled')) {
+        Alert.alert('Apple Sign-In Failed', error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignUp = () => {
@@ -72,13 +117,21 @@ export default function LoginScreen() {
             <Text style={styles.title}>Sign into your account</Text>
             
             {/* Google Sign In Button */}
-            <TouchableOpacity style={styles.socialButton}>
+            <TouchableOpacity 
+              style={[styles.socialButton, loading && styles.disabledButton]} 
+              onPress={handleGoogleSignIn}
+              disabled={loading}
+            >
               <GoogleIcon />
               <Text style={styles.socialButtonText}>Sign in with Google</Text>
             </TouchableOpacity>
             
             {/* Apple Sign In Button */}
-            <TouchableOpacity style={styles.socialButton}>
+            <TouchableOpacity 
+              style={[styles.socialButton, loading && styles.disabledButton]} 
+              onPress={handleAppleSignIn}
+              disabled={loading}
+            >
               <AppleIcon />
               <Text style={styles.socialButtonText}>Sign in with Apple</Text>
             </TouchableOpacity>
@@ -123,13 +176,21 @@ export default function LoginScreen() {
             </TouchableOpacity>
             
             {/* Sign In Button */}
-            <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-              <Text style={styles.signInButtonText}>Sign in</Text>
+            <TouchableOpacity 
+              style={[styles.signInButton, loading && styles.disabledButton]} 
+              onPress={handleSignIn}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.signInButtonText}>Sign in</Text>
+              )}
             </TouchableOpacity>
             
             {/* Sign Up Link */}
             <View style={styles.signUpContainer}>
-              <Text style={styles.signUpText}>Don't Have an account? </Text>
+              <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
               <TouchableOpacity onPress={handleSignUp}>
                 <Text style={styles.signUpLink}>SignUp</Text>
               </TouchableOpacity>
@@ -287,5 +348,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Poppins',
     lineHeight: 15,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });

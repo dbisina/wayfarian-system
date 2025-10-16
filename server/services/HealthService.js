@@ -235,8 +235,13 @@ class HealthService {
         };
       }
 
-      // Test a simple geocoding request
-      await mapsService.reverseGeocode(37.7749, -122.4194); // San Francisco
+      // Test a simple geocoding request with timeout
+      const geocodePromise = mapsService.reverseGeocode(37.7749, -122.4194); // San Francisco
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Geocoding timeout')), 3000)
+      );
+      
+      await Promise.race([geocodePromise, timeoutPromise]);
       
       const responseTime = Date.now() - startTime;
       
@@ -249,10 +254,16 @@ class HealthService {
         },
       };
     } catch (error) {
+      const responseTime = Date.now() - startTime;
+      
       return {
-        status: 'unhealthy',
-        responseTime: Date.now() - startTime,
-        error: error.message,
+        status: 'degraded',
+        responseTime,
+        warning: `Google Maps API test failed: ${error.message}`,
+        details: {
+          service: 'Google Maps API',
+          error: error.message,
+        },
       };
     }
   }

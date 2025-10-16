@@ -3,21 +3,42 @@
 const admin = require('firebase-admin');
 
 // Initialize Firebase Admin SDK (for server-side operations)
+let firebaseInitialized = false;
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
+  try {
+    // Check if all required Firebase environment variables are present
+    if (process.env.FIREBASE_PROJECT_ID && 
+        process.env.FIREBASE_CLIENT_EMAIL && 
+        process.env.FIREBASE_PRIVATE_KEY) {
+      
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        }),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+      });
+      firebaseInitialized = true;
+      console.log('✅ Firebase Admin SDK initialized successfully');
+    } else {
+      console.warn('⚠️  Firebase credentials not found. Firebase features will be disabled.');
+      console.warn('   To enable Firebase, set the following environment variables:');
+      console.warn('   - FIREBASE_PROJECT_ID');
+      console.warn('   - FIREBASE_CLIENT_EMAIL');
+      console.warn('   - FIREBASE_PRIVATE_KEY');
+      console.warn('   - FIREBASE_STORAGE_BUCKET (optional)');
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize Firebase Admin SDK:', error.message);
+    console.warn('   Firebase features will be disabled.');
+  }
 }
 
-// Firebase Admin services
-const adminAuth = admin.auth();
-const adminStorage = admin.storage();
-const adminDb = admin.firestore();
+// Firebase Admin services (only if initialized)
+const adminAuth = firebaseInitialized ? admin.auth() : null;
+const adminStorage = firebaseInitialized ? admin.storage() : null;
+const adminDb = firebaseInitialized ? admin.firestore() : null;
 
 /**
  * Verify Firebase ID token
@@ -25,6 +46,9 @@ const adminDb = admin.firestore();
  * @returns {Promise<object>} - Decoded token
  */
 const verifyIdToken = async (idToken) => {
+  if (!firebaseInitialized || !adminAuth) {
+    throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
+  }
   try {
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     return decodedToken;
@@ -39,6 +63,9 @@ const verifyIdToken = async (idToken) => {
  * @returns {Promise<string>} - Custom token
  */
 const createCustomToken = async (uid) => {
+  if (!firebaseInitialized || !adminAuth) {
+    throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
+  }
   try {
     const customToken = await adminAuth.createCustomToken(uid);
     return customToken;
@@ -56,6 +83,9 @@ const createCustomToken = async (uid) => {
  * @returns {Promise<string>} - Download URL
  */
 const uploadToStorage = async (fileBuffer, fileName, contentType, folder = 'uploads') => {
+  if (!firebaseInitialized || !adminStorage) {
+    throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
+  }
   try {
     const bucket = adminStorage.bucket();
     const file = bucket.file(`${folder}/${fileName}`);
@@ -81,6 +111,10 @@ const uploadToStorage = async (fileBuffer, fileName, contentType, folder = 'uplo
  * @returns {Promise<void>}
  */
 const deleteFromStorage = async (filePath) => {
+  if (!firebaseInitialized || !adminStorage) {
+    console.warn('Firebase is not initialized. Cannot delete file from storage.');
+    return;
+  }
   try {
     const bucket = adminStorage.bucket();
     await bucket.file(filePath).delete();
@@ -94,6 +128,7 @@ module.exports = {
   adminAuth,
   adminStorage,
   adminDb,
+  firebaseInitialized,
   verifyIdToken,
   createCustomToken,
   uploadToStorage,

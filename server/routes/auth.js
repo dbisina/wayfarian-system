@@ -61,7 +61,28 @@ router.post(
  * @desc Register new user (same as login - Firebase handles registration)
  * @access Public
  */
-router.post('/register', router.stack.find(layer => layer.route.path === '/login').route.stack);
+router.post(
+  '/register',
+  [
+    body('idToken')
+      .notEmpty()
+      .withMessage('Firebase ID token is required'),
+    body('phoneNumber')
+      .optional()
+      .isMobilePhone()
+      .withMessage('Invalid phone number format'),
+    body('displayName')
+      .optional()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Display name must be between 1 and 50 characters'),
+    body('photoURL')
+      .optional()
+      .isURL()
+      .withMessage('Invalid photo URL format'),
+  ],
+  handleValidationErrors,
+  authenticateUser
+);
 
 /**
  * @route POST /api/auth/refresh

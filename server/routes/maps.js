@@ -295,6 +295,98 @@ router.get(
 );
 
 /**
+ * @route GET /api/maps/autocomplete
+ * @desc Autocomplete place predictions for a given input
+ * @access Private
+ */
+router.get(
+  '/autocomplete',
+  [
+    query('input').notEmpty().withMessage('Input is required'),
+    query('latitude').optional().isFloat({ min: -90, max: 90 }),
+    query('longitude').optional().isFloat({ min: -180, max: 180 }),
+    query('radius').optional().isInt({ min: 100, max: 50000 }),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { input, latitude, longitude, radius = 20000 } = req.query;
+      const predictions = await mapsService.autocomplete(
+        input,
+        latitude ? parseFloat(latitude) : undefined,
+        longitude ? parseFloat(longitude) : undefined,
+        parseInt(radius)
+      );
+      res.json({ success: true, predictions });
+    } catch (error) {
+      console.error('Autocomplete error:', error);
+      res.status(500).json({ error: 'Failed to get autocomplete predictions', message: error.message });
+    }
+  }
+);
+
+/**
+ * @route GET /api/places/nearby
+ * @desc Find nearby places (alias for /api/maps/nearby-places)
+ * @access Private
+ */
+router.get(
+  '/nearby',
+  [
+    query('latitude')
+      .isFloat({ min: -90, max: 90 })
+      .withMessage('Latitude must be between -90 and 90'),
+    query('longitude')
+      .isFloat({ min: -180, max: 180 })
+      .withMessage('Longitude must be between -180 and 180'),
+    query('type')
+      .optional()
+      .isIn([
+        'gas_station', 'hospital', 'restaurant', 'lodging', 'atm',
+        'bank', 'pharmacy', 'police', 'car_repair', 'tourist_attraction',
+        'shopping_mall', 'supermarket', 'convenience_store'
+      ])
+      .withMessage('Invalid place type'),
+    query('radius')
+      .optional()
+      .isInt({ min: 100, max: 50000 })
+      .withMessage('Radius must be between 100 and 50000 meters'),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { latitude, longitude, type = 'point_of_interest', radius = 5000 } = req.query;
+      
+      const places = await mapsService.findNearbyPlaces(
+        parseFloat(latitude),
+        parseFloat(longitude),
+        type,
+        parseInt(radius)
+      );
+
+      res.json({
+        success: true,
+        places,
+        searchParams: {
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          type,
+          radius: parseInt(radius),
+        },
+        count: places.length,
+      });
+      
+    } catch (error) {
+      console.error('Nearby places error:', error);
+      res.status(500).json({
+        error: 'Failed to find nearby places',
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
  * @route GET /api/maps/journey-suggestions
  * @desc Get suggested places for current journey
  * @access Private

@@ -4,8 +4,6 @@
 const { verifyIdToken } = require('../services/Firebase');
 const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
-
 /**
  * Middleware to verify Firebase token and attach user to request
  */
@@ -13,53 +11,47 @@ const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
-        error: 'Authorization header missing',
-        message: 'Please provide a valid token',
+        error: 'Unauthorized',
+        message: 'No authentication token provided',
       });
     }
-    
-    const token = authHeader.split(' ')[1]; // Bearer <token>
-    
-    if (!token) {
+
+    const token = authHeader.substring(7);
+
+    let decodedToken;
+    try {
+      decodedToken = await verifyIdToken(token);
+    } catch (firebaseError) {
+      console.error('Firebase token verification failed:', firebaseError);
       return res.status(401).json({
-        error: 'Token missing',
-        message: 'Please provide a valid token',
+        error: 'Invalid token',
+        message: 'The authentication token is invalid or expired',
       });
     }
-    
-    // Verify Firebase token
-    const decodedToken = await verifyIdToken(token);
-    
-    // Get or create user in database
-    let user = await prisma.user.findUnique({
+
+    req.firebaseUser = decodedToken;
+
+    const prisma = new PrismaClient();
+    const user = await prisma.user.findUnique({
       where: { firebaseUid: decodedToken.uid },
     });
-    
+
     if (!user) {
-      // Create new user if doesn't exist
-      user = await prisma.user.create({
-        data: {
-          firebaseUid: decodedToken.uid,
-          email: decodedToken.email,
-          phoneNumber: decodedToken.phone_number,
-          displayName: decodedToken.name,
-          photoURL: decodedToken.picture,
-        },
+      return res.status(401).json({
+        error: 'User not found',
+        message: 'User account not found in database',
       });
     }
-    
-    // Attach user to request
+
     req.user = user;
-    req.firebaseUser = decodedToken;
-    
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    return res.status(401).json({
-      error: 'Invalid token',
-      message: 'Please login again',
+    return res.status(500).json({
+      error: 'Authentication failed',
+      message: error.message,
     });
   }
 };

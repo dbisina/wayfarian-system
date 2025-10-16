@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AuthProvider } from '../contexts/AuthContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -12,30 +13,27 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check authentication and onboarding status
-    // This would typically check AsyncStorage or your auth service
-    const checkAuthStatus = async () => {
+    // Check onboarding status
+    const checkOnboardingStatus = async () => {
       try {
-        // Simulate checking auth status
+        // Simulate checking onboarding status
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         // For now, we'll start with onboarding not completed
-        // In a real app, you'd check your auth token and onboarding status here
-        setIsAuthenticated(false);
+        // In a real app, you'd check your onboarding status here
         setHasCompletedOnboarding(false);
       } catch (error) {
-        console.error('Error checking auth status:', error);
+        console.error('Error checking onboarding status:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuthStatus();
+    checkOnboardingStatus();
   }, []);
 
   if (isLoading) {
@@ -45,18 +43,21 @@ export default function RootLayout() {
   const stackScreenOptions = { headerShown: false };
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={stackScreenOptions}>
-        {!hasCompletedOnboarding ? (
-          <Stack.Screen name="(onboarding)" />
-        ) : !isAuthenticated ? (
-          <Stack.Screen name="(auth)" />
-        ) : (
-          <Stack.Screen name="(tabs)" />
-        )}
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack screenOptions={stackScreenOptions}>
+          {!hasCompletedOnboarding ? (
+            <Stack.Screen name="(onboarding)" />
+          ) : (
+            <>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+            </>
+          )}
+          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </AuthProvider>
   );
 }

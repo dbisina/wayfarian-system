@@ -9,9 +9,12 @@ import {
   ImageBackground,
   ScrollView,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -21,10 +24,62 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { register, loginWithGoogle, loginWithApple } = useAuth();
 
-  const handleSignUp = () => {
-    // In a real app, you would register the user here
-    router.replace('/(tabs)');
+  const handleSignUp = async () => {
+    if (!name || !email || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    if (!agreeToTerms) {
+      Alert.alert('Error', 'Please agree to the terms and conditions');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await register(email, password, name);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      Alert.alert('Registration Failed', error.message || 'An error occurred during registration');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      await loginWithGoogle();
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      if (error.message && !error.message.includes('canceled')) {
+        Alert.alert('Google Sign-In Failed', error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    try {
+      setLoading(true);
+      await loginWithApple();
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      if (error.message && !error.message.includes('canceled')) {
+        Alert.alert('Apple Sign-In Failed', error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignIn = () => {
@@ -80,13 +135,21 @@ export default function RegisterScreen() {
               <Text style={styles.title}>Sign into your account</Text>
               
               {/* Google Sign In Button */}
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity 
+                style={[styles.socialButton, loading && styles.disabledButton]} 
+                onPress={handleGoogleSignIn}
+                disabled={loading}
+              >
                 <GoogleIcon />
                 <Text style={styles.socialButtonText}>Sign in with Google</Text>
               </TouchableOpacity>
               
               {/* Apple Sign In Button */}
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity 
+                style={[styles.socialButton, loading && styles.disabledButton]} 
+                onPress={handleAppleSignIn}
+                disabled={loading}
+              >
                 <AppleIcon />
                 <Text style={styles.socialButtonText}>Sign in with Apple</Text>
               </TouchableOpacity>
@@ -162,13 +225,21 @@ export default function RegisterScreen() {
               </View>
               
               {/* Sign In Button */}
-              <TouchableOpacity style={styles.signInButton} onPress={handleSignUp}>
-                <Text style={styles.signInButtonText}>Sign in</Text>
+              <TouchableOpacity 
+                style={[styles.signInButton, loading && styles.disabledButton]} 
+                onPress={handleSignUp}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.signInButtonText}>Sign up</Text>
+                )}
               </TouchableOpacity>
               
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don't Have an account? </Text>
+                <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
                 <TouchableOpacity onPress={handleSignIn}>
                   <Text style={styles.signUpLink}>SignUp</Text>
                 </TouchableOpacity>
@@ -339,5 +410,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Poppins',
     lineHeight: 15,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });

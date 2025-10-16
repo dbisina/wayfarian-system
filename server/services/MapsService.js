@@ -310,6 +310,52 @@ class MapsService {
       longitude <= 180
     );
   }
+
+  /**
+   * Places Autocomplete predictions
+   * @param {string} input - user input
+   * @param {number} [latitude]
+   * @param {number} [longitude]
+   * @param {number} [radius]
+   * @returns {Promise<Array>} predictions
+   */
+  async autocomplete(input, latitude, longitude, radius = 20000) {
+    if (!this.googleMapsApiKey) {
+      throw new Error('Google Maps API key not configured');
+    }
+
+    try {
+      const params = {
+        input,
+        key: this.googleMapsApiKey,
+        types: 'geocode',
+      };
+      if (this.isValidCoordinate(latitude, longitude)) {
+        params.location = `${latitude},${longitude}`;
+        params.radius = radius;
+      }
+
+      const response = await axios.get('https://maps.googleapis.com/maps/api/place/autocomplete/json', {
+        params,
+        timeout: 8000,
+      });
+
+      if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
+        throw new Error(`Places Autocomplete error: ${response.data.status}`);
+      }
+
+      return response.data.predictions.map(p => ({
+        id: p.place_id,
+        placeId: p.place_id,
+        description: p.description,
+        structured: p.structured_formatting,
+        types: p.types,
+      }));
+    } catch (error) {
+      console.error('Autocomplete service error:', error);
+      throw new Error('Failed to get autocomplete predictions');
+    }
+  }
 }
 
 module.exports = new MapsService();

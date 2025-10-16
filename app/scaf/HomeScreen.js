@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,57 +7,23 @@ import {
   Image,
   TouchableOpacity,
   SafeAreaView,
-  ActivityIndicator,
-  RefreshControl,
 } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
-import { useUserData } from '../../hooks/useUserData';
+import { LinearGradient } from 'expo-linear-gradient';
+import ActivityModal from './ActivityModal';
 
+const HomeScreen = ({ onNavigate }) => {
+  const [modalVisible, setModalVisible] = useState(false);
 
-export default function HomeScreen(): React.JSX.Element {
-  const { user, isAuthenticated } = useAuth();
-  const { dashboardData, achievements, loading, refreshData } = useUserData();
-
-  const formatDistance = (distance: number) => {
-    if (distance >= 1000) {
-      return `${(distance / 1000).toFixed(1)}K km`;
-    }
-    return `${distance.toFixed(0)} km`;
+  const handleFloatingButtonPress = () => {
+    setModalVisible(true);
   };
 
-  const formatTime = (timeInSeconds: number) => {
-    const hours = Math.floor(timeInSeconds / 3600);
-    const minutes = Math.floor((timeInSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+  const handleCloseModal = () => {
+    setModalVisible(false);
   };
-
-  const formatSpeed = (speed: number) => {
-    return `${speed.toFixed(0)} km/h`;
-  };
-
-  const onRefresh = async () => {
-    await refreshData();
-  };
-
-  if (!isAuthenticated) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>Please log in to view your dashboard</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView 
-        style={styles.scrollView} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onRefresh} />
-        }
-      >
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Background Image */}
         <View style={styles.backgroundImageContainer}>
           <Image
@@ -85,19 +51,13 @@ export default function HomeScreen(): React.JSX.Element {
         {/* User Profile Section */}
         <View style={styles.profileSection}>
           <Image
-            source={{ 
-              uri: dashboardData?.user?.photoURL || user?.photoURL || 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' 
-            }}
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' }}
             style={styles.userAvatar}
           />
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>
-              {dashboardData?.user?.displayName || user?.displayName || 'User'}
-            </Text>
+            <Text style={styles.userName}>Alex Ryder</Text>
             <Text style={styles.userRank}>Explorer Rank</Text>
-            <Text style={styles.userStats}>
-              {formatDistance(dashboardData?.user?.totalDistance || 0)} | {formatTime(dashboardData?.user?.totalTime || 0)} | {achievements.length} Badges
-            </Text>
+            <Text style={styles.userStats}>1,234 mi | 24h 30m | 3 Badges</Text>
           </View>
         </View>
 
@@ -106,45 +66,21 @@ export default function HomeScreen(): React.JSX.Element {
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Distance Covered</Text>
-              <Text style={styles.statValue}>
-                {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
-                ) : (
-                  formatDistance(dashboardData?.user?.totalDistance || 0)
-                )}
-              </Text>
+              <Text style={styles.statValue}>1,234Kms</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Time Traveled</Text>
-              <Text style={styles.statValue}>
-                {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
-                ) : (
-                  formatTime(dashboardData?.user?.totalTime || 0)
-                )}
-              </Text>
+              <Text style={styles.statValue}>24h 30m</Text>
             </View>
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Avg. Speed</Text>
-              <Text style={styles.statValue}>
-                {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
-                ) : (
-                  formatSpeed((dashboardData?.user?.totalDistance || 0) / Math.max((dashboardData?.user?.totalTime || 1) / 3600, 0.1))
-                )}
-              </Text>
+              <Text style={styles.statValue}>55 km/hr</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Max Speed</Text>
-              <Text style={styles.statValue}>
-                {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
-                ) : (
-                  formatSpeed(dashboardData?.user?.topSpeed || 0)
-                )}
-              </Text>
+              <Text style={styles.statValue}>120 km/hr</Text>
             </View>
           </View>
         </View>
@@ -169,29 +105,36 @@ export default function HomeScreen(): React.JSX.Element {
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.achievementsScroll}>
           <View style={styles.achievementsContainer}>
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#F9A825" />
-                <Text style={styles.loadingText}>Loading achievements...</Text>
+            <View style={styles.achievementCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/HD67ooi8mi.png' }}
+                style={styles.achievementImage}
+              />
+              <View style={styles.achievementInfo}>
+                <Text style={styles.achievementTitle}>First Trip</Text>
+                <Text style={styles.achievementDescription}>Completed your first journey</Text>
               </View>
-            ) : achievements.length > 0 ? (
-              achievements.slice(0, 3).map((achievement, index) => (
-                <View key={achievement.id} style={styles.achievementCard}>
-                  <View style={styles.achievementImagePlaceholder}>
-                    <Text style={styles.achievementEmoji}>{achievement.icon}</Text>
-                  </View>
-                  <View style={styles.achievementInfo}>
-                    <Text style={styles.achievementTitle}>{achievement.name}</Text>
-                    <Text style={styles.achievementDescription}>{achievement.description}</Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No achievements yet</Text>
-                <Text style={styles.emptySubtext}>Start your first journey to unlock achievements!</Text>
+            </View>
+            <View style={styles.achievementCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/nnx5Ci3RSL.png' }}
+                style={styles.achievementImage}
+              />
+              <View style={styles.achievementInfo}>
+                <Text style={styles.achievementTitle}>Speed Demon</Text>
+                <Text style={styles.achievementDescription}>Reached 100 mph</Text>
               </View>
-            )}
+            </View>
+            <View style={styles.achievementCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/DhOvD6RmG6.png' }}
+                style={styles.achievementImage}
+              />
+              <View style={styles.achievementInfo}>
+                <Text style={styles.achievementTitle}>Longest Drive</Text>
+                <Text style={styles.achievementDescription}>Drove over 500 miles</Text>
+              </View>
+            </View>
           </View>
         </ScrollView>
 
@@ -202,33 +145,36 @@ export default function HomeScreen(): React.JSX.Element {
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.journeysScroll}>
           <View style={styles.journeysContainer}>
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#F9A825" />
-                <Text style={styles.loadingText}>Loading journeys...</Text>
+            <View style={styles.journeyCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/gmFMEnG4Kf.png' }}
+                style={styles.journeyImage}
+              />
+              <View style={styles.journeyInfo}>
+                <Text style={styles.journeyTitle}>Mountain Pass Adventure</Text>
+                <Text style={styles.journeyStats}>250 mi | 5h 15m</Text>
               </View>
-            ) : dashboardData?.recentJourneys && dashboardData.recentJourneys.length > 0 ? (
-              dashboardData.recentJourneys.map((journey, index) => (
-                <View key={journey.id} style={styles.journeyCard}>
-                  <View style={styles.journeyImagePlaceholder}>
-                    <Text style={styles.journeyEmoji}>🚗</Text>
-                  </View>
-                  <View style={styles.journeyInfo}>
-                    <Text style={styles.journeyTitle}>
-                      {journey.title || `Journey ${index + 1}`}
-                    </Text>
-                    <Text style={styles.journeyStats}>
-                      {formatDistance(journey.totalDistance || 0)} | {formatTime(journey.totalTime || 0)}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No journeys yet</Text>
-                <Text style={styles.emptySubtext}>Start your first journey to see it here!</Text>
+            </View>
+            <View style={styles.journeyCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/meDu0nZOE8.png' }}
+                style={styles.journeyImage}
+              />
+              <View style={styles.journeyInfo}>
+                <Text style={styles.journeyTitle}>Night City Cruise</Text>
+                <Text style={styles.journeyStats}>180 mi | 3h 45m</Text>
               </View>
-            )}
+            </View>
+            <View style={styles.journeyCard}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/xWo3Tmd2Sk.png' }}
+                style={styles.journeyImage}
+              />
+              <View style={styles.journeyInfo}>
+                <Text style={styles.journeyTitle}>Coastal Escape</Text>
+                <Text style={styles.journeyStats}>320 mi | 6h 30m</Text>
+              </View>
+            </View>
           </View>
         </ScrollView>
 
@@ -242,6 +188,59 @@ export default function HomeScreen(): React.JSX.Element {
             <Text style={styles.startJourneyText}>Start Journey</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Bottom Navigation */}
+        <View style={styles.bottomNavigation}>
+          <TouchableOpacity style={styles.navItemActive}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-10-15/y2W4CRNORb.png' }}
+              style={styles.navIcon}
+            />
+            <Text style={styles.navText}>Home</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-10-15/1bd3DwwpQG.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+
+          {/* Floating Center Button */}
+          <View style={styles.floatingButtonContainer}>
+            <TouchableOpacity 
+              style={styles.floatingButton}
+              onPress={handleFloatingButtonPress}
+            >
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-10-15/sZMbhKBvpn.png' }}
+                style={styles.floatingIcon}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.navItem}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-10-15/g0HQMrSGro.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.navItem}
+            onPress={() => onNavigate('ridelog')}
+          >
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-10-15/tQcweNppVu.png' }}
+              style={styles.navIcon}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <ActivityModal 
+          visible={modalVisible} 
+          onClose={handleCloseModal} 
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -513,76 +512,51 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     lineHeight: 24,
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  bottomNavigation: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    marginHorizontal: 22,
+    marginBottom: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    gap: 33,
+    shadowColor: '#000',
+    shadowOffset: { width: 1, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Space Grotesk',
-  },
-  loadingContainer: {
-    width: 160,
-    height: 160,
-    justifyContent: 'center',
+  navItem: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
+    justifyContent: 'center',
   },
-  loadingText: {
-    marginTop: 8,
+  navItemActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    gap: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2.2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  navIcon: {
+    width: 24,
+    height: 24,
+  },
+  navText: {
+    fontFamily: 'Poppins',
     fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Space Grotesk',
-  },
-  emptyContainer: {
-    width: 160,
-    height: 160,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
-    padding: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Space Grotesk',
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  emptySubtext: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'center',
-    fontFamily: 'Space Grotesk',
-  },
-  achievementImagePlaceholder: {
-    width: 160,
-    height: 160,
-    backgroundColor: 'rgba(249, 168, 37, 0.1)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  achievementEmoji: {
-    fontSize: 48,
-  },
-  journeyImagePlaceholder: {
-    width: 160,
-    height: 90,
-    backgroundColor: 'rgba(62, 71, 81, 0.1)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  journeyEmoji: {
-    fontSize: 32,
+    fontWeight: '400',
+    color: '#000000',
+    lineHeight: 18,
   },
 });
+
+export default HomeScreen;

@@ -253,6 +253,7 @@ app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRo
 app.use('/api/group', authMiddleware, groupRoutes);
 app.use('/api/user', authMiddleware, userRoutes);
 app.use('/api/maps', authMiddleware, cacheMaps(1800), mapsRoutes);
+app.use('/api/places', authMiddleware, cacheMaps(1800), mapsRoutes);
 
 // System and admin endpoints
 app.get('/api/system/status', authMiddleware, (req, res) => {
@@ -395,7 +396,7 @@ app.use((err, req, res, next) => {
     return res.status(409).json({
       error: 'Conflict',
       message: 'A record with this information already exists',
-    });`
+    });
   }
   
   if (err.code === 'P2025') { // Prisma record not found

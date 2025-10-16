@@ -3,8 +3,10 @@
   "compilerOptions": {
     "strict": true,
     "jsx": "react-jsx",
+    "module": "ESNext",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+  "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "paths": {
       "@/*": [

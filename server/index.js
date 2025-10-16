@@ -8,7 +8,7 @@ const healthService = require('./services/HealthService');
 const logger = require('./services/Logger');
 const { startMetricsLogging } = require('./middleware/logging');
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5001;
 
 // Create HTTP server
 const server = http.createServer(app);

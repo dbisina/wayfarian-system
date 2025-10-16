@@ -8,6 +8,8 @@ const {
   endJourney,
   getJourneyHistory,
   getActiveJourney,
+  pauseJourney,
+  resumeJourney,
 } = require("../controllers/journeyController");
 const { body, param, query, validationResult } = require("express-validator");
 
@@ -99,6 +101,30 @@ router.put(
   ],
   handleValidationErrors,
   endJourney
+);
+
+/**
+ * @route POST /api/journey/:journeyId/pause
+ * @desc Pause an active journey
+ * @access Private
+ */
+router.post(
+  "/:journeyId/pause",
+  [param("journeyId").isUUID().withMessage("Invalid journey ID")],
+  handleValidationErrors,
+  pauseJourney
+);
+
+/**
+ * @route POST /api/journey/:journeyId/resume
+ * @desc Resume a paused journey
+ * @access Private
+ */
+router.post(
+  "/:journeyId/resume",
+  [param("journeyId").isUUID().withMessage("Invalid journey ID")],
+  handleValidationErrors,
+  resumeJourney
 );
 
 /**

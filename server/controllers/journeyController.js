@@ -347,4 +347,58 @@ module.exports = {
   endJourney,
   getJourneyHistory,
   getActiveJourney,
+  pauseJourney: async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const userId = req.user.id;
+
+      const journey = await prisma.journey.findFirst({
+        where: { id: journeyId, userId, status: 'ACTIVE' },
+      });
+
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Active journey not found for this user',
+        });
+      }
+
+      const updated = await prisma.journey.update({
+        where: { id: journeyId },
+        data: { status: 'PAUSED', updatedAt: new Date() },
+      });
+
+      res.json({ success: true, message: 'Journey paused', journey: updated });
+    } catch (error) {
+      console.error('Pause journey error:', error);
+      res.status(500).json({ error: 'Failed to pause journey', message: error.message });
+    }
+  },
+  resumeJourney: async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const userId = req.user.id;
+
+      const journey = await prisma.journey.findFirst({
+        where: { id: journeyId, userId, status: 'PAUSED' },
+      });
+
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Paused journey not found for this user',
+        });
+      }
+
+      const updated = await prisma.journey.update({
+        where: { id: journeyId },
+        data: { status: 'ACTIVE', updatedAt: new Date() },
+      });
+
+      res.json({ success: true, message: 'Journey resumed', journey: updated });
+    } catch (error) {
+      console.error('Resume journey error:', error);
+      res.status(500).json({ error: 'Failed to resume journey', message: error.message });
+    }
+  },
 };

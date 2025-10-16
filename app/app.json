@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map."
+      },
+      "bundleIdentifier": "com.wayfarian.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +24,19 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "package": "com.wayfarian.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyC6su5LGyJVGf8bxKR4q-C9CHx4l0crbxY"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -38,7 +55,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

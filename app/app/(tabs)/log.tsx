@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -8,60 +8,96 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/AuthContext';
+import { userAPI, leaderboardAPI } from '../../services/api';
+
+type JourneyItem = {
+  id: string;
+  title?: string;
+  startTime?: string;
+  endTime?: string;
+  totalDistance?: number;
+  totalTime?: number;
+  group?: { id: string; name: string } | null;
+};
 
 export default function RideLogScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const { isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState('solo');
+  const [rank, setRank] = useState<number | null>(null);
+  const [xpProgress, setXpProgress] = useState<number>(0);
+  const [nextBadge, setNextBadge] = useState<string>('');
+  const [badges, setBadges] = useState<Array<{ id: string; title: string; imageUrl?: string }>>([]);
+  const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
+  const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const badges = [
-    {
-      id: '1',
-      title: 'Night owl',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/My2ufzutha.png',
-    },
-    {
-      id: '2',
-      title: 'Traveller',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/5GkepzddaS.png',
-    },
-    {
-      id: '3',
-      title: '',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/PmajHDA836.png',
-    },
-    {
-      id: '4',
-      title: '',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/N7NCwakBh8.png',
-    },
-  ];
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [positionRes, achievementsRes, historyRes] = await Promise.all([
+          leaderboardAPI.getUserPosition(),
+          userAPI.getAchievements(),
+          userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
+        ]);
 
-  const challenges = [
-    {
-      id: '1',
-      title: 'First to Finish',
-      duration: '3hrs 30 mins',
-      distance: '10ml',
-      status: 'In Progress',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/HfzG68QRKx.png',
-    },
-    {
-      id: '2',
-      title: 'First to Finish',
-      duration: '3hrs 30 mins',
-      distance: '10ml',
-      status: 'In Progress',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/2AzqFqH67Z.png',
-    },
-    {
-      id: '3',
-      title: 'First to Finish',
-      duration: '3hrs 30 mins',
-      distance: '10ml',
-      status: 'In Progress',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/3JqXwaabXQ.png',
-    },
-  ];
+        const position = positionRes?.position ?? positionRes?.rank ?? null;
+        if (typeof position === 'number') setRank(position);
+
+        // XP Progress and next badge
+        const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
+        setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
+
+        // Find next locked tier name as next badge
+        let nextName = 'Next milestone';
+        const ach = achievementsRes?.achievements || [];
+        for (const a of ach) {
+          const locked = (a.tiers || []).find((t: any) => !t.unlocked);
+          if (locked) { nextName = locked.name || a.name; break; }
+        }
+        setNextBadge(nextName);
+
+        // Build badges from unlocked tiers (top 4)
+        const unlockedBadges: Array<{ id: string; title: string }> = [];
+        ach.forEach((a: any) => {
+          (a.tiers || []).forEach((t: any) => {
+            if (t.unlocked) unlockedBadges.push({ id: `${a.id}_${t.level}`, title: t.name || a.name });
+          });
+        });
+        setBadges(unlockedBadges.slice(0, 4));
+
+        // Split journeys into solo vs group
+        const journeys: JourneyItem[] = historyRes?.journeys || [];
+        const solo = journeys.filter(j => !j.group).slice(0, 5);
+        const group = journeys.filter(j => !!j.group).slice(0, 5);
+        setSoloJourneys(solo);
+        setGroupJourneys(group);
+
+      } catch (e) {
+        console.warn('Log screen data load failed', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [isAuthenticated]);
+
+  const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
+
+  const formatDistance = (km?: number) => {
+    if (!km || km <= 0) return '0 km';
+    return `${km.toFixed(1)} km`;
+  };
+  const formatDuration = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return '0m';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -70,29 +106,35 @@ export default function RideLogScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Progress Card */}
+        {/* Progress Card with Rank and XP from backend */}
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
-            <Text style={styles.explorerBadge}>Explorer</Text>
+            <Text style={styles.explorerBadge}>{rank ? `Rank #${rank}` : 'Rank —'}</Text>
           </View>
-          <Text style={styles.progressSubtitle}>The road is your XP keep going buddy!</Text>
+          <Text style={styles.progressSubtitle}>The road is your XP — keep going buddy!</Text>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBarBackground}>
-              <View style={styles.progressBarFill} />
+              <View style={[styles.progressBarFill, { width: formattedProgressWidth as any }]} />
             </View>
           </View>
-          <Text style={styles.nextBadgeText}>Next badge: <Text style={styles.trailblazerText}>Trailblazer</Text></Text>
+          <Text style={styles.nextBadgeText}>Next badge: <Text style={styles.trailblazerText}>{nextBadge || '—'}</Text></Text>
         </View>
         
         {/* Badges Section */}
         <View style={styles.badgesSection}>
           <View style={styles.badgesGrid}>
-            {badges.map((badge) => (
-              <View key={badge.id} style={styles.badgeContainer}>
-                <Image source={{uri: badge.imageUrl}} style={styles.badgeImage} />
-                {badge.title ? <Text style={styles.badgeTitle}>{badge.title}</Text> : null}
-              </View>
-            ))}
+            {badges.length === 0 ? (
+              <Text style={styles.badgeTitle}>No badges yet — start riding!</Text>
+            ) : (
+              badges.map((badge) => (
+                <View key={badge.id} style={styles.badgeContainer}>
+                  <View style={[styles.badgeImage, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={{ fontSize: 20 }}>🏅</Text>
+                  </View>
+                  {badge.title ? <Text style={styles.badgeTitle}>{badge.title}</Text> : null}
+                </View>
+              ))
+            )}
           </View>
         </View>
 
@@ -124,30 +166,56 @@ export default function RideLogScreen(): React.JSX.Element {
           </TouchableOpacity>
         </View>
 
-        {/* Challenges Section */}
-        <View style={styles.challengesSection}>
-          {challenges.map((challenge) => (
-            <View key={challenge.id} style={styles.challengeCard}>
-              <Image source={{uri: challenge.imageUrl}} style={styles.challengeImage} />
-              <View style={styles.challengeContent}>
-                <Text style={styles.challengeTitle}>{challenge.title}</Text>
-                <Text style={styles.challengeDuration}>{challenge.duration}</Text>
-                <Text style={styles.challengeDistance}>{challenge.distance}</Text>
-                <View style={styles.challengeProgressContainer}>
-                  <View style={styles.challengeProgressBar}>
-                    <View style={styles.challengeProgressFill} />
+        {/* Rides Sections */}
+        {activeTab === 'solo' && (
+          <View style={styles.challengesSection}>
+            {soloJourneys.length === 0 ? (
+              <Text style={styles.badgeTitle}>No solo rides yet</Text>
+            ) : (
+              soloJourneys.map((j) => (
+                <View key={j.id} style={styles.challengeCard}>
+                  <Image source={{uri: 'https://static.codia.ai/image/2025-10-15/9X5p0f7nOs.png'}} style={styles.challengeImage} />
+                  <View style={styles.challengeContent}>
+                    <Text style={styles.challengeTitle}>{j.title || 'Solo Ride'}</Text>
+                    <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
+                    <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
+                    <View style={styles.challengeProgressContainer}>
+                      <Text style={styles.challengeStatus}>{new Date(j.startTime || '').toDateString()}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.challengeStatus}>{challenge.status}</Text>
                 </View>
-              </View>
-            </View>
-          ))}
-        </View>
+              ))
+            )}
+          </View>
+        )}
 
-        {/* View All Button */}
-        <TouchableOpacity style={styles.viewAllButton}>
-          <Text style={styles.viewAllText}>View all challeges</Text>
-        </TouchableOpacity>
+        {activeTab === 'group' && (
+          <View style={styles.challengesSection}>
+            {groupJourneys.length === 0 ? (
+              <Text style={styles.badgeTitle}>No group rides yet</Text>
+            ) : (
+              groupJourneys.map((j) => (
+                <View key={j.id} style={styles.challengeCard}>
+                  <Image source={{uri: 'https://static.codia.ai/image/2025-10-15/4G6hGQ8wZ0.png'}} style={styles.challengeImage} />
+                  <View style={styles.challengeContent}>
+                    <Text style={styles.challengeTitle}>{j.title || j.group?.name || 'Group Ride'}</Text>
+                    <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
+                    <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
+                    <View style={styles.challengeProgressContainer}>
+                      <Text style={styles.challengeStatus}>{j.group?.name || ''}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        )}
+
+        {activeTab === 'challenges' && (
+          <View style={[styles.challengesSection, { alignItems: 'center' }]}>
+            <Text style={styles.challengeTitle}>Coming soon</Text>
+          </View>
+        )}
       </ScrollView>
 
     </View>
