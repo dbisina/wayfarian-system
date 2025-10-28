@@ -48,3 +48,25 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Google Maps and Directions API key
+
+This app uses Google Maps for the map view and the Google Directions API to render routes. Both use the same Google Maps API key.
+
+Setup options:
+
+- Preferred: define an environment variable `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` before building/running the app. Expo will inline this value into the client.
+
+Fallbacks supported by the app:
+
+- `GOOGLE_MAPS_API_KEY` env var
+- `ios.config.googleMapsApiKey` and `android.config.googleMaps.apiKey` in `app.json`
+- `expo.extra.googleMapsApiKey` in `app.json`
+
+Ensure the following Google APIs are enabled for your key:
+
+- Maps SDK for Android
+- Maps SDK for iOS
+- Directions API
+
+Tip: In production, consider using a server-side key for Directions API calls to avoid exposing secrets in the client. In this project, the same client key is used for Directions fetches to keep things simple.

@@ -175,6 +175,20 @@ app.use(securityLogger);
 app.use(performanceMonitor);
 app.use(apiLogger);
 
+// Friendly root route to help with quick manual checks
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'Wayfarian API is running',
+    tips: 'Use /health for a quick check or /api for available endpoints',
+    endpoints: {
+      health: '/health',
+      api: '/api',
+    },
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+  });
+});
+
 // Health check endpoints with caching
 app.get('/health', cacheHealth(30), (req, res) => {
   res.status(200).json({ 
@@ -252,8 +266,15 @@ app.use('/api/gallery', authMiddleware, galleryRoutes);
 app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRoutes);
 app.use('/api/group', authMiddleware, groupRoutes);
 app.use('/api/user', authMiddleware, userRoutes);
-app.use('/api/maps', authMiddleware, cacheMaps(1800), mapsRoutes);
-app.use('/api/places', authMiddleware, cacheMaps(1800), mapsRoutes);
+
+// In development, allow maps endpoints without database-backed auth so the app works offline/while DB is unavailable.
+if ((process.env.NODE_ENV || 'development') !== 'production') {
+  app.use('/api/maps', cacheMaps(1800), mapsRoutes);
+  app.use('/api/places', cacheMaps(1800), mapsRoutes);
+} else {
+  app.use('/api/maps', authMiddleware, cacheMaps(1800), mapsRoutes);
+  app.use('/api/places', authMiddleware, cacheMaps(1800), mapsRoutes);
+}
 
 // System and admin endpoints
 app.get('/api/system/status', authMiddleware, (req, res) => {

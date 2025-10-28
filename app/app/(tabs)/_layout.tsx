@@ -8,15 +8,7 @@ import { TAB_BAR_COLORS, SHADOW_COLORS } from '@/constants/theme';
 import { useAuth } from '../../contexts/AuthContext';
 import ActivityModal from '../../scaf/ActivityModal';
 
-// Import tab screen components directly so we can mount them in the curved bar
-import HomeScreen from './index';
-import MapScreen from './map';
-import RideLogScreen from './log';
-import LeaderboardScreen from './leaderboard';
-
-const HapticPressable: any = HapticTab as any;
-
-// Dynamic tab icon with adaptive spacing
+// Dynamic tab icon with pill-shaped embossment
 function AdaptiveTabIcon({ 
   color, 
   focused, 
@@ -31,76 +23,91 @@ function AdaptiveTabIcon({
   onFocusChange?: (focused: boolean) => void;
 }) {
   const pillWidth = useSharedValue(focused ? 1 : 0);
-  const iconScale = useSharedValue(focused ? 1.1 : 1);
+  const pillScale = useSharedValue(focused ? 1 : 0.95);
+  const iconScale = useSharedValue(focused ? 1.05 : 1);
   const textOpacity = useSharedValue(focused ? 1 : 0);
+  const pillOpacity = useSharedValue(focused ? 1 : 0.3);
 
   React.useEffect(() => {
-    // Ease-out for a smoother, modern feel
-    pillWidth.value = withTiming(focused ? 1 : 0, {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
+    // Smooth spring animations for pill expansion
+    pillWidth.value = withSpring(focused ? 1 : 0, {
+      damping: 18,
+      stiffness: 180,
     });
-    iconScale.value = withTiming(focused ? 1.08 : 1, {
-      duration: 200,
-      easing: Easing.out(Easing.quad),
+    pillScale.value = withSpring(focused ? 1 : 0.95, {
+      damping: 16,
+      stiffness: 200,
+    });
+    iconScale.value = withSpring(focused ? 1.05 : 1, {
+      damping: 14,
+      stiffness: 160,
     });
     textOpacity.value = withTiming(focused ? 1 : 0, {
-      duration: 220,
+      duration: focused ? 250 : 150,
       easing: Easing.out(Easing.cubic),
+    });
+    pillOpacity.value = withTiming(focused ? 1 : 0.3, {
+      duration: 200,
     });
     
     onFocusChange?.(focused);
-  }, [focused]);
+  }, [focused, onFocusChange, pillWidth, pillScale, iconScale, textOpacity, pillOpacity]);
 
   const pillAnimatedStyle = useAnimatedStyle(() => {
-    const maxAvailableWidth = 160; // tighter cap to keep pills compact
-    const calculatedWidth = title.length * 7 + 40; // slightly smaller step per char
-    const maxWidth = Math.min(calculatedWidth, maxAvailableWidth);
+    const calculatedWidth = title.length * 8 + 48;
+    const maxWidth = Math.min(calculatedWidth, 140);
+    const minWidth = 40;
     const width = interpolate(
       pillWidth.value,
       [0, 1],
-      [30, maxWidth],
-  Extrapolation.CLAMP
+      [minWidth, maxWidth],
+      Extrapolation.CLAMP
     );
-    return { width, opacity: 1 };
+    return { 
+      width, 
+      opacity: pillOpacity.value,
+      transform: [{ scale: pillScale.value }],
+    };
   });
 
   const iconAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
       { scale: iconScale.value },
-  { translateX: interpolate(pillWidth.value, [0, 1], [0, -2], Extrapolation.CLAMP) },
+      { translateX: interpolate(pillWidth.value, [0, 1], [0, -4], Extrapolation.CLAMP) },
     ],
   }));
 
   const textAnimatedStyle = useAnimatedStyle(() => ({
     opacity: textOpacity.value,
     transform: [
-  { translateX: interpolate(pillWidth.value, [0, 1], [6, 0], Extrapolation.CLAMP) },
+      { translateX: interpolate(pillWidth.value, [0, 1], [8, 0], Extrapolation.CLAMP) },
     ],
   }));
 
   return (
     <View style={styles.tabIconContainer}>
-      {focused ? (
-        <Animated.View style={[styles.groupsTab, pillAnimatedStyle]}>
-          <Animated.View style={iconAnimatedStyle}>
-            <Image source={{ uri: iconSource }} style={styles.tabIcon} />
-          </Animated.View>
-          <Animated.View style={textAnimatedStyle}>
-            <Text style={styles.groupsTabText} numberOfLines={1}>
-              {title}
-            </Text>
-          </Animated.View>
+      <Animated.View style={[
+        styles.pillEmbossment, 
+        focused && styles.pillEmbossmentActive,
+        pillAnimatedStyle
+      ]}>
+        <Animated.View style={iconAnimatedStyle}>
+          <Image source={{ uri: iconSource }} style={styles.tabIcon} />
         </Animated.View>
-      ) : (
-        <Image source={{ uri: iconSource }} style={styles.tabIcon} />
-      )}
+        <Animated.View style={textAnimatedStyle}>
+          <Text style={[
+            styles.pillText,
+            focused && styles.pillTextActive
+          ]} numberOfLines={1}>
+            {title}
+          </Text>
+        </Animated.View>
+      </Animated.View>
     </View>
   );
 }
 
 export default function TabLayout() {
-  const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
@@ -140,9 +147,9 @@ export default function TabLayout() {
   
   // Tabs bar config to mimic current style while using Tabs behavior
   const BAR_HEIGHT = 44;
-  const BOTTOM_OFFSET = 16; // similar to example
-  const H_MARGIN = 28; // compact but leaves room for labels
-  const NOTCH_DIAMETER = 52; // recess size under the FAB
+  const BOTTOM_OFFSET = 20; // similar to example
+  const H_MARGIN = 22; // compact but leaves room for labels
+  const NOTCH_DIAMETER = 50; // recess size under the FAB
   const NOTCH_RADIUS = NOTCH_DIAMETER / 2;
 
   return (
@@ -165,7 +172,7 @@ export default function TabLayout() {
             height: BAR_HEIGHT,
             alignItems: 'center',
             flexDirection: 'row',
-            justifyContent: 'space-around',
+            justifyContent: 'space-between',
             paddingVertical: 4,
             paddingHorizontal: 6,
             shadowColor: SHADOW_COLORS.primary,
@@ -188,7 +195,6 @@ export default function TabLayout() {
                 title="Home"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
-                    setActiveTabIndex(0);
                     transition.value = 1;
                     transition.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
                   }
@@ -209,7 +215,6 @@ export default function TabLayout() {
                 title="Map"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
-                    setActiveTabIndex(1);
                     transition.value = 1;
                     transition.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
                   }
@@ -230,7 +235,6 @@ export default function TabLayout() {
                 title="Log"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
-                    setActiveTabIndex(2);
                     transition.value = 1;
                     transition.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
                   }
@@ -251,7 +255,6 @@ export default function TabLayout() {
                 title="Trophy"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
-                    setActiveTabIndex(3);
                     transition.value = 1;
                     transition.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
                   }
@@ -306,11 +309,47 @@ const styles = StyleSheet.create({
   tabIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 40,
+    height: 30,
+    paddingHorizontal: 2,
+    bottom: 7
   },
   tabIcon: {
     width: 22,
     height: 22,
+  },
+  pillEmbossment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(249, 168, 37, 0.08)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    height: 36,
+    gap: 3,
+    borderWidth: 0,
+    borderColor: 'rgba(249, 168, 37, 0.12)',
+  },
+  pillEmbossmentActive: {
+    backgroundColor: TAB_BAR_COLORS.activeBackground,
+    borderColor: 'rgba(249, 168, 37, 0.25)',
+    shadowColor: SHADOW_COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  pillText: {
+    fontSize: 11,
+    fontWeight: '400',
+    fontFamily: 'Poppins',
+    color: TAB_BAR_COLORS.inactiveText,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  pillTextActive: {
+    color: TAB_BAR_COLORS.activeText,
+    fontWeight: '500',
   },
   groupsTab: {
     flexDirection: 'row',
@@ -321,7 +360,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 6,
     height: 32,
-    gap: 4,
+    gap: 2,
     shadowColor: SHADOW_COLORS.primary,
     shadowOffset: { width: 0, height: 2.2 },
     shadowOpacity: 0.2,
@@ -373,7 +412,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 44, // sits slightly above the tab bar; tuned with tabBarStyle.bottom
+    bottom: 47, // sits slightly above the tab bar; tuned with tabBarStyle.bottom
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,140 +7,432 @@ import {
   TouchableOpacity,
   StatusBar,
   Dimensions,
+  Alert,
+  Platform,
 } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapViewDirections from 'react-native-maps-directions';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useJourney } from '../contexts/JourneyContext';
+import { router } from 'expo-router';
+import FloatingJourneyStatus from '../components/FloatingJourneyStatus';
+import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function JourneyScreen(): React.JSX.Element {
+  const {
+    currentJourney,
+    isTracking,
+    isMinimized,
+    stats,
+    routePoints,
+    groupMembers,
+    startJourney,
+    endJourney,
+    addPhoto,
+    minimizeJourney,
+  } = useJourney();
+
+  const mapRef = useRef<MapView>(null);
+  const [region, setRegion] = useState({
+    latitude: 37.78825,
+    longitude: -122.4324,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  });
+  const [manualRouteCoords, setManualRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
+  const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
+
   const friendProfiles = [
     { id: 1, avatar: 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' },
     { id: 2, avatar: 'https://static.codia.ai/image/2025-09-26/nNFdUZfheL.png' },
     { id: 3, avatar: 'https://static.codia.ai/image/2025-09-26/yAQdwAryr1.png' },
   ];
 
+  // Resolve Google Maps API key (single source of truth)
+  const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
+
+  // Update map region when journey starts or route changes
+  useEffect(() => {
+    if (currentJourney?.startLocation && mapRef.current) {
+      const newRegion = {
+        latitude: currentJourney.startLocation.latitude,
+        longitude: currentJourney.startLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      setRegion(newRegion);
+      mapRef.current.animateToRegion(newRegion, 1000);
+    }
+  }, [currentJourney?.startLocation]);
+
+  // Fit breadcrumb when active and no destination set
+  useEffect(() => {
+    if (!currentJourney?.endLocation && routePoints.length > 1 && mapRef.current) {
+      mapRef.current.fitToCoordinates(routePoints, {
+        edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+        animated: true,
+      });
+    }
+  }, [routePoints, currentJourney?.endLocation]);
+
+  const haversine = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
+    const R = 6371000; // meters
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLon = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLon = Math.sin(dLon / 2);
+    const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+
+  // Live recalc of directions polyline for iOS or fallback rendering
+  useEffect(() => {
+    const dest = currentJourney?.endLocation;
+    if (!dest) return;
+    if (routePoints.length === 0) return;
+
+    const current = routePoints[routePoints.length - 1];
+    const currentLL = { latitude: current.latitude, longitude: current.longitude };
+    const lastOrigin = lastOriginRef.current;
+
+    const shouldRecalc = !lastOrigin || haversine(lastOrigin, currentLL) > 30; // recalc if moved > 30m
+    if (!shouldRecalc) return;
+
+    // Only fetch manually on iOS or when we want manual control; Android prefers MapViewDirections
+    const doManual = Platform.OS === 'ios' || !GOOGLE_MAPS_API_KEY;
+    if (!doManual) {
+      lastOriginRef.current = currentLL;
+      return; // MapViewDirections will handle updates
+    }
+
+    (async () => {
+      const result = await fetchDirections(currentLL, { latitude: dest.latitude, longitude: dest.longitude }, {
+        mode: 'driving',
+        apiKey: GOOGLE_MAPS_API_KEY,
+      });
+      if (result?.coordinates?.length) {
+        setManualRouteCoords(result.coordinates);
+        lastOriginRef.current = currentLL;
+        try {
+          mapRef.current?.fitToCoordinates(result.coordinates, {
+            edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+            animated: true,
+          });
+        } catch {}
+      }
+    })();
+  }, [routePoints, currentJourney?.endLocation, GOOGLE_MAPS_API_KEY]);
+
+  const handleStartJourney = async () => {
+    if (!isTracking) {
+      const success = await startJourney({
+        title: 'My Journey',
+        vehicle: 'car',
+        groupId: currentJourney?.groupId,
+      });
+      if (!success) {
+        Alert.alert('Error', 'Failed to start journey tracking');
+      }
+    } else {
+      Alert.alert(
+        'Stop Journey',
+        'Are you sure you want to stop this journey?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Stop', style: 'destructive', onPress: async () => { await endJourney(); } },
+        ]
+      );
+    }
+  };
+
+  const handleMinimize = () => {
+    minimizeJourney();
+    try {
+      router.replace('/(tabs)/map');
+    } catch {
+      router.push('/(tabs)/map');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await addPhoto(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const formatSpeed = (speed: number): string => speed.toFixed(1);
+  const formatDistance = (distance: number): string => distance.toFixed(1);
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
-      {/* Background Map Image */}
-      <Image
-        source={{ uri: 'https://static.codia.ai/image/2025-09-26/CwL1fB7pEK.png' }}
-        style={styles.backgroundMap}
-        resizeMode="cover"
-      />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/qjy0a6B7aU.png' }}
-            style={styles.profileImage}
-          />
-          <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/zoBaNRyFNQ.png' }}
-            style={styles.menuIcon}
-          />
-        </View>
-        <View style={styles.headerRight}>
-          <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/WTtXWrq4i5.png' }}
-            style={styles.profileImage}
-          />
-          <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/cHSt8mM9zp.png' }}
-            style={styles.settingsIcon}
-          />
-        </View>
-      </View>
-
-      {/* Friend Location Markers */}
-      <View style={styles.friendMarker1}>
-        <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/4BdU4s8vca.png' }}
-          style={styles.friendMarkerImage}
-        />
-      </View>
-
-      <View style={styles.friendMarker2}>
-        <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/fNvNPcPMf0.png' }}
-          style={styles.friendMarkerImage}
-        />
-      </View>
-
-      <View style={styles.friendMarker3}>
-        <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/Njgbg8n3jJ.png' }}
-          style={styles.friendMarkerImage}
-        />
-      </View>
-
-      {/* SOS Button */}
-      <TouchableOpacity style={styles.sosButton}>
-        <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/cGkBkJPGTf.png' }}
-          style={styles.sosBackground}
-        />
-        <Text style={styles.sosText}>SOS</Text>
-      </TouchableOpacity>
-
-      {/* Bottom Panel */}
-      <View style={styles.bottomPanel}>
-        {/* Friends Row */}
-        <View style={styles.friendsRow}>
-          <View style={styles.friendsContainer}>
-            {friendProfiles.map((friend) => (
-              <Image
-                key={friend.id}
-                source={{ uri: friend.avatar }}
-                style={styles.friendAvatar}
+      {isMinimized ? (
+        <>
+          <MapView
+            ref={mapRef}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+            style={styles.backgroundMap}
+            region={region}
+            showsUserLocation
+            showsMyLocationButton={false}
+            showsTraffic={false}
+            showsBuildings
+            showsIndoors={false}
+            mapType="standard"
+          >
+            {Platform.OS === 'android' && currentJourney?.endLocation && GOOGLE_MAPS_API_KEY ? (
+              <MapViewDirections
+                origin={routePoints.length > 0
+                  ? { latitude: routePoints[routePoints.length - 1].latitude, longitude: routePoints[routePoints.length - 1].longitude }
+                  : currentJourney?.startLocation
+                    ? { latitude: currentJourney.startLocation.latitude, longitude: currentJourney.startLocation.longitude }
+                    : { latitude: region.latitude, longitude: region.longitude }}
+                destination={{
+                  latitude: currentJourney.endLocation.latitude,
+                  longitude: currentJourney.endLocation.longitude,
+                }}
+                apikey={GOOGLE_MAPS_API_KEY}
+                mode="DRIVING"
+                strokeWidth={5}
+                strokeColor="#2B8CFF"
+                optimizeWaypoints
+                onError={(err) => console.warn('Directions error:', err)}
               />
+            ) : currentJourney?.endLocation && manualRouteCoords.length > 1 ? (
+              <Polyline coordinates={manualRouteCoords} strokeWidth={5} strokeColor="#2B8CFF" />
+            ) : routePoints.length > 1 ? (
+              <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#2B8CFF" />
+            ) : null}
+          </MapView>
+          <FloatingJourneyStatus />
+        </>
+      ) : (
+        <>
+          <MapView
+            ref={mapRef}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+            style={styles.backgroundMap}
+            region={region}
+            showsUserLocation
+            showsMyLocationButton={false}
+            showsTraffic={false}
+            showsBuildings
+            showsIndoors={false}
+            mapType="standard"
+          >
+            {Platform.OS === 'android' && currentJourney?.endLocation && GOOGLE_MAPS_API_KEY ? (
+              <MapViewDirections
+                origin={routePoints.length > 0
+                  ? { latitude: routePoints[routePoints.length - 1].latitude, longitude: routePoints[routePoints.length - 1].longitude }
+                  : currentJourney?.startLocation
+                    ? { latitude: currentJourney.startLocation.latitude, longitude: currentJourney.startLocation.longitude }
+                    : { latitude: region.latitude, longitude: region.longitude }}
+                destination={{
+                  latitude: currentJourney.endLocation.latitude,
+                  longitude: currentJourney.endLocation.longitude,
+                }}
+                apikey={GOOGLE_MAPS_API_KEY}
+                mode="DRIVING"
+                strokeWidth={5}
+                strokeColor="#2B8CFF"
+                optimizeWaypoints
+                onReady={(result) => {
+                  try {
+                    mapRef.current?.fitToCoordinates(result.coordinates, {
+                      edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+                      animated: true,
+                    });
+                  } catch {}
+                }}
+                onError={(err) => console.warn('Directions error:', err)}
+              />
+            ) : currentJourney?.endLocation && manualRouteCoords.length > 1 ? (
+              <Polyline coordinates={manualRouteCoords} strokeWidth={5} strokeColor="#2B8CFF" />
+            ) : !currentJourney?.endLocation && routePoints.length > 1 ? (
+              <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#2B8CFF" />
+            ) : null}
+
+            {currentJourney?.startLocation && (
+              <Marker
+                coordinate={{
+                  latitude: currentJourney.startLocation.latitude,
+                  longitude: currentJourney.startLocation.longitude,
+                }}
+                title="Start Location"
+                pinColor="green"
+              />
+            )}
+
+            {currentJourney?.endLocation && (
+              <Marker
+                coordinate={{
+                  latitude: currentJourney.endLocation.latitude,
+                  longitude: currentJourney.endLocation.longitude,
+                }}
+                title="Destination"
+                pinColor="red"
+              />
+            )}
+
+            {groupMembers.map((member) => (
+              member.currentLocation && (
+                <Marker
+                  key={member.id}
+                  coordinate={{
+                    latitude: member.currentLocation.latitude,
+                    longitude: member.currentLocation.longitude,
+                  }}
+                  title={member.displayName}
+                >
+                  <Image
+                    source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                    style={styles.friendMarkerImage}
+                  />
+                </Marker>
+              )
             ))}
-            <View style={styles.addFriendButton}>
-              <Text style={styles.addFriendText}>+</Text>
-            </View>
-          </View>
-        </View>
+          </MapView>
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>00:00</Text>
-            <Text style={styles.statLabel}>Time</Text>
-          </View>
-          <View style={styles.statItem}>
-            <View style={styles.speedContainer}>
-              <Text style={styles.statValue}>0.0</Text>
-              <Text style={styles.speedUnit}>KPH</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity onPress={handleMinimize}>
+                <Image
+                  source={{ uri: 'https://static.codia.ai/image/2025-09-26/qjy0a6B7aU.png' }}
+                  style={styles.profileImage}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleMinimize} style={styles.minimizeButton}>
+                <MaterialIcons name="keyboard-arrow-down" size={24} color="#000" />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.statLabel}>Speed</Text>
-          </View>
-          <View style={styles.statItem}>
-            <View style={styles.distanceContainer}>
-              <Text style={styles.statValue}>0.00</Text>
-              <Text style={styles.distanceUnit}>KM</Text>
+            <View style={styles.headerRight}>
+              <Image
+                source={{ uri: 'https://static.codia.ai/image/2025-09-26/WTtXWrq4i5.png' }}
+                style={styles.profileImage}
+              />
+              <TouchableOpacity onPress={handleTakePhoto}>
+                <MaterialIcons name="camera-alt" size={24} color="#000" style={styles.cameraIcon} />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.statLabel}>Distance</Text>
           </View>
-        </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsRow}>
-          <TouchableOpacity style={styles.startButton}>
+          {/* SOS Button */}
+          <TouchableOpacity style={styles.sosButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/s27abcBOgz.png' }}
-              style={styles.startIcon}
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/cGkBkJPGTf.png' }}
+              style={styles.sosBackground}
             />
+            <Text style={styles.sosText}>SOS</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.shareButton}>
-            <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/oaseCkwYnL.png' }}
-              style={styles.shareIcon}
-            />
-            <Text style={styles.shareText}>Share live location</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+
+          {/* Bottom Panel */}
+          <View style={styles.bottomPanel}>
+            {/* Friends Row */}
+            <View style={styles.friendsRow}>
+              <View style={styles.friendsContainer}>
+                {groupMembers.slice(0, 3).map((member) => (
+                  <Image
+                    key={member.id}
+                    source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                    style={styles.friendAvatar}
+                  />
+                ))}
+                {groupMembers.length === 0 && friendProfiles.map((friend) => (
+                  <Image key={friend.id} source={{ uri: friend.avatar }} style={styles.friendAvatar} />
+                ))}
+                <View style={styles.addFriendButton}>
+                  <Text style={styles.addFriendText}>+</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Stats Row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>
+                  {isTracking && stats ? formatTime(Math.floor(stats.totalTime)) : '00:00'}
+                </Text>
+                <Text style={styles.statLabel}>Time</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={styles.speedContainer}>
+                  <Text style={styles.statValue}>
+                    {isTracking && stats ? formatSpeed(stats.currentSpeed) : '0.0'}
+                  </Text>
+                  <Text style={styles.speedUnit}>KPH</Text>
+                </View>
+                <Text style={styles.statLabel}>Speed</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={styles.distanceContainer}>
+                  <Text style={styles.statValue}>
+                    {isTracking && stats ? formatDistance(stats.totalDistance) : '0.0'}
+                  </Text>
+                  <Text style={styles.distanceUnit}>KM</Text>
+                </View>
+                <Text style={styles.statLabel}>Distance</Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity style={styles.startButton} onPress={handleStartJourney}>
+                {isTracking ? (
+                  <MaterialIcons name="stop" size={24} color="#000" />
+                ) : (
+                  <Image
+                    source={{ uri: 'https://static.codia.ai/image/2025-09-26/s27abcBOgz.png' }}
+                    style={styles.startIcon}
+                  />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.shareButton}>
+                <Image
+                  source={{ uri: 'https://static.codia.ai/image/2025-09-26/oaseCkwYnL.png' }}
+                  style={styles.shareIcon}
+                />
+                <Text style={styles.shareText}>Share live location</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -185,6 +477,11 @@ const styles = StyleSheet.create({
     left: 11,
     top: 10.5,
   },
+  minimizeButton: {
+    position: 'absolute',
+    left: 11,
+    top: 10.5,
+  },
   settingsIcon: {
     width: 24,
     height: 24,
@@ -192,20 +489,10 @@ const styles = StyleSheet.create({
     right: 11,
     top: 2.5,
   },
-  friendMarker1: {
+  cameraIcon: {
     position: 'absolute',
-    left: 38,
-    top: 422,
-  },
-  friendMarker2: {
-    position: 'absolute',
-    left: 314,
-    top: 224,
-  },
-  friendMarker3: {
-    position: 'absolute',
-    left: 266,
-    top: 466,
+    right: 11,
+    top: 2.5,
   },
   friendMarkerImage: {
     width: 44,

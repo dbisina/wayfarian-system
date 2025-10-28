@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Alert, ActivityIndicator, TextInput, FlatList } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, TextInput, FlatList, Keyboard } from 'react-native';
 import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -23,23 +23,56 @@ export default function MapScreen(): React.JSX.Element {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string>('gas');
-  const [, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [destination, setDestination] = useState<{ latitude: number; longitude: number; name?: string } | null>(null);
-  const [suggestions, setSuggestions] = useState<Array<{ id: string; description: string; placeId: string }>>([]);
+  const [suggestions, setSuggestions] = useState<{ id: string; description: string; placeId: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const filterTypes = [
+  const filterTypes = useMemo(() => [
     { key: 'gas', serverType: 'gas_station', label: 'Gas' },
     { key: 'lodging', serverType: 'lodging', label: 'Hotel' },
     { key: 'restaurant', serverType: 'restaurant', label: 'Restaurant' },
     { key: 'tourist_attraction', serverType: 'tourist_attraction', label: 'Attractions' },
     { key: 'shopping_mall', serverType: 'shopping_mall', label: 'Shopping' },
-  ];
+  ], []);
+
+  const getMockPlaces = useCallback((): Place[] => {
+    if (!location) return [];
+    return [
+      {
+        id: '1',
+        name: 'Shell Gas Station',
+        latitude: location.coords.latitude + 0.01,
+        longitude: location.coords.longitude + 0.01,
+        type: 'gas',
+        rating: 4.2,
+      },
+      {
+        id: '2',
+        name: "McDonald's",
+        latitude: location.coords.latitude - 0.005,
+        longitude: location.coords.longitude + 0.008,
+        type: 'restaurant',
+        rating: 4.0,
+      },
+      {
+        id: '3',
+        name: 'Holiday Inn',
+        latitude: location.coords.latitude + 0.008,
+        longitude: location.coords.longitude - 0.012,
+        type: 'lodging',
+        rating: 4.5,
+      },
+    ];
+  }, [location]);
 
   useEffect(() => {
     getCurrentLocation();
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const getCurrentLocation = async () => {
@@ -79,7 +112,15 @@ export default function MapScreen(): React.JSX.Element {
       });
 
       if (response?.places) {
-        setPlaces(response.places);
+        const formattedPlaces = response.places.map((p: any) => ({
+          id: p.id || p.place_id || String(Math.random()),
+          name: p.name || 'Unknown',
+          latitude: p.latitude || p.geometry?.location?.lat || 0,
+          longitude: p.longitude || p.geometry?.location?.lng || 0,
+          type: selectedFilter,
+          rating: p.rating || undefined,
+        }));
+        setPlaces(formattedPlaces);
       }
     } catch (error: any) {
       console.error('Places fetch error:', error);
@@ -88,7 +129,7 @@ export default function MapScreen(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [location, selectedFilter]);
+  }, [location, selectedFilter, filterTypes, getMockPlaces]);
 
   useEffect(() => {
     if (location && isAuthenticated) {
@@ -96,36 +137,7 @@ export default function MapScreen(): React.JSX.Element {
     }
   }, [location, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
 
-  const getMockPlaces = (): Place[] => {
-    if (!location) return [];
-    
-    return [
-      {
-        id: '1',
-        name: 'Shell Gas Station',
-        latitude: location.coords.latitude + 0.01,
-        longitude: location.coords.longitude + 0.01,
-        type: 'gas',
-        rating: 4.2,
-      },
-      {
-        id: '2',
-        name: 'McDonald\'s',
-        latitude: location.coords.latitude - 0.005,
-        longitude: location.coords.longitude + 0.008,
-        type: 'restaurant',
-        rating: 4.0,
-      },
-      {
-        id: '3',
-        name: 'Holiday Inn',
-        latitude: location.coords.latitude + 0.008,
-        longitude: location.coords.longitude - 0.012,
-        type: 'lodging',
-        rating: 4.5,
-      },
-    ];
-  };
+
 
   const handleStartJourney = () => {
     if (!isAuthenticated) {
@@ -148,6 +160,8 @@ export default function MapScreen(): React.JSX.Element {
     if (!trimmed) return;
     try {
       setLoading(true);
+      setSuggestions([]);
+      Keyboard.dismiss();
       const result = await placesAPI.geocode(trimmed);
       // Server returns { success, result: { location: { latitude, longitude }, formattedAddress } }
       const lat = result?.result?.location?.latitude;
@@ -164,8 +178,7 @@ export default function MapScreen(): React.JSX.Element {
       } else {
         Alert.alert('Not found', 'Could not locate that destination.');
       }
-    } catch (e) {
-      console.warn('Geocode failed', e);
+    } catch {
       Alert.alert('Error', 'Failed to search location.');
     } finally {
       setLoading(false);
@@ -182,8 +195,8 @@ export default function MapScreen(): React.JSX.Element {
       const res = await placesAPI.autocomplete(params);
       const items = (res?.predictions || []).map((p: any) => ({ id: p.placeId, placeId: p.placeId, description: p.description }));
       setSuggestions(items);
-    } catch (e) {
-      // Non-fatal
+    } catch {
+      // Non-fatal - just clear suggestions on error
       setSuggestions([]);
     }
   };
@@ -201,6 +214,7 @@ export default function MapScreen(): React.JSX.Element {
   const handlePickSuggestion = async (placeId: string, description: string) => {
     try {
       setLoading(true);
+      Keyboard.dismiss();
       const details = await placesAPI.placeDetails(placeId);
       const lat = details?.place?.location?.latitude;
       const lng = details?.place?.location?.longitude;
@@ -211,7 +225,7 @@ export default function MapScreen(): React.JSX.Element {
         setSuggestions([]);
         setQuery(description);
       }
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to load place details');
     } finally {
       setLoading(false);
@@ -284,6 +298,13 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
+      {/* Loading Overlay */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#F9A825" />
+        </View>
+      )}
+
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <TextInput
@@ -295,8 +316,24 @@ export default function MapScreen(): React.JSX.Element {
           style={styles.searchInput}
           placeholderTextColor="#666"
         />
+        {query.length > 0 && (
+          <TouchableOpacity 
+            onPress={() => { setQuery(''); setSuggestions([]); }} 
+            style={styles.clearBtn}
+            accessibilityRole="button"
+          >
+            <Text style={styles.clearIcon}>✕</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={handleSearchSubmit} style={styles.searchIconBtn} accessibilityRole="button">
           <Text style={styles.searchIcon}>🔍</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.locationBtn}
+          onPress={getCurrentLocation}
+          accessibilityRole="button"
+        >
+          <Text style={styles.locationIcon}>📍</Text>
         </TouchableOpacity>
       </View>
       {suggestions.length > 0 && (
@@ -340,19 +377,12 @@ export default function MapScreen(): React.JSX.Element {
         ))}
       </ScrollView>
 
-      {/* Floating Action Buttons */}
+      {/* Floating Action Button */}
       <TouchableOpacity 
-        style={[styles.floatingButton, styles.floatingButton1]}
+        style={styles.floatingButton}
         onPress={handleStartJourney}
       >
         <Text style={styles.floatingButtonText}>🚗</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.floatingButton, styles.floatingButton2]}
-        onPress={getCurrentLocation}
-      >
-        <Text style={styles.floatingButtonText}>📍</Text>
       </TouchableOpacity>
     </View>
   );
@@ -421,6 +451,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
   },
+  clearBtn: {
+    marginLeft: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearIcon: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '600',
+  },
+  locationBtn: {
+    marginLeft: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationIcon: {
+    fontSize: 16,
+  },
   suggestionsBox: {
     position: 'absolute',
     top: 102,
@@ -484,6 +540,7 @@ const styles = StyleSheet.create({
   },
   floatingButton: {
     position: 'absolute',
+    bottom: 150,
     width: 56,
     height: 56,
     right: 20,
@@ -499,12 +556,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
-  },
-  floatingButton1: {
-    bottom: 100,
-  },
-  floatingButton2: {
-    bottom: 30,
   },
   floatingButtonText: {
     fontSize: 24,
@@ -533,6 +584,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'Space Grotesk',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
   },
 });
 

@@ -6,6 +6,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '../contexts/AuthContext';
+import { JourneyProvider } from '../contexts/JourneyContext';
+import FloatingJourneyStatus from '../components/FloatingJourneyStatus';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -44,20 +46,25 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={stackScreenOptions}>
-          {!hasCompletedOnboarding ? (
-            <Stack.Screen name="(onboarding)" />
-          ) : (
-            <>
-              <Stack.Screen name="(auth)" />
-              <Stack.Screen name="(tabs)" />
-            </>
-          )}
-          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <JourneyProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack screenOptions={stackScreenOptions}>
+            {!hasCompletedOnboarding ? (
+              <Stack.Screen name="(onboarding)" />
+            ) : (
+              <>
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen name="(tabs)" />
+              </>
+            )}
+            <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
+          
+          {/* Floating journey status overlay */}
+          <FloatingJourneyStatus />
+        </ThemeProvider>
+      </JourneyProvider>
     </AuthProvider>
   );
 }

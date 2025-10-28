@@ -4,6 +4,11 @@
 import * as Location from 'expo-location';
 import { journeyAPI } from './api';
 
+// Movement filtering thresholds to reduce GPS jitter when stationary
+const MIN_ACCURACY_METERS = 25; // ignore low-accuracy updates over this threshold
+const MIN_MOVE_METERS = 8; // minimum movement to count towards distance
+const STATIONARY_SPEED_THRESHOLD_MPS = 0.5; // below this m/s, treat as stationary
+
 export interface LocationPoint {
   latitude: number;
   longitude: number;
@@ -26,6 +31,7 @@ class LocationService {
   private isTracking: boolean = false;
   private routePoints: LocationPoint[] = [];
   private currentJourneyId: string | null = null;
+  private lastKnownLocation: LocationPoint | null = null;
   private stats: JourneyStats = {
     totalDistance: 0,
     totalTime: 0,
@@ -123,7 +129,7 @@ class LocationService {
         throw new Error('Could not get current location');
       }
 
-      // Create journey in backend
+      // Create journey in backend only (no offline fallback)
       const response = await journeyAPI.startJourney({
         startLatitude: startLocation.latitude,
         startLongitude: startLocation.longitude,
@@ -131,8 +137,12 @@ class LocationService {
         title,
         groupId,
       });
+      if (!response || !response.journey?.id) {
+        throw new Error('Backend unavailable: failed to start journey');
+      }
+      const journeyId: string = response.journey.id;
 
-      this.currentJourneyId = response.journey.id;
+      this.currentJourneyId = journeyId;
       this.isTracking = true;
       this.startTime = Date.now();
       this.lastUpdateTime = Date.now();
@@ -166,6 +176,13 @@ class LocationService {
     }
   }
 
+  // Start offline journey tracking (when backend is unavailable)
+  // Offline journey is disabled by product requirements
+  async startOfflineJourney(): Promise<string | null> {
+    console.warn('Offline journey is disabled');
+    return null;
+  }
+
   // Handle location updates
   private async handleLocationUpdate(location: Location.LocationObject) {
     if (!this.isTracking || !this.currentJourneyId) return;
@@ -179,23 +196,40 @@ class LocationService {
       accuracy: location.coords.accuracy || 0,
     };
 
+    // Always keep the latest reading
+    this.lastKnownLocation = newPoint;
+
     // Calculate distance from last point
+    let acceptPoint = false;
+    let distanceKm = 0;
     if (this.routePoints.length > 0) {
       const lastPoint = this.routePoints[this.routePoints.length - 1];
-      const distance = this.calculateDistance(
+      distanceKm = this.calculateDistance(
         lastPoint.latitude,
         lastPoint.longitude,
         newPoint.latitude,
         newPoint.longitude
       );
-
-      this.stats.totalDistance += distance;
+      const distanceMeters = distanceKm * 1000;
+  const lastAcc = lastPoint.accuracy || 0;
+  const currAcc = newPoint.accuracy || 0;
+  const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
+      // Accept if moved more than accuracy and threshold, or if reported speed indicates movement
+      if (distanceMeters >= minAcceptable || (newPoint.speed || 0) >= STATIONARY_SPEED_THRESHOLD_MPS) {
+        this.stats.totalDistance += distanceKm;
+        acceptPoint = true;
+      }
+    } else {
+      // Always accept the very first point
+      acceptPoint = true;
     }
 
     // Update speed stats
-    const speedKmh = (newPoint.speed || 0) * 3.6; // Convert m/s to km/h
-    this.stats.currentSpeed = speedKmh;
-    if (speedKmh > this.stats.topSpeed) {
+    const speedMps = newPoint.speed || 0;
+    const moving = speedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
+    const speedKmh = speedMps * 3.6; // Convert m/s to km/h
+    this.stats.currentSpeed = moving ? speedKmh : 0;
+    if (moving && speedKmh > this.stats.topSpeed) {
       this.stats.topSpeed = speedKmh;
     }
 
@@ -207,8 +241,10 @@ class LocationService {
       this.stats.avgSpeed = (this.stats.totalDistance / this.stats.totalTime) * 3600; // km/h
     }
 
-    // Add point to route
-    this.routePoints.push(newPoint);
+    // Add point to route only if accepted (filters out jitter when stationary)
+    if (acceptPoint) {
+      this.routePoints.push(newPoint);
+    }
 
     // Update backend periodically
     const now = Date.now();
@@ -223,16 +259,15 @@ class LocationService {
     if (!this.currentJourneyId) return;
 
     try {
-      const currentLocation = this.routePoints[this.routePoints.length - 1];
+      const currentLocation = this.lastKnownLocation || this.routePoints[this.routePoints.length - 1];
       
       await journeyAPI.updateJourney(this.currentJourneyId, {
         currentLatitude: currentLocation.latitude,
         currentLongitude: currentLocation.longitude,
         currentSpeed: this.stats.currentSpeed,
-        routePoints: this.routePoints,
       });
     } catch (error) {
-      console.error('Error updating journey:', error);
+      console.warn('Backend update failed, continuing offline:', error);
     }
   }
 
@@ -285,7 +320,7 @@ class LocationService {
     if (!this.currentJourneyId) return;
 
     try {
-      // Final update
+      // Final backend update
       await this.updateBackend();
 
       const currentLocation = this.routePoints[this.routePoints.length - 1];
@@ -318,6 +353,13 @@ class LocationService {
 
   // Get current stats
   getStats(): JourneyStats {
+    // Ensure time keeps ticking even if device doesn't deliver location updates while stationary
+    if (this.isTracking && this.startTime > 0) {
+      this.stats.totalTime = Math.floor((Date.now() - this.startTime) / 1000);
+      if (this.stats.totalTime > 0) {
+        this.stats.avgSpeed = (this.stats.totalDistance / this.stats.totalTime) * 3600;
+      }
+    }
     return { ...this.stats };
   }
 
@@ -334,6 +376,11 @@ class LocationService {
   // Get current journey ID
   getCurrentJourneyId(): string | null {
     return this.currentJourneyId;
+  }
+
+  // Check if current journey is offline
+  isOfflineJourney(): boolean {
+    return this.currentJourneyId ? this.currentJourneyId.startsWith('offline_') : false;
   }
 }
 

@@ -3,8 +3,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Default to server's actual default port (5001) if env is not set
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/api';
+// Default to local server on port 3001 if env is not set (matches server/.env PORT=3001)
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api';
 // const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
 
@@ -63,10 +63,20 @@ const apiRequest = async (
     }
 
     const response = await fetch(`${API_URL}${endpoint}`, config);
-    const responseData = await response.json();
+    const text = await response.text();
+    let responseData: any = null;
+    try {
+      responseData = text ? JSON.parse(text) : null;
+    } catch {
+      responseData = { raw: text };
+    }
 
     if (!response.ok) {
-      throw new Error(responseData.message || 'API request failed');
+      const errMsg = (responseData && (responseData.message || responseData.error)) || 'API request failed';
+      const error = new Error(errMsg) as any;
+      error.status = response.status;
+      error.body = responseData;
+      throw error;
     }
 
     return responseData;
@@ -79,11 +89,13 @@ const apiRequest = async (
 // Auth API
 export const authAPI = {
   login: async (idToken: string, additionalData?: any) => {
-    return apiRequest('/auth/login', 'POST', { idToken, ...additionalData }, false);
+    // Send only idToken to avoid validation failures on optional fields
+    return apiRequest('/auth/login', 'POST', { idToken }, false);
   },
   
   register: async (idToken: string, userData: any) => {
-    return apiRequest('/auth/register', 'POST', { idToken, ...userData }, false);
+    // Registration is handled same as login on server; only idToken required
+    return apiRequest('/auth/register', 'POST', { idToken }, false);
   },
   
   getCurrentUser: async () => {

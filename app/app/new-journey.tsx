@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -10,31 +10,81 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
+import LocationPicker from '../components/LocationPicker';
+import { useJourney } from '../contexts/JourneyContext';
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  address: string;
+  placeId?: string;
+}
 
 export default function NewJourneyScreen() {
+  const { startJourney } = useJourney();
   const [journeyName, setJourneyName] = useState('');
-  const [startLocation, setStartLocation] = useState('');
-  const [endLocation, setEndLocation] = useState('');
+  const [startLocation, setStartLocation] = useState<LocationData | null>(null);
+  const [endLocation, setEndLocation] = useState<LocationData | null>(null);
   const [startDateTime, setStartDateTime] = useState('');
   const [notes, setNotes] = useState('');
+  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const handleSaveAndStart = () => {
-    if (!journeyName.trim() || !startLocation.trim() || !endLocation.trim()) {
+  // Get current location for better autocomplete results
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Location permission not granted');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      setCurrentLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    } catch (error) {
+      console.error('Error getting location:', error);
+    }
+  };
+
+  const handleSaveAndStart = async () => {
+    if (!journeyName.trim() || !startLocation || !endLocation) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
       return;
     }
     
-    // Here you would typically save the journey data
-    console.log('Starting journey:', {
-      journeyName,
-      startLocation,
-      endLocation,
-      startDateTime,
-      notes,
-    });
-    
-    // Navigate to journey screen to start tracking
-    router.push('/journey');
+    try {
+      const success = await startJourney({
+        title: journeyName,
+        startLocation: {
+          latitude: startLocation.latitude,
+          longitude: startLocation.longitude,
+          address: startLocation.address,
+        },
+        endLocation: {
+          latitude: endLocation.latitude,
+          longitude: endLocation.longitude,
+          address: endLocation.address,
+        },
+        vehicle: 'car', // You could add a vehicle selector
+      });
+
+      if (success) {
+        // Navigate to journey screen to start tracking
+        router.push('/journey');
+      } else {
+        Alert.alert('Error', 'Failed to start journey. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error starting journey:', error);
+      Alert.alert('Error', 'Failed to start journey. Please try again.');
+    }
   };
 
   const handleSaveForLater = () => {
@@ -46,8 +96,20 @@ export default function NewJourneyScreen() {
     // Here you would typically save the journey data for later
     console.log('Saving journey for later:', {
       journeyName,
-      startLocation,
-      endLocation,
+      startLocation: startLocation ? {
+        address: startLocation.address,
+        coordinates: {
+          latitude: startLocation.latitude,
+          longitude: startLocation.longitude,
+        },
+      } : null,
+      endLocation: endLocation ? {
+        address: endLocation.address,
+        coordinates: {
+          latitude: endLocation.latitude,
+          longitude: endLocation.longitude,
+        },
+      } : null,
       startDateTime,
       notes,
     });
@@ -89,25 +151,35 @@ export default function NewJourneyScreen() {
         </View>
 
         {/* Start Location */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
+        <View style={styles.locationSection}>
+          <LocationPicker
             placeholder="Start Location"
-            value={startLocation}
-            onChangeText={setStartLocation}
-            placeholderTextColor="#999999"
+            value={startLocation?.address || ''}
+            onLocationSelect={setStartLocation}
+            currentLocation={currentLocation || undefined}
           />
+          {startLocation && (
+            <View style={styles.locationConfirmed}>
+              <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+              <Text style={styles.locationConfirmedText}>Location confirmed</Text>
+            </View>
+          )}
         </View>
 
         {/* End Location */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
+        <View style={styles.locationSection}>
+          <LocationPicker
             placeholder="End Location"
-            value={endLocation}
-            onChangeText={setEndLocation}
-            placeholderTextColor="#999999"
+            value={endLocation?.address || ''}
+            onLocationSelect={setEndLocation}
+            currentLocation={currentLocation || undefined}
           />
+          {endLocation && (
+            <View style={styles.locationConfirmed}>
+              <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+              <Text style={styles.locationConfirmedText}>Location confirmed</Text>
+            </View>
+          )}
         </View>
 
         {/* Start Date & Time */}
@@ -287,5 +359,21 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#000000',
     fontFamily: 'Poppins',
+  },
+  locationSection: {
+    marginBottom: 20,
+  },
+  locationConfirmed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  locationConfirmedText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontFamily: 'Poppins',
+    marginLeft: 4,
+    fontWeight: '500',
   },
 });

@@ -2,9 +2,10 @@
 // Global authentication state management
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   initializeAuth,
+  getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -16,11 +17,21 @@ import {
   OAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, setAuthToken, removeAuthToken } from '../services/api';
+import { makeRedirectUri } from 'expo-auth-session';
+import * as AuthSession from 'expo-auth-session';
+import * as FirebaseAuthNS from 'firebase/auth';
+
+// Workaround for RN persistence: access symbol from namespace and cast to any to avoid TS type gaps
+const getReactNativePersistence: ((storage: any) => any) | undefined = (FirebaseAuthNS as any).getReactNativePersistence;
+
+// Complete the auth session
+WebBrowser.maybeCompleteAuthSession();
 
 // Firebase configuration with fallback values for development
 const firebaseConfig = {
@@ -32,11 +43,22 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:65260446195:web:c11a2c5454f3bb65a83286",
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase app once (avoid HMR duplicate init)
+const app = (getApps().length ? getApp() : initializeApp(firebaseConfig));
 
-// Initialize Firebase Auth (persistence is handled automatically in React Native)
-const auth = initializeAuth(app);
+// Initialize Firebase Auth once; on HMR reuse existing auth instance
+let authExisting: any = null;
+try {
+  authExisting = getAuth(app);
+} catch {
+  // No existing auth instance yet
+}
+
+const auth = authExisting || (
+  getReactNativePersistence
+    ? initializeAuth(app, { persistence: getReactNativePersistence(ReactNativeAsyncStorage) })
+    : initializeAuth(app)
+);
 
 // Configure Google Sign-In
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -89,19 +111,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Warm up the browser for better UX on Android
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      WebBrowser.warmUpAsync();
+      return () => {
+        WebBrowser.coolDownAsync();
+      };
+    }
+  }, []);
+
   // Sync backend user data
   const syncUserData = async (firebaseUser: FirebaseUser) => {
     try {
       const idToken = await firebaseUser.getIdToken();
       await setAuthToken(idToken);
       
-      // Call backend to get/create user
-      const response = await authAPI.login(idToken, {
-        email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoURL: firebaseUser.photoURL,
-        phoneNumber: firebaseUser.phoneNumber,
-      });
+      // Call backend to get/create user (send only idToken to avoid validation issues)
+      const response = await authAPI.login(idToken);
       
       if (response && response.success && response.user) {
         setUser(response.user);
@@ -115,12 +142,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // If response is null (API request failed) or doesn't have user data
-      if (!response) {
-        throw new Error('Network request failed');
+      // If login failed or user not found, attempt auto-register once
+      const registerResp = await authAPI.register(idToken, {});
+      if (registerResp && (registerResp.user || registerResp.success)) {
+        const createdUser = registerResp.user || registerResp.data || registerResp;
+        if (createdUser) {
+          setUser(createdUser.user || createdUser);
+          setIsAuthenticated(true);
+          return;
+        }
       }
 
-      throw new Error(response.message || 'Failed to sync user data');
+      // As a final check, try to fetch the current user if token is valid
+      const me = await authAPI.getCurrentUser();
+      if (me && me.success && me.user) {
+        setUser(me.user);
+        setIsAuthenticated(true);
+        return;
+      }
+
+      // If register also fails, treat as backend unavailable
+      throw new Error('Network request failed');
     } catch (error: any) {
       console.error('Error syncing user data:', error);
       // If backend is down, create a minimal user object from Firebase
@@ -257,7 +299,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Login with Google
+  // Login with Google - Using proper Expo AuthSession with Google-approved redirect URIs
   const loginWithGoogle = async () => {
     try {
       setLoading(true);
@@ -278,77 +320,89 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // For mobile platforms, use Expo AuthSession
-      try {
-        const redirectUri = AuthSession.makeRedirectUri();
+      // For mobile platforms, use Expo AuthSession with proper redirect URI
+      console.log('Starting Google OAuth flow...');
+      console.log('Google Client ID:', GOOGLE_WEB_CLIENT_ID);
 
-        const request = new AuthSession.AuthRequest({
-          clientId: GOOGLE_WEB_CLIENT_ID,
-          scopes: ['openid', 'profile', 'email'],
-          redirectUri,
-          responseType: AuthSession.ResponseType.Code,
-          extraParams: {},
-          prompt: AuthSession.Prompt.SelectAccount,
-        });
+      // Use Expo's makeRedirectUri for proper redirect URI handling
+      const redirectUri = makeRedirectUri({
+        scheme: 'wayfarian-system', // Use your app scheme
+        preferLocalhost: false, // Force use of Expo proxy instead of localhost
+      });
 
-        const result = await request.promptAsync({
-          authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-        });
+      console.log('Using redirect URI:', redirectUri);
+      
+      // If makeRedirectUri still returns an exp:// URL, manually set the correct one
+      const finalRedirectUri = redirectUri.startsWith('exp://') 
+        ? 'https://auth.expo.io/@anonymous/wayfarian-system'
+        : redirectUri;
+        
+      console.log('Final redirect URI:', finalRedirectUri);
 
-        if (result.type === 'success') {
-          // Exchange the authorization code for tokens
-          const tokenResponse = await AuthSession.exchangeCodeAsync(
-            {
-              clientId: GOOGLE_WEB_CLIENT_ID,
-              code: result.params.code,
-              redirectUri,
-              extraParams: {
-                code_verifier: request.codeVerifier || '',
-              },
+      // Get Google's discovery document
+      const discovery = await AuthSession.fetchDiscoveryAsync('https://accounts.google.com');
+
+      // Create auth request configuration
+      const request = new AuthSession.AuthRequest({
+        clientId: GOOGLE_WEB_CLIENT_ID,
+        scopes: ['openid', 'profile', 'email'],
+        responseType: AuthSession.ResponseType.Code,
+        redirectUri: finalRedirectUri,
+        prompt: AuthSession.Prompt.SelectAccount,
+      });
+
+      console.log('Making auth request...');
+      const result = await request.promptAsync(discovery);
+      
+      console.log('Auth result:', { type: result.type });
+
+      if (result.type === 'success') {
+        console.log('Authorization successful, exchanging code for tokens...');
+        
+        if (!result.params.code) {
+          throw new Error('No authorization code received');
+        }
+
+        // Exchange authorization code for tokens
+        const tokenResult = await AuthSession.exchangeCodeAsync(
+          {
+            clientId: GOOGLE_WEB_CLIENT_ID,
+            code: result.params.code,
+            redirectUri: finalRedirectUri,
+            extraParams: {
+              grant_type: 'authorization_code',
             },
-            {
-              tokenEndpoint: 'https://oauth2.googleapis.com/token',
-            }
-          );
+          },
+          discovery
+        );
 
-          // Get user info from Google (for debugging if needed)
-          // const userInfoResponse = await fetch(
-          //   `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${tokenResponse.accessToken}`
-          // );
-          // const userInfo = await userInfoResponse.json();
+        if (!tokenResult.idToken) {
+          console.error('Token exchange result:', tokenResult);
+          throw new Error('No ID token received from Google');
+        }
 
-          // Create Firebase credential with Google ID token
-          const googleCredential = GoogleAuthProvider.credential(tokenResponse.idToken);
-          
-          // Sign in to Firebase with Google credential
-          const firebaseResult = await signInWithCredential(auth, googleCredential);
-          
-          // Sync with backend
-          await syncUserData(firebaseResult.user);
-          
-        } else if (result.type === 'cancel') {
-          // User canceled - don't throw error, just return silently
-          console.log('Google Sign-In was canceled by user');
-          return;
-        } else {
-          throw new Error('Google Sign-In failed. Please try again.');
-        }
+        console.log('Token exchange successful');
+
+        // Create Firebase credential
+        const googleCredential = GoogleAuthProvider.credential(tokenResult.idToken);
         
-      } catch (googleError: any) {
-        console.error('Google Sign-In error:', googleError);
+        // Sign in to Firebase
+        console.log('Signing into Firebase...');
+        const firebaseResult = await signInWithCredential(auth, googleCredential);
+        console.log('Firebase sign-in successful');
         
-        // Handle specific Google Sign-In errors
-        if (googleError.message?.includes('canceled')) {
-          // User canceled - don't throw error
-          return;
-        } else if (googleError.message?.includes('network')) {
-          throw new Error('Network error. Please check your internet connection and try again.');
-        } else if (googleError.message?.includes('invalid_client')) {
-          throw new Error('Google Sign-In configuration error. Please contact support.');
-        } else {
-          throw new Error(`Google Sign-In failed: ${googleError.message}`);
-        }
+        // Sync with backend
+        console.log('Syncing with backend...');
+        await syncUserData(firebaseResult.user);
+        console.log('Google Sign-In completed successfully');
+        
+      } else if (result.type === 'cancel') {
+        console.log('User cancelled Google Sign-In');
+        return;
+      } else {
+        throw new Error('Google Sign-In was dismissed or failed');
       }
+        
     } catch (error: any) {
       console.error('Google login error:', error);
       
