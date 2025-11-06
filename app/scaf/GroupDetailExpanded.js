@@ -17,7 +17,7 @@ const GroupDetailExpanded = () => {
         {/* Header Image with Overlay */}
         <View style={styles.headerContainer}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/TLVU12RXWd.png' }}
+            source={require('../assets/images/2025-09-26/TLVU12RXWd.png')}
             style={styles.headerImage}
           />
           <LinearGradient
@@ -28,7 +28,7 @@ const GroupDetailExpanded = () => {
           {/* Back Button */}
           <TouchableOpacity style={styles.backButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/PkQ8JtFpqq.png' }}
+              source={require('../assets/images/2025-09-26/PkQ8JtFpqq.png')}
               style={styles.backIcon}
             />
           </TouchableOpacity>
@@ -39,30 +39,30 @@ const GroupDetailExpanded = () => {
           {/* Member Avatars Stack */}
           <View style={styles.avatarStack}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/Ha9BTdBKER.png' }}
+              source={require('../assets/images/2025-09-26/Ha9BTdBKER.png')}
               style={styles.avatarContainer}
             />
             <View style={styles.avatar1}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/nYT3NXd6kT.png' }}
+                source={require('../assets/images/2025-09-26/nYT3NXd6kT.png')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar2}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/nYT3NXd6kT.png' }}
+                source={require('../assets/images/2025-09-26/nYT3NXd6kT.png')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar3}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/AuSwH1po1o.png' }}
+                source={require('../assets/images/2025-09-26/AuSwH1po1o.png')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar4}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/e3nhUuQzps.png' }}
+                source={require('../assets/images/2025-09-26/e3nhUuQzps.png')}
                 style={styles.avatarImage}
               />
               <LinearGradient
@@ -76,7 +76,7 @@ const GroupDetailExpanded = () => {
           {/* Share Button */}
           <TouchableOpacity style={styles.shareButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/G1OXt3BdJZ.png' }}
+              source={require('../assets/images/2025-09-26/G1OXt3BdJZ.png')}
               style={styles.shareIcon}
             />
           </TouchableOpacity>
@@ -84,11 +84,11 @@ const GroupDetailExpanded = () => {
           {/* Rating */}
           <View style={styles.ratingContainer}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/JEH2tiEiL4.png' }}
+              source={require('../assets/images/2025-09-26/JEH2tiEiL4.png')}
               style={styles.ratingBackground}
             />
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/xyNKn1hdhx.png' }}
+              source={require('../assets/images/2025-09-26/xyNKn1hdhx.png')}
               style={styles.ratingStars}
             />
           </View>
@@ -101,7 +101,7 @@ const GroupDetailExpanded = () => {
           {/* Trip Card */}
           <View style={styles.tripCard}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/LTXaqwn6od.png' }}
+              source={require('../assets/images/2025-09-26/LTXaqwn6od.png')}
               style={styles.tripImage}
             />
             <View style={styles.tripOverlay}>
@@ -111,7 +111,7 @@ const GroupDetailExpanded = () => {
               </View>
               <TouchableOpacity style={styles.playButton}>
                 <Image
-                  source={{ uri: 'https://static.codia.ai/image/2025-09-26/qB5oPwExsU.png' }}
+                  source={require('../assets/images/2025-09-26/qB5oPwExsU.png')}
                   style={styles.playIcon}
                 />
               </TouchableOpacity>
@@ -123,7 +123,7 @@ const GroupDetailExpanded = () => {
           
           <View style={styles.descriptionContainer}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/PQ0dy3DzXA.png' }}
+              source={require('../assets/images/2025-09-26/PQ0dy3DzXA.png')}
               style={styles.locationIcon}
             />
             <Text style={styles.description}>
@@ -144,7 +144,7 @@ const GroupDetailExpanded = () => {
         {/* Past Trip 1 */}
         <View style={styles.pastTripCard}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/kVuHV2t72W.png' }}
+            source={require('../assets/images/2025-09-26/kVuHV2t72W.png')}
             style={styles.pastTripImage}
           />
           <View style={styles.tripOverlay}>
@@ -154,7 +154,7 @@ const GroupDetailExpanded = () => {
             </View>
             <TouchableOpacity style={styles.playButton}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/UtjvnghROZ.png' }}
+                source={require('../assets/images/2025-09-26/UtjvnghROZ.png')}
                 style={styles.playIcon}
               />
             </TouchableOpacity>
@@ -164,7 +164,7 @@ const GroupDetailExpanded = () => {
         {/* Past Trip 2 */}
         <View style={styles.pastTripCard}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/18KjnBf2w3.png' }}
+            source={require('../assets/images/2025-09-26/18KjnBf2w3.png')}
             style={styles.pastTripImage}
           />
           <View style={styles.tripOverlay}>
@@ -174,7 +174,7 @@ const GroupDetailExpanded = () => {
             </View>
             <TouchableOpacity style={styles.playButton}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/KFZy8edaZV.png' }}
+                source={require('../assets/images/2025-09-26/KFZy8edaZV.png')}
                 style={styles.playIcon}
               />
             </TouchableOpacity>

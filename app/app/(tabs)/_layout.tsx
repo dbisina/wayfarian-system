@@ -180,7 +180,7 @@ export default function TabLayout() {
               <AdaptiveTabIcon
                 color={color as string}
                 focused={!!focused}
-                iconSource="https://static.codia.ai/image/2025-10-15/y2W4CRNORb.png"
+                iconSource={require('../../assets/images/2025-10-15/y2W4CRNORb.png')}
                 title="Home"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
@@ -200,7 +200,7 @@ export default function TabLayout() {
               <AdaptiveTabIcon
                 color={color as string}
                 focused={!!focused}
-                iconSource="https://static.codia.ai/image/2025-10-15/1bd3DwwpQG.png"
+                iconSource={require('../../assets/images/2025-10-15/1bd3DwwpQG.png')}
                 title="Map"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
@@ -220,7 +220,7 @@ export default function TabLayout() {
               <AdaptiveTabIcon
                 color={color as string}
                 focused={!!focused}
-                iconSource="https://static.codia.ai/image/2025-10-15/tQcweNppVu.png"
+                iconSource={require('../../assets/images/2025-10-15/tQcweNppVu.png')}
                 title="Log"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
@@ -240,7 +240,7 @@ export default function TabLayout() {
               <AdaptiveTabIcon
                 color={color as string}
                 focused={!!focused}
-                iconSource="https://static.codia.ai/image/2025-10-15/g0HQMrSGro.png"
+                iconSource={require('../../assets/images/2025-10-15/g0HQMrSGro.png')}
                 title="Trophy"
                 onFocusChange={(isFocused) => {
                   if (isFocused) {
@@ -277,7 +277,7 @@ export default function TabLayout() {
           activeOpacity={0.9}
         >
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/sZMbhKBvpn.png' }}
+            source={require('../../assets/images/2025-10-15/sZMbhKBvpn.png')}
             style={styles.floatingIcon}
           />
         </TouchableOpacity>

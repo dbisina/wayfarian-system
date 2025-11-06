@@ -104,13 +104,13 @@ export default function LeaderboardScreen(): React.JSX.Element {
       {/* Header */}
       <View style={styles.header}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/Q6avvC9L6S.png' }}
+          source={require('../../assets/images/2025-09-26/Q6avvC9L6S.png')}
           style={styles.backButton}
         />
         <Text style={styles.headerTitle}>Leaderboard</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/itjep5JQ04.png' }}
+            source={require('../../assets/images/2025-09-26/itjep5JQ04.png')}
             style={styles.profileIcon}
           />
         </TouchableOpacity>

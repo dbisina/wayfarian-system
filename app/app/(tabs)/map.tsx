@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Image } from 'react-native';
 import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import { placesAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
+import { Feather } from '@expo/vector-icons';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -331,16 +332,10 @@ export default function MapScreen(): React.JSX.Element {
             <Text style={styles.clearIcon}>✕</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={handleSearchSubmit} style={styles.searchIconBtn} accessibilityRole="button">
-          <Text style={styles.searchIcon}>🔍</Text>
+        <TouchableOpacity onPress={handleSearchSubmit} accessibilityRole="button">
+          <Feather name="search" size={16} color="#fff" />  
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.locationBtn}
-          onPress={getCurrentLocation}
-          accessibilityRole="button"
-        >
-          <Text style={styles.locationIcon}>📍</Text>
-        </TouchableOpacity>
+    
       </View>
       {suggestions.length > 0 && (
         <View style={styles.suggestionsBox}>
@@ -384,12 +379,20 @@ export default function MapScreen(): React.JSX.Element {
       </ScrollView>
 
       {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={styles.floatingButton}
-        onPress={handleStartJourney}
-      >
-        <Text style={styles.floatingButtonText}>🚗</Text>
-      </TouchableOpacity>
+      <TouchableOpacity style={[styles.floatingButton, styles.floatingButton1]} onPress={handleStartJourney}>
+              <Image
+                source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
+                style={styles.floatingButtonImage}
+              />
+            </TouchableOpacity>
+      
+            <TouchableOpacity style={[styles.floatingButton, styles.floatingButton2]} onPress={getCurrentLocation}>
+              <Image
+                source={require('../../assets/images/2025-09-26/4BNFvkcOE2.png')}
+                style={styles.floatingButtonImage}
+              />
+            </TouchableOpacity>
+      
     </View>
   );
 }
@@ -397,28 +400,28 @@ export default function MapScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   map: {
     flex: 1,
   },
   mapPlaceholder: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f0f0f0",
   },
   loadingBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 160,
     right: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -428,21 +431,21 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666',
-    fontFamily: 'Space Grotesk',
+    color: "#666",
+    fontFamily: "Space Grotesk",
   },
   searchBar: {
-    position: 'absolute',
+    position: "absolute",
     top: 50,
     left: 15,
     right: 15,
     height: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
     borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -456,167 +459,152 @@ const styles = StyleSheet.create({
     height: 36,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: "rgba(255,255,255,0.95)",
     fontSize: 16,
-    color: '#000',
-    fontFamily: 'Space Grotesk',
-  },
-  searchIconBtn: {
-    marginLeft: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#F9A825',
-    alignItems: 'center',
-    justifyContent: 'center',
+    color: "#000",
+    fontFamily: "Space Grotesk",
   },
   searchIcon: {
     fontSize: 16,
-    color: '#fff',
+    color: "#fff",
   },
   clearBtn: {
     marginLeft: 4,
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(0,0,0,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   clearIcon: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+    color: "#666",
+    fontWeight: "600",
   },
   locationBtn: {
     marginLeft: 8,
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#4CAF50",
+    alignItems: "center",
+    justifyContent: "center",
   },
   locationIcon: {
     fontSize: 16,
   },
   suggestionsBox: {
-    position: 'absolute',
+    position: "absolute",
     top: 102,
     left: 15,
     right: 15,
     maxHeight: 220,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 10,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   suggestionItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomColor: '#eee',
+    borderBottomColor: "#eee",
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   suggestionText: {
     fontSize: 14,
-    color: '#333',
-    fontFamily: 'Space Grotesk',
+    color: "#333",
+    fontFamily: "Space Grotesk",
   },
   filterContainer: {
-    position: 'absolute',
+    position: "absolute",
     top: 110,
     left: 15,
     right: 15,
     height: 40,
   },
   filterContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   filterButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     minHeight: 32,
   },
   filterButtonActive: {
-    backgroundColor: '#F9A825',
+    backgroundColor: "#F9A825",
   },
   filterText: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: "Space Grotesk",
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: "500",
     lineHeight: 18,
-    color: '#000000',
+    color: "#000000",
   },
   filterTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   floatingButton: {
-    position: 'absolute',
-    bottom: 150,
-    width: 56,
-    height: 56,
-    right: 20,
-    backgroundColor: '#F9A825',
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    position: "absolute",
+    width: 50,
+    height: 50,
+    right: 22,
   },
-  floatingButtonText: {
-    fontSize: 24,
+  floatingButton1: {
+    top: 667,
+  },
+  floatingButton2: {
+    top: 727,
+  },
+  floatingButtonImage: {
+    width: 50,
+    height: 50,
   },
   centerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 20,
   },
   errorText: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Space Grotesk',
+    color: "#666",
+    textAlign: "center",
+    fontFamily: "Space Grotesk",
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#F9A825',
+    backgroundColor: "#F9A825",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   retryButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'Space Grotesk',
+    fontWeight: "600",
+    fontFamily: "Space Grotesk",
   },
   loadingOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    alignItems: "center",
     zIndex: 999,
   },
 });

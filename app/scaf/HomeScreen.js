@@ -27,7 +27,7 @@ const HomeScreen = ({ onNavigate }) => {
         {/* Background Image */}
         <View style={styles.backgroundImageContainer}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/pvtm78LBD6.png' }}
+            source={require('../assets/images/2025-09-26/pvtm78LBD6.png')}
             style={styles.backgroundImage}
             resizeMode="cover"
           />
@@ -36,13 +36,13 @@ const HomeScreen = ({ onNavigate }) => {
         {/* Header */}
         <View style={styles.header}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/MN0Tj1LcZr.png' }}
+            source={require('../assets/images/2025-09-26/MN0Tj1LcZr.png')}
             style={styles.profileImage}
           />
           <Text style={styles.logo}>LOGO</Text>
           <View style={styles.notificationContainer}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/dcUiUAEFXH.png' }}
+              source={require('../assets/images/2025-09-26/dcUiUAEFXH.png')}
               style={styles.notificationIcon}
             />
           </View>
@@ -51,7 +51,7 @@ const HomeScreen = ({ onNavigate }) => {
         {/* User Profile Section */}
         <View style={styles.profileSection}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' }}
+            source={require('../assets/images/2025-09-26/i2yG8AHX5c.png')}
             style={styles.userAvatar}
           />
           <View style={styles.userInfo}>
@@ -90,7 +90,7 @@ const HomeScreen = ({ onNavigate }) => {
           <Text style={styles.xpTitle}>XP Progress</Text>
           <View style={styles.progressBarContainer}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/pyH5pJcAte.png' }}
+              source={require('../assets/images/2025-09-26/pyH5pJcAte.png')}
               style={styles.progressBar}
               resizeMode="stretch"
             />
@@ -107,7 +107,7 @@ const HomeScreen = ({ onNavigate }) => {
           <View style={styles.achievementsContainer}>
             <View style={styles.achievementCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/HD67ooi8mi.png' }}
+                source={require('../assets/images/2025-09-26/HD67ooi8mi.png')}
                 style={styles.achievementImage}
               />
               <View style={styles.achievementInfo}>
@@ -117,7 +117,7 @@ const HomeScreen = ({ onNavigate }) => {
             </View>
             <View style={styles.achievementCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/nnx5Ci3RSL.png' }}
+                source={require('../assets/images/2025-09-26/nnx5Ci3RSL.png')}
                 style={styles.achievementImage}
               />
               <View style={styles.achievementInfo}>
@@ -127,7 +127,7 @@ const HomeScreen = ({ onNavigate }) => {
             </View>
             <View style={styles.achievementCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/DhOvD6RmG6.png' }}
+                source={require('../assets/images/2025-09-26/DhOvD6RmG6.png')}
                 style={styles.achievementImage}
               />
               <View style={styles.achievementInfo}>
@@ -147,7 +147,7 @@ const HomeScreen = ({ onNavigate }) => {
           <View style={styles.journeysContainer}>
             <View style={styles.journeyCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/gmFMEnG4Kf.png' }}
+                source={require('../assets/images/2025-09-26/gmFMEnG4Kf.png')}
                 style={styles.journeyImage}
               />
               <View style={styles.journeyInfo}>
@@ -157,7 +157,7 @@ const HomeScreen = ({ onNavigate }) => {
             </View>
             <View style={styles.journeyCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/meDu0nZOE8.png' }}
+                source={require('../assets/images/2025-09-26/meDu0nZOE8.png')}
                 style={styles.journeyImage}
               />
               <View style={styles.journeyInfo}>
@@ -167,7 +167,7 @@ const HomeScreen = ({ onNavigate }) => {
             </View>
             <View style={styles.journeyCard}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/xWo3Tmd2Sk.png' }}
+                source={require('../assets/images/2025-09-26/xWo3Tmd2Sk.png')}
                 style={styles.journeyImage}
               />
               <View style={styles.journeyInfo}>
@@ -182,7 +182,7 @@ const HomeScreen = ({ onNavigate }) => {
         <View style={styles.startJourneyContainer}>
           <TouchableOpacity style={styles.startJourneyButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/PdS2AJiDCo.png' }}
+              source={require('../assets/images/2025-09-26/PdS2AJiDCo.png')}
               style={styles.startJourneyIcon}
             />
             <Text style={styles.startJourneyText}>Start Journey</Text>
@@ -193,7 +193,7 @@ const HomeScreen = ({ onNavigate }) => {
         <View style={styles.bottomNavigation}>
           <TouchableOpacity style={styles.navItemActive}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/y2W4CRNORb.png' }}
+              source={require('../assets/images/2025-10-15/y2W4CRNORb.png')}
               style={styles.navIcon}
             />
             <Text style={styles.navText}>Home</Text>
@@ -201,7 +201,7 @@ const HomeScreen = ({ onNavigate }) => {
 
           <TouchableOpacity style={styles.navItem}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/1bd3DwwpQG.png' }}
+              source={require('../assets/images/2025-10-15/1bd3DwwpQG.png')}
               style={styles.navIcon}
             />
           </TouchableOpacity>
@@ -213,7 +213,7 @@ const HomeScreen = ({ onNavigate }) => {
               onPress={handleFloatingButtonPress}
             >
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-10-15/sZMbhKBvpn.png' }}
+                source={require('../assets/images/2025-10-15/sZMbhKBvpn.png')}
                 style={styles.floatingIcon}
               />
             </TouchableOpacity>
@@ -221,7 +221,7 @@ const HomeScreen = ({ onNavigate }) => {
 
           <TouchableOpacity style={styles.navItem}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/g0HQMrSGro.png' }}
+              source={require('../assets/images/2025-10-15/g0HQMrSGro.png')}
               style={styles.navIcon}
             />
           </TouchableOpacity>
@@ -231,7 +231,7 @@ const HomeScreen = ({ onNavigate }) => {
             onPress={() => onNavigate('ridelog')}
           >
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/tQcweNppVu.png' }}
+              source={require('../assets/images/2025-10-15/tQcweNppVu.png')}
               style={styles.navIcon}
             />
           </TouchableOpacity>

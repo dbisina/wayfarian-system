@@ -13,9 +13,9 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const JourneyScreen = () => {
   const friendProfiles = [
-    { id: 1, avatar: 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' },
-    { id: 2, avatar: 'https://static.codia.ai/image/2025-09-26/nNFdUZfheL.png' },
-    { id: 3, avatar: 'https://static.codia.ai/image/2025-09-26/yAQdwAryr1.png' },
+    { id: 1, avatar: require('../assets/images/2025-09-26/byc45z4XPi.png') },
+    { id: 2, avatar: require('../assets/images/2025-09-26/nNFdUZfheL.png') },
+    { id: 3, avatar: require('../assets/images/2025-09-26/yAQdwAryr1.png') },
   ];
 
   return (
@@ -24,7 +24,7 @@ const JourneyScreen = () => {
       
       {/* Background Map Image */}
       <Image
-        source={{ uri: 'https://static.codia.ai/image/2025-09-26/CwL1fB7pEK.png' }}
+        source={require('../assets/images/2025-09-26/CwL1fB7pEK.png')}
         style={styles.backgroundMap}
         resizeMode="cover"
       />
@@ -33,21 +33,21 @@ const JourneyScreen = () => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/qjy0a6B7aU.png' }}
+            source={require('../assets/images/2025-09-26/qjy0a6B7aU.png')}
             style={styles.profileImage}
           />
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/zoBaNRyFNQ.png' }}
+            source={require('../assets/images/2025-09-26/zoBaNRyFNQ.png')}
             style={styles.menuIcon}
           />
         </View>
         <View style={styles.headerRight}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/WTtXWrq4i5.png' }}
+            source={require('../assets/images/2025-09-26/WTtXWrq4i5.png')}
             style={styles.profileImage}
           />
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/cHSt8mM9zp.png' }}
+            source={require('../assets/images/2025-09-26/cHSt8mM9zp.png')}
             style={styles.settingsIcon}
           />
         </View>
@@ -56,21 +56,21 @@ const JourneyScreen = () => {
       {/* Friend Location Markers */}
       <View style={styles.friendMarker1}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/4BdU4s8vca.png' }}
+          source={require('../assets/images/2025-09-26/4BdU4s8vca.png')}
           style={styles.friendMarkerImage}
         />
       </View>
 
       <View style={styles.friendMarker2}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/fNvNPcPMf0.png' }}
+          source={require('../assets/images/2025-09-26/fNvNPcPMf0.png')}
           style={styles.friendMarkerImage}
         />
       </View>
 
       <View style={styles.friendMarker3}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/Njgbg8n3jJ.png' }}
+          source={require('../assets/images/2025-09-26/Njgbg8n3jJ.png')}
           style={styles.friendMarkerImage}
         />
       </View>
@@ -78,7 +78,7 @@ const JourneyScreen = () => {
       {/* SOS Button */}
       <TouchableOpacity style={styles.sosButton}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/cGkBkJPGTf.png' }}
+          source={require('../assets/images/2025-09-26/cGkBkJPGTf.png')}
           style={styles.sosBackground}
         />
         <Text style={styles.sosText}>SOS</Text>
@@ -128,13 +128,13 @@ const JourneyScreen = () => {
         <View style={styles.actionButtonsRow}>
           <TouchableOpacity style={styles.startButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/s27abcBOgz.png' }}
+              source={require('../assets/images/2025-09-26/s27abcBOgz.png')}
               style={styles.startIcon}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.shareButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/oaseCkwYnL.png' }}
+              source={require('../assets/images/2025-09-26/oaseCkwYnL.png')}
               style={styles.shareIcon}
             />
             <Text style={styles.shareText}>Share live location</Text>

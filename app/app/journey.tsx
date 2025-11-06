@@ -473,7 +473,7 @@ export default function JourneyScreen(): React.JSX.Element {
                 >
                   <View style={styles.memberMarker}>
                     <Image
-                      source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                      source={{ uri: member.photoURL || require('../assets/images/2025-09-26/byc45z4XPi.png') }}
                       style={styles.friendMarkerImage}
                     />
                     {member.status === 'COMPLETED' && (
@@ -499,7 +499,7 @@ export default function JourneyScreen(): React.JSX.Element {
             <View style={styles.headerLeft}>
               <TouchableOpacity onPress={handleMinimize}>
                 <Image
-                  source={{ uri: 'https://static.codia.ai/image/2025-09-26/qjy0a6B7aU.png' }}
+                  source={require('../assets/images/2025-09-26/qjy0a6B7aU.png')}
                   style={styles.profileImage}
                 />
               </TouchableOpacity>
@@ -509,7 +509,7 @@ export default function JourneyScreen(): React.JSX.Element {
             </View>
             <View style={styles.headerRight}>
               <Image
-                source={{ uri: 'https://static.codia.ai/image/2025-09-26/WTtXWrq4i5.png' }}
+                source={require('../assets/images/2025-09-26/WTtXWrq4i5.png')}
                 style={styles.profileImage}
               />
               <TouchableOpacity onPress={handleTakePhoto}>
@@ -521,7 +521,7 @@ export default function JourneyScreen(): React.JSX.Element {
           {/* SOS Button */}
           <TouchableOpacity style={styles.sosButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/cGkBkJPGTf.png' }}
+              source={require('../assets/images/2025-09-26/cGkBkJPGTf.png')}
               style={styles.sosBackground}
             />
             <Text style={styles.sosText}>SOS</Text>
@@ -537,7 +537,7 @@ export default function JourneyScreen(): React.JSX.Element {
                   groupMembers.slice(0, 6).map((member) => (
                     <Image
                       key={member.id}
-                      source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                      source={{ uri: member.photoURL || require('../assets/images/2025-09-26/byc45z4XPi.png') }}
                       style={styles.friendAvatar}
                     />
                   ))
@@ -597,14 +597,14 @@ export default function JourneyScreen(): React.JSX.Element {
                   <MaterialIcons name="stop" size={24} color="#000" />
                 ) : (
                   <Image
-                    source={{ uri: 'https://static.codia.ai/image/2025-09-26/s27abcBOgz.png' }}
+                    source={require('../assets/images/2025-09-26/s27abcBOgz.png')}
                     style={styles.startIcon}
                   />
                 )}
               </TouchableOpacity>
               <TouchableOpacity style={styles.shareButton}>
                 <Image
-                  source={{ uri: 'https://static.codia.ai/image/2025-09-26/oaseCkwYnL.png' }}
+                  source={require('../assets/images/2025-09-26/oaseCkwYnL.png')}
                   style={styles.shareIcon}
                 />
                 <Text style={styles.shareText}>Share live location</Text>

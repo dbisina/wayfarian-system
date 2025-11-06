@@ -17,7 +17,7 @@ export default function OnboardingScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <ImageBackground
-        source={{ uri: 'https://static.codia.ai/image/2025-09-26/1ofOx9yGqJ.png' }}
+        source={require('../assets/images/2025-09-26/1ofOx9yGqJ.png')}
         style={styles.backgroundImage}
         resizeMode="cover"
       >

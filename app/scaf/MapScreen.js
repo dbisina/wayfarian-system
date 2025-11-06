@@ -16,7 +16,7 @@ const MapScreen = () => {
     <View style={styles.container}>
       {/* Background Map */}
       <Image
-        source={{ uri: 'https://static.codia.ai/image/2025-09-26/WgHiEt253Q.png' }}
+        source={require('../assets/images/2025-09-26/WgHiEt253Q.png')}
         style={styles.mapBackground}
         resizeMode="cover"
       />
@@ -51,14 +51,14 @@ const MapScreen = () => {
       {/* Floating Action Buttons */}
       <TouchableOpacity style={[styles.floatingButton, styles.floatingButton1]}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/NydH8KLPYS.png' }}
+          source={require('../assets/images/2025-09-26/NydH8KLPYS.png')}
           style={styles.floatingButtonImage}
         />
       </TouchableOpacity>
 
       <TouchableOpacity style={[styles.floatingButton, styles.floatingButton2]}>
         <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/4BNFvkcOE2.png' }}
+          source={require('../assets/images/2025-09-26/4BNFvkcOE2.png')}
           style={styles.floatingButtonImage}
         />
       </TouchableOpacity>
@@ -67,14 +67,14 @@ const MapScreen = () => {
       <View style={styles.bottomNavigation}>
         <TouchableOpacity style={styles.navItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/y2W4CRNORb.png' }}
+            source={require('../assets/images/2025-10-15/y2W4CRNORb.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.activeNavItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/1bd3DwwpQG.png' }}
+            source={require('../assets/images/2025-10-15/1bd3DwwpQG.png')}
             style={styles.navIcon}
           />
           <Text style={styles.activeNavText}>Map</Text>
@@ -84,7 +84,7 @@ const MapScreen = () => {
         <View style={styles.floatingButtonContainer}>
           <TouchableOpacity style={styles.floatingButton}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/O3x1a5Ka2Y.png' }}
+              source={require('../assets/images/2025-10-15/O3x1a5Ka2Y.png')}
               style={styles.floatingIcon}
             />
           </TouchableOpacity>
@@ -92,14 +92,14 @@ const MapScreen = () => {
 
         <TouchableOpacity style={styles.navItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/g0HQMrSGro.png' }}
+            source={require('../assets/images/2025-10-15/g0HQMrSGro.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/tQcweNppVu.png' }}
+            source={require('../assets/images/2025-10-15/tQcweNppVu.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>

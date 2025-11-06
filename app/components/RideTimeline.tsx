@@ -65,7 +65,7 @@ export default function RideTimeline({ events, onClose }: RideTimelineProps) {
         {events.map((evt) => (
           <View key={evt.id} style={styles.eventRow}>
             <Image
-              source={{ uri: evt.user.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+              source={{ uri: evt.user.photoURL || require('../assets/images/2025-09-26/byc45z4XPi.png') }}
               style={styles.avatar}
             />
             <View style={styles.eventContent}>

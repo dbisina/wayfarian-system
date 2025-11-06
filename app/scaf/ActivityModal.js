@@ -13,31 +13,31 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
     {
       id: 1,
       title: 'Start Solo ride',
-      icon: 'https://static.codia.ai/image/2025-10-15/4FyvdMbYua.png',
-      iconBg: 'https://static.codia.ai/image/2025-10-15/BwUbV4i6JS.png',
+      icon: require('../assets/images/2025-10-15/4FyvdMbYua.png'),
+      iconBg: require('../assets/images/2025-10-15/BwUbV4i6JS.png'),
     },
     {
       id: 2,
       title: 'Add a bike/vehicle',
-      icon: 'https://static.codia.ai/image/2025-10-15/4MPiLO8s20.png',
+      icon: require('../assets/images/2025-10-15/4MPiLO8s20.png'),
       iconBg: null,
     },
     {
       id: 3,
       title: 'Start Group ride',
-      icon: 'https://static.codia.ai/image/2025-10-15/NDub6kiVWF.png',
-      iconBg: 'https://static.codia.ai/image/2025-10-15/BwUbV4i6JS.png',
+      icon: require('../assets/images/2025-10-15/NDub6kiVWF.png'),
+      iconBg: require('../assets/images/2025-10-15/BwUbV4i6JS.png'),
     },
     {
       id: 4,
       title: 'Join a group ride',
-      icon: 'https://static.codia.ai/image/2025-10-15/2B62N8nM0F.png',
+      icon: require('../assets/images/2025-10-15/2B62N8nM0F.png'),
       iconBg: null,
     },
     {
       id: 5,
       title: 'Start a Challenge',
-      icon: 'https://static.codia.ai/image/2025-10-15/Gn7fFDATEF.png',
+      icon: require('../assets/images/2025-10-15/Gn7fFDATEF.png'),
       iconBg: null,
     },
   ];

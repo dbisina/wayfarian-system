@@ -67,7 +67,7 @@ export default function HomeScreen(): React.JSX.Element {
         {/* Background Image */}
         <View style={styles.backgroundImageContainer}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/pvtm78LBD6.png' }}
+            source={require('../../assets/images/2025-09-26/pvtm78LBD6.png')}
             style={styles.backgroundImage}
             resizeMode="cover"
           />
@@ -77,14 +77,14 @@ export default function HomeScreen(): React.JSX.Element {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/MN0Tj1LcZr.png' }}
+              source={require('../../assets/images/2025-09-26/MN0Tj1LcZr.png')}
               style={styles.profileImage}
             />
           </TouchableOpacity>
           <Text style={styles.logo}>LOGO</Text>
           <View style={styles.notificationContainer}>
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/dcUiUAEFXH.png' }}
+              source={require('../../assets/images/2025-09-26/dcUiUAEFXH.png')}
               style={styles.notificationIcon}
             />
           </View>
@@ -94,7 +94,7 @@ export default function HomeScreen(): React.JSX.Element {
         <TouchableOpacity style={styles.profileSection} activeOpacity={0.8} onPress={() => router.push('/profile')}>
           <Image
             source={{ 
-              uri: dashboardData?.user?.photoURL || user?.photoURL || 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' 
+              uri: dashboardData?.user?.photoURL || user?.photoURL || require('../../assets/images/2025-09-26/i2yG8AHX5c.png') 
             }}
             style={styles.userAvatar}
           />

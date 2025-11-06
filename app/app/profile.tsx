@@ -148,11 +148,11 @@ export default function ProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Image source={{ uri: 'https://static.codia.ai/image/2025-09-26/Q6avvC9L6S.png' }} style={styles.headerIcon} />
+          <Image source={require('../assets/images/2025-09-26/Q6avvC9L6S.png')} style={styles.headerIcon} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} style={styles.headerButton}>
-          <Image source={{ uri: 'https://static.codia.ai/image/2025-09-26/itjep5JQ04.png' }} style={styles.headerIcon} />
+          <Image source={require('../assets/images/2025-09-26/itjep5JQ04.png')} style={styles.headerIcon} />
         </TouchableOpacity>
       </View>
 
@@ -161,7 +161,7 @@ export default function ProfileScreen() {
         <View style={styles.profileTop}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: dashboardData?.user?.photoURL || user?.photoURL || 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' }}
+              source={{ uri: dashboardData?.user?.photoURL || user?.photoURL || require('../assets/images/2025-09-26/i2yG8AHX5c.png') }}
               style={styles.avatar}
             />
             <TouchableOpacity 

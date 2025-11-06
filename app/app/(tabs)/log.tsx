@@ -174,7 +174,7 @@ export default function RideLogScreen(): React.JSX.Element {
             ) : (
               soloJourneys.map((j) => (
                 <View key={j.id} style={styles.challengeCard}>
-                  <Image source={{uri: 'https://static.codia.ai/image/2025-10-15/9X5p0f7nOs.png'}} style={styles.challengeImage} />
+                  <Image source={require('../../assets/images/2025-10-15/9X5p0f7nOs.png')} style={styles.challengeImage} />
                   <View style={styles.challengeContent}>
                     <Text style={styles.challengeTitle}>{j.title || 'Solo Ride'}</Text>
                     <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
@@ -196,7 +196,7 @@ export default function RideLogScreen(): React.JSX.Element {
             ) : (
               groupJourneys.map((j) => (
                 <View key={j.id} style={styles.challengeCard}>
-                  <Image source={{uri: 'https://static.codia.ai/image/2025-10-15/4G6hGQ8wZ0.png'}} style={styles.challengeImage} />
+                  <Image source={require('../../assets/images/2025-10-15/4G6hGQ8wZ0.png')} style={styles.challengeImage} />
                   <View style={styles.challengeContent}>
                     <Text style={styles.challengeTitle}>{j.title || j.group?.name || 'Group Ride'}</Text>
                     <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>

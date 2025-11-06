@@ -23,19 +23,19 @@ const RideLogScreen = ({ onNavigate }) => {
   const badges = [
     {
       id: 1,
-      image: 'https://static.codia.ai/image/2025-10-15/AEeTdwjuFZ.png',
+      image: require('../assets/images/2025-10-15/AEeTdwjuFZ.png'),
     },
     {
       id: 2,
-      image: 'https://static.codia.ai/image/2025-10-15/v11EVR3baW.png',
+      image: require('../assets/images/2025-10-15/v11EVR3baW.png'),
     },
     {
       id: 3,
-      image: 'https://static.codia.ai/image/2025-10-15/zKQt6dXJzc.png',
+      image: require('../assets/images/2025-10-15/zKQt6dXJzc.png'),
     },
     {
       id: 4,
-      image: 'https://static.codia.ai/image/2025-10-15/mKmMoNcohn.png',
+      image: require('../assets/images/2025-10-15/mKmMoNcohn.png'),
     },
   ];
 
@@ -46,7 +46,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: 'https://static.codia.ai/image/2025-10-15/gmEkLn9yyy.png',
+      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
     },
     {
       id: 2,
@@ -54,7 +54,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: 'https://static.codia.ai/image/2025-10-15/gmEkLn9yyy.png',
+      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
     },
     {
       id: 3,
@@ -62,7 +62,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: 'https://static.codia.ai/image/2025-10-15/gmEkLn9yyy.png',
+      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
     },
   ];
 
@@ -72,12 +72,12 @@ const RideLogScreen = ({ onNavigate }) => {
         {/* Header */}
         <View style={styles.header}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/EXDyvAcMBj.png' }}
+            source={require('../assets/images/2025-10-15/EXDyvAcMBj.png')}
             style={styles.profileImage}
           />
           <Text style={styles.headerTitle}>Ride Log</Text>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/B2xH55qhEF.png' }}
+            source={require('../assets/images/2025-10-15/B2xH55qhEF.png')}
             style={styles.notificationIcon}
           />
         </View>
@@ -171,14 +171,14 @@ const RideLogScreen = ({ onNavigate }) => {
           onPress={() => onNavigate('home')}
         >
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/y2W4CRNORb.png' }}
+            source={require('../assets/images/2025-10-15/y2W4CRNORb.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/1bd3DwwpQG.png' }}
+            source={require('../assets/images/2025-10-15/1bd3DwwpQG.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>
@@ -190,7 +190,7 @@ const RideLogScreen = ({ onNavigate }) => {
             onPress={handleFloatingButtonPress}
           >
             <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-10-15/sZMbhKBvpn.png' }}
+              source={require('../assets/images/2025-10-15/sZMbhKBvpn.png')}
               style={styles.floatingIcon}
             />
           </TouchableOpacity>
@@ -198,14 +198,14 @@ const RideLogScreen = ({ onNavigate }) => {
 
         <TouchableOpacity style={styles.navItem}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/g0HQMrSGro.png' }}
+            source={require('../assets/images/2025-10-15/g0HQMrSGro.png')}
             style={styles.navIcon}
           />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navItemActive}>
           <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-10-15/tQcweNppVu.png' }}
+            source={require('../assets/images/2025-10-15/tQcweNppVu.png')}
             style={styles.navIcon}
           />
           <Text style={styles.navText}>Log</Text>

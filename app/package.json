@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "test": "jest",
     "build:android": "eas build --platform android",
-    "build:ios": "eas build --platform ios"
+    "build:ios": "eas build --platform ios",
+    "download-assets": "node scripts/download-static-assets.js",
+    "replace-assets": "node scripts/replace-static-urls.js",
+    "sync-assets": "npm run download-assets && npm run replace-assets"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
