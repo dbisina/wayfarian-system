@@ -2,6 +2,8 @@
 // GPS location tracking and journey management
 
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { journeyAPI } from './api';
 
 // Movement filtering thresholds to reduce GPS jitter when stationary
@@ -42,6 +44,7 @@ class LocationService {
   private startTime: number = 0;
   private lastUpdateTime: number = 0;
   private updateInterval: number = 5000; // Update backend every 5 seconds
+  private currentGroupId: string | null = null;
 
   // Calculate distance between two points using Haversine formula
   private calculateDistance(
@@ -80,10 +83,20 @@ class LocationService {
       }
 
       // Request background permission for continuous tracking
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      
-      if (backgroundStatus !== 'granted') {
-        console.warn('Background location permission denied - tracking will stop when app is backgrounded');
+      // IMPORTANT: Expo Go on iOS cannot add Info.plist keys, so this call will throw.
+      // Only request background permission on iOS when running a standalone/dev client build.
+      try {
+        const isExpoGo = Constants.appOwnership === 'expo';
+        const allowBackgroundOnIOS = Platform.OS === 'ios' && !isExpoGo; // standalone/dev builds only
+        if (Platform.OS === 'android' || allowBackgroundOnIOS) {
+          const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+          if (backgroundStatus !== 'granted') {
+            console.warn('Background location permission denied - tracking will pause in background');
+          }
+        }
+      } catch (e) {
+        // Swallow Info.plist errors on Expo Go iOS and continue with foreground tracking
+        console.warn('Background permission request skipped:', (e as any)?.message || e);
       }
 
       return true;
@@ -140,9 +153,10 @@ class LocationService {
       if (!response || !response.journey?.id) {
         throw new Error('Backend unavailable: failed to start journey');
       }
-      const journeyId: string = response.journey.id;
+  const journeyId: string = response.journey.id;
 
       this.currentJourneyId = journeyId;
+  this.currentGroupId = groupId || null;
       this.isTracking = true;
       this.startTime = Date.now();
       this.lastUpdateTime = Date.now();
@@ -252,6 +266,20 @@ class LocationService {
       await this.updateBackend();
       this.lastUpdateTime = now;
     }
+
+    // Also share live location with group via socket when in a group journey
+    if (this.currentGroupId) {
+      try {
+        const { shareGroupLocation } = await import('./socket');
+        shareGroupLocation({
+          latitude: newPoint.latitude,
+          longitude: newPoint.longitude,
+          speed: this.stats.currentSpeed,
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
   }
 
   // Update backend with current journey data
@@ -338,6 +366,7 @@ class LocationService {
 
       this.isTracking = false;
       this.currentJourneyId = null;
+      this.currentGroupId = null;
       this.routePoints = [];
       this.stats = {
         totalDistance: 0,

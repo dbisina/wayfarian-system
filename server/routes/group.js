@@ -2,6 +2,7 @@
 // server/routes/group.js
 
 const express = require('express');
+const prisma = require('../prisma/client');
 const { body, param, query, validationResult } = require('express-validator');
 const {
   createGroup,
@@ -12,7 +13,10 @@ const {
   leaveGroup,
   getGroupMembers,
   removeMember,
+  uploadGroupCover,
+  addCreatorAsMember,
 } = require('../controllers/groupController');
+const multer = require('multer');
 
 const router = express.Router();
 
@@ -110,7 +114,8 @@ router.get(
   '/:groupId',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
   ],
   handleValidationErrors,
@@ -126,7 +131,8 @@ router.put(
   '/:groupId',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
     body('name')
       .optional()
@@ -162,7 +168,8 @@ router.delete(
   '/:groupId/leave',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
   ],
   handleValidationErrors,
@@ -178,7 +185,8 @@ router.get(
   '/:groupId/members',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
   ],
   handleValidationErrors,
@@ -194,10 +202,12 @@ router.delete(
   '/:groupId/members/:memberId',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
     param('memberId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid member ID'),
   ],
   handleValidationErrors,
@@ -213,7 +223,8 @@ router.get(
   '/:groupId/invite-link',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
   ],
   handleValidationErrors,
@@ -222,8 +233,7 @@ router.get(
       const { groupId } = req.params;
       const userId = req.user.id;
       
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
+      
       
       // Verify user is member of the group
       const membership = await prisma.groupMember.findUnique({
@@ -283,6 +293,40 @@ router.get(
 );
 
 /**
+ * @route POST /api/group/:groupId/cover
+ * @desc Upload group cover image (creator/admin only)
+ * @access Private
+ */
+router.post(
+  '/:groupId/cover',
+  [
+    param('groupId')
+      .isString()
+      .isLength({ min: 20, max: 30 })
+      .withMessage('Invalid group ID'),
+  ],
+  handleValidationErrors,
+  uploadGroupCover
+);
+
+/**
+ * @route POST /api/group/:groupId/add-creator-member
+ * @desc Add creator as member (fix for missing creator membership)
+ * @access Private (Creator only)
+ */
+router.post(
+  '/:groupId/add-creator-member',
+  [
+    param('groupId')
+      .isString()
+      .isLength({ min: 20, max: 30 })
+      .withMessage('Invalid group ID'),
+  ],
+  handleValidationErrors,
+  addCreatorAsMember
+);
+
+/**
  * @route POST /api/group/:groupId/regenerate-code
  * @desc Regenerate group invite code
  * @access Private (Creator/Admin only)
@@ -291,7 +335,8 @@ router.post(
   '/:groupId/regenerate-code',
   [
     param('groupId')
-      .isUUID()
+      .isString()
+      .isLength({ min: 20, max: 30 })
       .withMessage('Invalid group ID'),
   ],
   handleValidationErrors,
@@ -300,9 +345,8 @@ router.post(
       const { groupId } = req.params;
       const userId = req.user.id;
       
-      const { PrismaClient } = require('@prisma/client');
-      const { generateRandomString } = require('../utils/helpers');
-      const prisma = new PrismaClient();
+  const { generateRandomString } = require('../utils/helpers');
+      
       
       // Verify user is creator or admin
       const membership = await prisma.groupMember.findUnique({

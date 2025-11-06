@@ -1,8 +1,7 @@
 // Group Socket Handler for Real-time Group Journey Tracking
 // server/sockets/groupSocket.js
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../prisma/client');
 
 /**
  * Handle group-related socket events

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
+import { router } from 'expo-router';
 
 const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
   const activities = [
@@ -42,8 +43,25 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
   ];
 
   const handleActivityPress = (activity) => {
-    console.log('Selected activity:', activity.title);
-    onClose();
+    try {
+      // Route based on selected activity; keep UI unchanged
+      switch (activity.id) {
+        case 1: // Start Solo ride
+          router.push('/new-journey');
+          break;
+        case 3: // Start Group ride
+          router.push('/new-group');
+          break;
+        case 4: // Join a group ride
+          router.push('/groups');
+          break;
+        default:
+          // Other actions can be hooked up later
+          break;
+      }
+    } finally {
+      onClose();
+    }
   };
 
   if (!visible) return null;

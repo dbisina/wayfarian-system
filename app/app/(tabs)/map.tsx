@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, TextInput, FlatList, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard } from 'react-native';
 import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import { placesAPI } from '../../services/api';
+import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -293,15 +294,20 @@ export default function MapScreen(): React.JSX.Element {
         </MapView>
       ) : (
         <View style={styles.mapPlaceholder}>
-          <ActivityIndicator size="large" color="#F9A825" />
-          <Text style={styles.loadingText}>Loading map...</Text>
+          <Skeleton width={"88%"} height={180} style={{ borderRadius: 12 }} />
+          <View style={{ height: 14 }} />
+          <SkeletonLine width={"60%"} height={14} />
+          <View style={{ height: 10 }} />
+          <SkeletonLine width={"40%"} height={12} />
         </View>
       )}
 
-      {/* Loading Overlay */}
+      {/* Lightweight loading badge instead of full overlay */}
       {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#F9A825" />
+        <View style={styles.loadingBadge}>
+          <SkeletonCircle size={14} />
+          <View style={{ width: 8 }} />
+          <SkeletonLine width={70} height={12} />
         </View>
       )}
 
@@ -401,6 +407,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f0f0f0',
+  },
+  loadingBadge: {
+    position: 'absolute',
+    top: 160,
+    right: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 900,
   },
   loadingText: {
     marginTop: 16,

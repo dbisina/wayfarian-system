@@ -7,12 +7,12 @@ import {
   Image,
   TouchableOpacity,
   StatusBar,
-  Dimensions,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
+import { router } from 'expo-router';
+import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
 
 // const { width: screenWidth } = Dimensions.get('window');
 
@@ -60,27 +60,32 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
   const currentData = activeTab === 'friends' ? friendsData : globalData;
 
-  const renderLeaderboardItem = (item: any, isCurrentUser = false) => (
-    <View key={item.id || 'current-user'} style={styles.leaderboardItem}>
-      <Image 
-        source={{ 
-          uri: item.photoURL || item.avatar || 'https://static.codia.ai/image/2025-09-26/9sr6fxuLqr.png' 
-        }} 
-        style={styles.avatar} 
-      />
-      <View style={styles.userInfo}>
-        <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
-          {item.displayName || item.name || 'User'}
-        </Text>
-        <View style={styles.countryContainer}>
-          {item.flag && <Image source={{ uri: item.flag }} style={styles.flagIcon} />}
-          <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
+  const renderLeaderboardItem = (item: any, isCurrentUser = false) => {
+    // Use photoURL if available, otherwise generate avatar with user's initials
+    const displayName = item.displayName || item.name || 'User';
+    const avatarUri = item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=128&background=F9A825&color=fff&bold=true&rounded=true`;
+    
+    return (
+      <View key={item.id || 'current-user'} style={styles.leaderboardItem}>
+        <Image 
+          source={{ uri: avatarUri }} 
+          style={styles.avatar}
+        />
+        <View style={styles.userInfo}>
+          <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
+            {displayName}
+            {isCurrentUser && ' (You)'}
+          </Text>
+          <View style={styles.countryContainer}>
+            {item.flag && <Image source={{ uri: item.flag }} style={styles.flagIcon} />}
+            <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
+          </View>
         </View>
+        <Text style={styles.rank}>#{item.rank || item.position || 'N/A'}</Text>
+        <Text style={styles.distance}>{getDisplayValue(item)}</Text>
       </View>
-      <Text style={styles.rank}>#{item.rank || item.position || 'N/A'}</Text>
-      <Text style={styles.distance}>{getDisplayValue(item)}</Text>
-    </View>
-  );
+    );
+  };
 
   if (!isAuthenticated) {
     return (
@@ -103,10 +108,12 @@ export default function LeaderboardScreen(): React.JSX.Element {
           style={styles.backButton}
         />
         <Text style={styles.headerTitle}>Leaderboard</Text>
-        <Image
-          source={{ uri: 'https://static.codia.ai/image/2025-09-26/itjep5JQ04.png' }}
-          style={styles.profileIcon}
-        />
+        <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
+          <Image
+            source={{ uri: 'https://static.codia.ai/image/2025-09-26/itjep5JQ04.png' }}
+            style={styles.profileIcon}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Tab Selector */}
@@ -145,10 +152,30 @@ export default function LeaderboardScreen(): React.JSX.Element {
         }
       >
         {loading && !currentData ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#F9A825" />
-            <Text style={styles.loadingText}>Loading leaderboard...</Text>
-          </View>
+          <>
+            {/* Current user skeleton */}
+            <View style={styles.leaderboardItem}>
+              <SkeletonCircle size={56} />
+              <View style={[styles.userInfo, { marginLeft: 16 }]}>
+                <SkeletonLine width={140} height={14} style={{ marginBottom: 6 }} />
+                <SkeletonLine width={80} height={10} />
+              </View>
+              <SkeletonLine width={40} height={14} style={{ marginRight: 16 }} />
+              <SkeletonLine width={60} height={14} />
+            </View>
+            {/* List skeletons */}
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <View key={idx} style={styles.leaderboardItem}>
+                <SkeletonCircle size={56} />
+                <View style={[styles.userInfo, { marginLeft: 16 }]}>
+                  <SkeletonLine width={120} height={14} style={{ marginBottom: 6 }} />
+                  <SkeletonLine width={70} height={10} />
+                </View>
+                <SkeletonLine width={30} height={14} style={{ marginRight: 16 }} />
+                <SkeletonLine width={50} height={14} />
+              </View>
+            ))}
+          </>
         ) : error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
@@ -188,7 +215,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
           </>
         ) : null}
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
     </View>
   );

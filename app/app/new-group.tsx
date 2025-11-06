@@ -7,33 +7,77 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { groupAPI } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function NewGroupScreen() {
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [coverUri, setCoverUri] = useState<string | null>(null);
 
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       Alert.alert('Error', 'Please enter a group name');
       return;
     }
-    
-    // Here you would typically make an API call to create the group
-    Alert.alert('Success', 'Group created successfully!', [
-      {
-        text: 'OK',
-        onPress: () => router.back(),
-      },
-    ]);
+
+    try {
+      const result = await groupAPI.createGroup({
+        name: groupName.trim(),
+        description: groupDescription.trim() || undefined,
+        isPrivate,
+      });
+
+      const groupId = result?.group?.id || result?.id;
+      if (!groupId) {
+        throw new Error('No group id returned');
+      }
+
+      // If a cover image was selected, upload it now
+      if (coverUri) {
+        try {
+          console.log('[Group Cover] Uploading cover image:', coverUri);
+          const result = await groupAPI.uploadGroupCover(groupId, coverUri);
+          console.log('[Group Cover] Upload successful:', result?.imageUrl);
+        } catch (e: any) {
+          console.error('[Group Cover] Upload failed:', e?.message || e);
+          Alert.alert(
+            'Cover Upload Failed',
+            'The group was created successfully, but the cover photo failed to upload. You can try uploading it again from the group settings.',
+            [{ text: 'OK' }]
+          );
+          // Don't block group creation if cover upload fails
+        }
+      }
+
+      // Navigate to group details first (leader can then start a journey)
+      router.replace(`/group-detail?groupId=${groupId}`);
+    } catch (e: any) {
+      console.error('Create group failed:', e);
+      Alert.alert('Error', e?.message || 'Failed to create group');
+    }
   };
 
   const handleUploadPhoto = () => {
-    // Here you would implement photo upload functionality
-    Alert.alert('Photo Upload', 'Photo upload functionality would be implemented here');
+    (async () => {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'We need access to your photos to set a cover.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+      if (!result.canceled && result.assets?.length) {
+        setCoverUri(result.assets[0].uri);
+      }
+    })();
   };
 
   return (
@@ -95,16 +139,30 @@ export default function NewGroupScreen() {
           <View style={styles.photoSection}>
             <Text style={styles.photoSectionTitle}>Group Cover Photo</Text>
             
-            <View style={styles.uploadContainer}>
-              <View style={styles.uploadArea}>
-                <Text style={styles.uploadTitle}>Upload Cover Photo</Text>
-                <Text style={styles.uploadSubtitle}>Add a cover photo to your group</Text>
-                
-                <TouchableOpacity style={styles.uploadButton} onPress={handleUploadPhoto}>
-                  <Text style={styles.uploadButtonText}>Upload</Text>
+            {coverUri ? (
+              <View style={styles.previewContainer}>
+                <Image source={{ uri: coverUri }} style={styles.coverPreview} />
+                <TouchableOpacity 
+                  style={styles.changePhotoButton} 
+                  onPress={handleUploadPhoto}
+                >
+                  <MaterialIcons name="edit" size={20} color="#FFFFFF" />
+                  <Text style={styles.changePhotoText}>Change Photo</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            ) : (
+              <View style={styles.uploadContainer}>
+                <View style={styles.uploadArea}>
+                  <MaterialIcons name="add-photo-alternate" size={48} color="#007AFF" />
+                  <Text style={styles.uploadTitle}>Upload Cover Photo</Text>
+                  <Text style={styles.uploadSubtitle}>Add a cover photo to your group</Text>
+                  
+                  <TouchableOpacity style={styles.uploadButton} onPress={handleUploadPhoto}>
+                    <Text style={styles.uploadButtonText}>Choose Photo</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -251,6 +309,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontFamily: 'Poppins',
     marginBottom: 8,
+    marginTop: 12,
   },
   uploadSubtitle: {
     fontSize: 14,
@@ -260,7 +319,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   uploadButton: {
-    backgroundColor: '#C4C4C4',
+    backgroundColor: '#007AFF',
     borderRadius: 8,
     paddingHorizontal: 24,
     paddingVertical: 12,
@@ -268,8 +327,36 @@ const styles = StyleSheet.create({
   uploadButtonText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#000000',
+    color: '#FFFFFF',
     fontFamily: 'Poppins',
+  },
+  previewContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  coverPreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+  },
+  changePhotoButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  changePhotoText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    fontFamily: 'Poppins',
+    marginLeft: 6,
   },
   bottomContainer: {
     paddingHorizontal: 20,

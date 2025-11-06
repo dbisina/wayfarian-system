@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
@@ -11,15 +12,24 @@ interface GroupCardProps {
   name: string;
   memberCount: number;
   icon: string;
+  coverPhotoURL?: string;
   onPress?: () => void;
 }
 
-const GroupCard = ({name, memberCount, icon, onPress}: GroupCardProps): React.JSX.Element => {
+const GroupCard = ({name, memberCount, icon, coverPhotoURL, onPress}: GroupCardProps): React.JSX.Element => {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
-      <View style={styles.iconContainer}>
-        <Icon name={icon} size={24} color="#FFFFFF" />
-      </View>
+      {coverPhotoURL ? (
+        <Image 
+          source={{ uri: coverPhotoURL }} 
+          style={styles.coverImage}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.iconContainer}>
+          <Icon name={icon} size={24} color="#FFFFFF" />
+        </View>
+      )}
       
       <View style={styles.content}>
         <Text style={styles.groupName}>{name}</Text>
@@ -48,6 +58,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3E4751',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  coverImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
   },
   content: {
     flex: 1,

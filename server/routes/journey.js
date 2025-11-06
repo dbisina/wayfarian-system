@@ -2,6 +2,7 @@
 // server/routes/journey.js
 
 const express = require("express");
+const prisma = require('../prisma/client');
 const {
   startJourney,
   updateJourneyProgress,
@@ -49,7 +50,11 @@ router.post(
       .optional()
       .isIn(["bike", "car", "truck", "motorcycle", "bus", "other"])
       .withMessage("Invalid vehicle type"),
-    body("groupId").optional().isUUID().withMessage("Invalid group ID"),
+    // groupId is truly optional - solo journeys don't have a group
+    body("groupId")
+      .optional({ nullable: true, checkFalsy: true })
+      .isString()
+      .withMessage("Invalid group ID"),
   ],
   handleValidationErrors,
   startJourney
@@ -63,7 +68,8 @@ router.post(
 router.put(
   "/:journeyId/progress",
   [
-    param("journeyId").isUUID().withMessage("Invalid journey ID"),
+  // IDs are Prisma CUID strings, not UUID
+  param("journeyId").isString().withMessage("Invalid journey ID"),
     body("latitude")
       .isFloat({ min: -90, max: 90 })
       .withMessage("Latitude must be between -90 and 90"),
@@ -91,7 +97,8 @@ router.put(
 router.put(
   "/:journeyId/end",
   [
-    param("journeyId").isUUID().withMessage("Invalid journey ID"),
+  // IDs are Prisma CUID strings, not UUID
+  param("journeyId").isString().withMessage("Invalid journey ID"),
     body("latitude")
       .isFloat({ min: -90, max: 90 })
       .withMessage("Latitude must be between -90 and 90"),
@@ -110,7 +117,10 @@ router.put(
  */
 router.post(
   "/:journeyId/pause",
-  [param("journeyId").isUUID().withMessage("Invalid journey ID")],
+  [
+    // IDs are Prisma CUID strings, not UUID
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+  ],
   handleValidationErrors,
   pauseJourney
 );
@@ -122,7 +132,10 @@ router.post(
  */
 router.post(
   "/:journeyId/resume",
-  [param("journeyId").isUUID().withMessage("Invalid journey ID")],
+  [
+    // IDs are Prisma CUID strings, not UUID
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+  ],
   handleValidationErrors,
   resumeJourney
 );
@@ -166,15 +179,17 @@ router.get("/active", getActiveJourney);
  */
 router.get(
   "/:journeyId",
-  [param("journeyId").isUUID().withMessage("Invalid journey ID")],
+  [
+    // IDs are Prisma CUID strings, not UUID
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+  ],
   handleValidationErrors,
   async (req, res) => {
     try {
       const { journeyId } = req.params;
       const userId = req.user.id;
 
-      const { PrismaClient } = require("@prisma/client");
-      const prisma = new PrismaClient();
+      
 
       const journey = await prisma.journey.findFirst({
         where: {

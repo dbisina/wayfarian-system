@@ -22,10 +22,11 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI, setAuthToken, removeAuthToken } from '../services/api';
+import { authAPI, setAuthToken, removeAuthToken, clearApiOverride } from '../services/api';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as AuthSession from 'expo-auth-session';
 import * as FirebaseAuthNS from 'firebase/auth';
+import { setUser as setSentryUser, clearUser as clearSentryUser, captureException } from '../services/sentry';
 
 // Workaround for RN persistence: access symbol from namespace and cast to any to avoid TS type gaps
 const getReactNativePersistence: ((storage: any) => any) | undefined = (FirebaseAuthNS as any).getReactNativePersistence;
@@ -33,32 +34,37 @@ const getReactNativePersistence: ((storage: any) => any) | undefined = (Firebase
 // Complete the auth session
 WebBrowser.maybeCompleteAuthSession();
 
-// Firebase configuration with fallback values for development
+// Firebase configuration - all values must be provided via environment variables
+// SECURITY: Never hardcode API keys or sensitive credentials
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyDWB96a0zDAzAm_4ZA9oaR8nI8pnoNLfZk",
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "wayfarian-e49b4.firebaseapp.com",
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "wayfarian-e49b4",
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "wayfarian-e49b4.firebasestorage.app",
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "65260446195",
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:65260446195:web:c11a2c5454f3bb65a83286",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
+
+// Validate required Firebase configuration
+const requiredFirebaseKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
+const missingKeys = requiredFirebaseKeys.filter(key => !firebaseConfig[key as keyof typeof firebaseConfig]);
+
+if (missingKeys.length > 0) {
+  throw new Error(
+    `Missing required Firebase configuration. Please add the following to your .env file:\n${
+      missingKeys.map(key => `  - EXPO_PUBLIC_FIREBASE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`).join('\n')
+    }\n\nRefer to FIREBASE_OAUTH_SETUP.md for setup instructions.`
+  );
+}
 
 // Initialize Firebase app once (avoid HMR duplicate init)
 const app = (getApps().length ? getApp() : initializeApp(firebaseConfig));
 
-// Initialize Firebase Auth once; on HMR reuse existing auth instance
-let authExisting: any = null;
-try {
-  authExisting = getAuth(app);
-} catch {
-  // No existing auth instance yet
-}
-
-const auth = authExisting || (
-  getReactNativePersistence
-    ? initializeAuth(app, { persistence: getReactNativePersistence(ReactNativeAsyncStorage) })
-    : initializeAuth(app)
-);
+// Initialize Firebase Auth explicitly with React Native persistence when available
+// Avoid calling getAuth() before initializeAuth() to prevent memory-only persistence and warnings
+const auth = getReactNativePersistence
+  ? initializeAuth(app, { persistence: getReactNativePersistence(ReactNativeAsyncStorage) })
+  : getAuth(app);
 
 // Configure Google Sign-In
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -127,11 +133,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const idToken = await firebaseUser.getIdToken();
       await setAuthToken(idToken);
       
-      // Call backend to get/create user (send only idToken to avoid validation issues)
-      const response = await authAPI.login(idToken);
+      // Call backend to get/create user, include optional profile fields to avoid default 'Wayfarian User'
+      const response = await authAPI.login(idToken, {
+        displayName: firebaseUser.displayName || undefined,
+        photoURL: firebaseUser.photoURL || undefined,
+        phoneNumber: firebaseUser.phoneNumber || undefined,
+      });
       
       if (response && response.success && response.user) {
-        setUser(response.user);
+        let srvUser = response.user as User;
+        // Auto-fix generic display name if we can infer a better one
+        if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
+          try {
+            const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
+            if (inferred && inferred !== 'Wayfarian User') {
+              const upd = await authAPI.updateProfile({ displayName: inferred });
+              if (upd?.success && upd.user) {
+                srvUser = upd.user as User;
+              }
+            }
+          } catch {}
+        }
+        setUser(srvUser);
         setIsAuthenticated(true);
         return;
       }
@@ -156,7 +179,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // As a final check, try to fetch the current user if token is valid
       const me = await authAPI.getCurrentUser();
       if (me && me.success && me.user) {
-        setUser(me.user);
+        let srvUser = me.user as User;
+        if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
+          try {
+            const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
+            if (inferred && inferred !== 'Wayfarian User') {
+              const upd = await authAPI.updateProfile({ displayName: inferred });
+              if (upd?.success && upd.user) {
+                srvUser = upd.user as User;
+              }
+            }
+          } catch {}
+        }
+        setUser(srvUser);
         setIsAuthenticated(true);
         return;
       }
@@ -504,19 +539,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Logout
   const logout = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      
-      // Sign out from Firebase
-      await authAPI.logout();
-      await signOut(auth);
+      // Attempt server-side logout, but don't block local cleanup on failure
+      try {
+        await authAPI.logout();
+      } catch {
+        console.warn('Server logout failed or unreachable; proceeding with local cleanup');
+      }
+    } finally {
+      try {
+        await signOut(auth);
+      } catch {
+        console.warn('Firebase signOut failed (possibly already signed out)');
+      }
+      // Clear local auth state regardless
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);
-      await removeAuthToken();
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
+      try { await removeAuthToken(); } catch {}
+      // Also clear any API base override so app can adopt the new backend automatically
+      try { await clearApiOverride(); } catch {}
       setLoading(false);
     }
   };

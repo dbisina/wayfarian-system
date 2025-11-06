@@ -1,10 +1,13 @@
 // Group Controller
 // server/controllers/groupController.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { generateRandomString } = require('../utils/helpers');
+const multer = require('multer');
+const sharp = require('sharp');
+const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
 
-const prisma = new PrismaClient();
+// Use shared Prisma client
 
 /**
  * Create a new group
@@ -690,6 +693,69 @@ const removeMember = async (req, res) => {
   }
 };
 
+/**
+ * Add creator as member (fix for missing creator membership)
+ */
+const addCreatorAsMember = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+
+    // Get group
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+    });
+
+    if (!group) {
+      return res.status(404).json({
+        error: 'Group not found',
+      });
+    }
+
+    // Verify user is the creator
+    if (group.creatorId !== userId) {
+      return res.status(403).json({
+        error: 'Unauthorized',
+        message: 'Only the group creator can perform this action',
+      });
+    }
+
+    // Check if already a member
+    const existing = await prisma.groupMember.findUnique({
+      where: {
+        userId_groupId: { userId, groupId },
+      },
+    });
+
+    if (existing) {
+      return res.json({
+        success: true,
+        message: 'Already a member',
+      });
+    }
+
+    // Add as member with CREATOR role
+    await prisma.groupMember.create({
+      data: {
+        userId,
+        groupId,
+        role: 'CREATOR',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Creator added as member',
+    });
+  } catch (error) {
+    console.error('Add creator member error:', error);
+    res.status(500).json({
+      error: 'Failed to add creator as member',
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   createGroup,
   joinGroup,
@@ -699,4 +765,104 @@ module.exports = {
   leaveGroup,
   getGroupMembers,
   removeMember,
+  addCreatorAsMember,
 };
+
+/**
+ * Upload group cover image (creator/admin only)
+ * Field: 'cover' (multipart/form-data)
+ */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+}).single('cover');
+
+const uploadGroupCover = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+
+    // Verify membership and role
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+    if (!membership || !['CREATOR', 'ADMIN'].includes(membership.role)) {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only group creators and admins can update the cover image',
+      });
+    }
+
+    // Handle upload via multer
+    upload(req, res, async (err) => {
+      if (err) {
+        console.error('[Group Cover] Upload error:', err.message);
+        return res.status(400).json({ error: 'Upload error', message: err.message });
+      }
+      if (!req.file) {
+        console.error('[Group Cover] No file in request');
+        return res.status(400).json({ error: 'No file uploaded', message: 'Please provide an image file' });
+      }
+
+      try {
+        console.log(`[Group Cover] Processing upload for group ${groupId}`);
+        console.log(`[Group Cover] Original file: ${req.file.originalname}, size: ${req.file.size} bytes`);
+
+        // Get existing group to check for old cover photo
+        const existingGroup = await prisma.group.findUnique({
+          where: { id: groupId },
+          select: { coverPhotoURL: true },
+        });
+
+        // Process image to a reasonable cover size (1200x600 for cover)
+        const optimized = await sharp(req.file.buffer)
+          .resize(1200, 600, { fit: 'cover' })
+          .jpeg({ quality: 88, progressive: true })
+          .toBuffer();
+
+        console.log(`[Group Cover] Image optimized: ${optimized.length} bytes`);
+
+        const filename = `cover_${groupId}_${Date.now()}.jpg`;
+        const imageUrl = await uploadToStorage(optimized, filename, 'image/jpeg', 'group-covers');
+
+        console.log(`[Group Cover] Upload successful: ${imageUrl}`);
+
+        // Delete old cover photo if it exists
+        if (existingGroup?.coverPhotoURL) {
+          try {
+            console.log(`[Group Cover] Deleting old cover: ${existingGroup.coverPhotoURL}`);
+            await deleteFromStorage(existingGroup.coverPhotoURL);
+            console.log('[Group Cover] Old cover deleted successfully');
+          } catch (deleteErr) {
+            console.error('[Group Cover] Failed to delete old cover:', deleteErr.message);
+            // Don't fail the upload if old photo deletion fails
+          }
+        }
+
+        // Update group with cover photo URL
+        await prisma.group.update({
+          where: { id: groupId },
+          data: { coverPhotoURL: imageUrl },
+        });
+
+        console.log(`[Group Cover] Group ${groupId} updated with new cover URL`);
+        return res.json({ success: true, imageUrl });
+      } catch (processingError) {
+        console.error('[Group Cover] Processing error:', processingError);
+        return res.status(500).json({ 
+          error: 'Failed to process cover image', 
+          message: processingError.message 
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Upload group cover error:', error);
+    res.status(500).json({ error: 'Failed to upload group cover', message: error.message });
+  }
+};
+
+module.exports.uploadGroupCover = uploadGroupCover;

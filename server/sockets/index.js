@@ -2,11 +2,12 @@
 
 const { Server } = require('socket.io');
 const { verifyIdToken } = require('../services/Firebase');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const journeySocket = require('./journeySocket');
 const groupSocket = require('./groupSockets');
+const groupJourneySocket = require('./groupJourneySocket');
 
-const prisma = new PrismaClient();
+// Use shared Prisma client
 
 /**
  * Initialize Socket.io server with authentication
@@ -16,14 +17,9 @@ const prisma = new PrismaClient();
 const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: process.env.NODE_ENV === 'production' 
+      origin: process.env.NODE_ENV === 'production'
         ? [process.env.FRONTEND_URL]
-        : [
-            'http://localhost:3000', 
-            'http://localhost:19006', 
-            'http://localhost:8081',
-            'exp://192.168.1.100:19000',
-          ],
+        : '*',
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -89,6 +85,7 @@ const initializeSocket = (server) => {
     // Initialize feature handlers
     journeySocket(io, socket);
     groupSocket(io, socket);
+    groupJourneySocket(io, socket);
 
     // Handle heartbeat
     socket.on('heartbeat', () => {

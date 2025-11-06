@@ -2,6 +2,7 @@
 // server/routes/auth.js
 
 const express = require('express');
+const prisma = require('../prisma/client');
 const { body, query, validationResult } = require('express-validator');
 const {
   authenticateUser,
@@ -213,8 +214,6 @@ router.post('/update-firebase-profile', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const firebaseUser = req.firebaseUser;
     
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
     
     // Update user with latest Firebase data
     const updatedUser = await prisma.user.update({
@@ -259,8 +258,7 @@ router.post('/update-firebase-profile', authMiddleware, async (req, res) => {
 router.get('/stats', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     const [
       totalJourneys,

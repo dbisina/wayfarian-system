@@ -2,6 +2,7 @@
 // server/routes/gallery.js
 
 const express = require('express');
+const prisma = require('../prisma/client');
 const { body, param, query, validationResult } = require('express-validator');
 const {
   upload,
@@ -36,9 +37,10 @@ router.post(
   '/upload',
   upload, // Multer middleware for file upload
   [
+    // IDs are Prisma CUID strings, not UUID
     body('journeyId')
       .optional()
-      .isUUID()
+      .isString()
       .withMessage('Invalid journey ID'),
     body('latitude')
       .optional()
@@ -65,8 +67,9 @@ router.post(
 router.get(
   '/journey/:journeyId',
   [
+    // IDs are Prisma CUID strings, not UUID
     param('journeyId')
-      .isUUID()
+      .isString()
       .withMessage('Invalid journey ID'),
     query('page')
       .optional()
@@ -97,9 +100,10 @@ router.get(
       .optional()
       .isInt({ min: 1, max: 50 })
       .withMessage('Limit must be between 1 and 50'),
+    // IDs are Prisma CUID strings, not UUID
     query('journeyId')
       .optional()
-      .isUUID()
+      .isString()
       .withMessage('Invalid journey ID'),
   ],
   handleValidationErrors,
@@ -114,8 +118,9 @@ router.get(
 router.get(
   '/photo/:photoId',
   [
+    // IDs are Prisma CUID strings, not UUID
     param('photoId')
-      .isUUID()
+      .isString()
       .withMessage('Invalid photo ID'),
   ],
   handleValidationErrors,
@@ -130,8 +135,9 @@ router.get(
 router.put(
   '/photo/:photoId/metadata',
   [
+    // IDs are Prisma CUID strings, not UUID
     param('photoId')
-      .isUUID()
+      .isString()
       .withMessage('Invalid photo ID'),
     body('latitude')
       .optional()
@@ -158,8 +164,9 @@ router.put(
 router.delete(
   '/photo/:photoId',
   [
+    // IDs are Prisma CUID strings, not UUID
     param('photoId')
-      .isUUID()
+      .isString()
       .withMessage('Invalid photo ID'),
   ],
   handleValidationErrors,
@@ -190,8 +197,7 @@ router.post(
 router.get('/stats', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     const [totalPhotos, totalSize, recentPhotos] = await Promise.all([
       prisma.photo.count({

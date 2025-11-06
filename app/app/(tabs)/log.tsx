@@ -28,10 +28,10 @@ export default function RideLogScreen(): React.JSX.Element {
   const [rank, setRank] = useState<number | null>(null);
   const [xpProgress, setXpProgress] = useState<number>(0);
   const [nextBadge, setNextBadge] = useState<string>('');
-  const [badges, setBadges] = useState<Array<{ id: string; title: string; imageUrl?: string }>>([]);
+  const [badges, setBadges] = useState<{ id: string; title: string; imageUrl?: string }[]>([]);
   const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
   const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -61,7 +61,7 @@ export default function RideLogScreen(): React.JSX.Element {
         setNextBadge(nextName);
 
         // Build badges from unlocked tiers (top 4)
-        const unlockedBadges: Array<{ id: string; title: string }> = [];
+  const unlockedBadges: { id: string; title: string }[] = [];
         ach.forEach((a: any) => {
           (a.tiers || []).forEach((t: any) => {
             if (t.unlocked) unlockedBadges.push({ id: `${a.id}_${t.level}`, title: t.name || a.name });
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   progressCard: {
     marginHorizontal: 15,

@@ -1,15 +1,18 @@
 // server/jobs/workers.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
 const { cacheService } = require('../services/CacheService');
 const logger = require('../services/Logger');
-const jobQueue = require('../services/JobQueue');
+// Use Valkey-backed persistent job queue
+const jobQueue = process.env.USE_VALKEY_QUEUE === 'true' 
+  ? require('../services/ValkeyJobQueue')
+  : require('../services/JobQueue');
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
 
-const prisma = new PrismaClient();
+// Use shared Prisma client
 
 /**
  * Image processing worker
@@ -337,6 +340,9 @@ jobQueue.process('send-notification', async (job) => {
     // For now, we'll just log the notification
     
     switch (type) {
+      case 'group-journey-started':
+        await logNotification(userId, `Group ride started: ${data.groupName}`, data);
+        break;
       case 'journey-completed':
         await logNotification(userId, 'Journey completed!', data);
         break;

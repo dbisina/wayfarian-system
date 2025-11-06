@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,97 @@ import {
   TouchableOpacity,
   Image,
   Switch,
+  Platform,
+  Alert,
+  ActionSheetIOS,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../contexts/AuthContext';
+
+const STORE_KEYS = {
+  notifications: 'settings.notificationsEnabled',
+  units: 'settings.units',
+  mapType: 'settings.mapType',
+  vehicle: 'settings.vehicle',
+} as const;
+
+type Units = 'km' | 'mi';
+type MapType = 'standard' | 'satellite' | 'terrain';
+type Vehicle = 'car' | 'bike' | 'scooter';
 
 export default function SettingsScreen() {
+  const { logout } = useAuth();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [units, setUnits] = useState<Units>('km');
+  const [mapType, setMapType] = useState<MapType>('standard');
+  const [vehicle, setVehicle] = useState<Vehicle>('car');
+
+  // Load persisted settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const [n, u, m, v] = await Promise.all([
+          AsyncStorage.getItem(STORE_KEYS.notifications),
+          AsyncStorage.getItem(STORE_KEYS.units),
+          AsyncStorage.getItem(STORE_KEYS.mapType),
+          AsyncStorage.getItem(STORE_KEYS.vehicle),
+        ]);
+        if (n !== null) setNotificationsEnabled(n === '1');
+        if (u === 'km' || u === 'mi') setUnits(u);
+        if (m === 'standard' || m === 'satellite' || m === 'terrain') setMapType(m as MapType);
+        if (v === 'car' || v === 'bike' || v === 'scooter') setVehicle(v as Vehicle);
+      } catch (e) {
+        console.warn('Failed to load settings', e);
+      }
+    })();
+  }, []);
+
+  // Persist helpers
+  const saveNotifications = async (val: boolean) => {
+    try { await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0'); } catch {}
+    setNotificationsEnabled(val);
+  };
+  const saveUnits = async (val: Units) => {
+    try { await AsyncStorage.setItem(STORE_KEYS.units, val); } catch {}
+    setUnits(val);
+  };
+  const saveMapType = async (val: MapType) => {
+    try { await AsyncStorage.setItem(STORE_KEYS.mapType, val); } catch {}
+    setMapType(val);
+  };
+  const saveVehicle = async (val: Vehicle) => {
+    try { await AsyncStorage.setItem(STORE_KEYS.vehicle, val); } catch {}
+    setVehicle(val);
+  };
+
+  // Cross-platform option pickers
+  const pickOption = (
+    title: string,
+    options: string[],
+    selectedIndex: number,
+    onPick: (index: number) => void
+  ) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title,
+          options: [...options, 'Cancel'],
+          cancelButtonIndex: options.length,
+          userInterfaceStyle: 'light',
+        },
+        (buttonIndex) => {
+          if (buttonIndex < options.length) onPick(buttonIndex);
+        }
+      );
+    } else {
+      Alert.alert(title, undefined, [
+        ...options.map((label, idx) => ({ text: `${idx === selectedIndex ? '• ' : ''}${label}`, onPress: () => onPick(idx) })),
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
 
   const SettingItem = ({ 
     title, 
@@ -68,7 +153,7 @@ export default function SettingsScreen() {
           <SettingItem
             title="Username"
             subtitle="Change your display name"
-            onPress={() => {}}
+            onPress={() => router.push('/profile')}
           />
 
           <View style={styles.settingItem}>
@@ -89,8 +174,10 @@ export default function SettingsScreen() {
 
           <SettingItem
             title="Vehicle Type"
-            subtitle="Select your vehicle type"
-            onPress={() => {}}
+            subtitle={`Current: ${vehicle}`}
+            onPress={() =>
+              pickOption('Select vehicle', ['car', 'bike', 'scooter'], ['car','bike','scooter'].indexOf(vehicle), (i) => saveVehicle(['car','bike','scooter'][i] as Vehicle))
+            }
           />
         </View>
 
@@ -105,7 +192,7 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={saveNotifications}
               trackColor={{ false: '#D1D5DB', true: '#000000' }}
               thumbColor={notificationsEnabled ? '#FFFFFF' : '#FFFFFF'}
               ios_backgroundColor="#D1D5DB"
@@ -114,14 +201,14 @@ export default function SettingsScreen() {
 
           <SettingItem
             title="Units"
-            subtitle="Choose between kilometers or miles"
-            onPress={() => {}}
+            subtitle={`Current: ${units === 'km' ? 'Kilometers' : 'Miles'}`}
+            onPress={() => pickOption('Select units', ['Kilometers', 'Miles'], units === 'km' ? 0 : 1, (i) => saveUnits(i === 0 ? 'km' : 'mi'))}
           />
 
           <SettingItem
             title="Map Type"
-            subtitle="Select your preferred map style"
-            onPress={() => {}}
+            subtitle={`Current: ${mapType}`}
+            onPress={() => pickOption('Select map type', ['standard', 'satellite', 'terrain'], ['standard','satellite','terrain'].indexOf(mapType), (i) => saveMapType(['standard','satellite','terrain'][i] as MapType))}
           />
         </View>
 
@@ -132,7 +219,7 @@ export default function SettingsScreen() {
           <SettingItem
             title="Manage Privacy Settings"
             subtitle=""
-            onPress={() => {}}
+            onPress={() => Alert.alert('Privacy', 'Coming soon')}
             showArrow={true}
           />
         </View>
@@ -144,14 +231,21 @@ export default function SettingsScreen() {
           <SettingItem
             title="FAQ"
             subtitle=""
-            onPress={() => {}}
+            onPress={() => Alert.alert('FAQ', 'Coming soon')}
             showArrow={true}
           />
 
           <SettingItem
             title="Help Center"
             subtitle=""
-            onPress={() => {}}
+            onPress={() => Alert.alert('Help Center', 'Coming soon')}
+            showArrow={true}
+          />
+
+          <SettingItem
+            title="OAuth Debug & API Override"
+            subtitle="Set tunnel URL and test /health"
+            onPress={() => router.push('/oauth-debug')}
             showArrow={true}
           />
 
@@ -161,6 +255,23 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.versionText}>1.2.3</Text>
           </View>
+        </View>
+
+        {/* Logout */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={async () => {
+              try {
+                await logout();
+                router.replace('/(auth)/login');
+              } catch (e) {
+                console.error('Logout failed', e);
+              }
+            }}
+          >
+            <Text style={styles.logoutText}>Log out</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -263,6 +374,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#000000',
+    fontFamily: 'Inter',
+  },
+  logoutButton: {
+    backgroundColor: '#000',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
     fontFamily: 'Inter',
   },
 });

@@ -6,10 +6,12 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import LocationPicker from '../components/LocationPicker';
 import { useJourney } from '../contexts/JourneyContext';
@@ -23,6 +25,7 @@ interface LocationData {
 
 export default function NewJourneyScreen() {
   const { startJourney } = useJourney();
+  const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
   const [endLocation, setEndLocation] = useState<LocationData | null>(null);
@@ -73,6 +76,7 @@ export default function NewJourneyScreen() {
           address: endLocation.address,
         },
         vehicle: 'car', // You could add a vehicle selector
+        ...(groupId ? { groupId: String(groupId) } : {}),
       });
 
       if (success) {
@@ -138,7 +142,13 @@ export default function NewJourneyScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0} style={{ flex: 1 }}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="automatic"
+      >
         {/* Journey Name */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -211,7 +221,8 @@ export default function NewJourneyScreen() {
             placeholderTextColor="#999999"
           />
         </View>
-      </ScrollView>
+  </ScrollView>
+  </KeyboardAvoidingView>
 
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>

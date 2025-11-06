@@ -12,12 +12,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useJourney } from '../contexts/JourneyContext';
 import { router } from 'expo-router';
 
-export default function FloatingJourneyStatus() {
-  const { isTracking, isMinimized, stats, maximizeJourney } = useJourney();
+export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?: boolean }) {
+  const { isTracking, isMinimized, stats, maximizeJourney, currentJourney, hydrated } = useJourney();
 
-  if (!isTracking || !isMinimized) {
-    return null;
-  }
+  // Home-only mode: show whenever there's a current journey (active or paused), after hydration.
+  // Global/default mode: preserve minimized-only behavior to avoid appearing on other screens.
+  const shouldShow = homeOnly
+    ? (hydrated && !!currentJourney)
+    : (hydrated && isMinimized && (isTracking || (currentJourney && currentJourney.status === 'paused')));
+  if (!shouldShow) return null;
 
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -32,15 +35,19 @@ export default function FloatingJourneyStatus() {
 
   const handlePress = () => {
     maximizeJourney();
-    router.push('/journey');
+    // If this overlay represents a group journey, navigate with groupJourneyId so the screen can fetch instance
+    if (currentJourney?.groupJourneyId) {
+      router.push({ pathname: '/journey', params: { groupJourneyId: currentJourney.groupJourneyId } });
+    } else if (currentJourney?.groupId) {
+      // Fallback: at least pass groupId to load members overlay
+      router.push({ pathname: '/journey', params: { groupId: currentJourney.groupId } });
+    } else {
+      router.push('/journey');
+    }
   };
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={handlePress}
-      activeOpacity={0.8}
-    >
+    <TouchableOpacity style={styles.container} onPress={handlePress} activeOpacity={0.8}>
       <View style={styles.content}>
         {/* Time */}
         <View style={styles.statItem}>
@@ -60,8 +67,14 @@ export default function FloatingJourneyStatus() {
           <Text style={styles.statText}>{stats.totalDistance.toFixed(1)} km</Text>
         </View>
 
-        {/* Expand indicator */}
-        <MaterialIcons name="expand-less" size={16} color="#FFFFFF" />
+        {/* If paused, show an indicator */}
+        {!isTracking && currentJourney && currentJourney.status === 'paused' ? (
+          <View style={{ paddingHorizontal: 6 }}>
+            <Text style={[styles.statText, { fontSize: 11 }]}>Paused</Text>
+          </View>
+        ) : (
+          <MaterialIcons name="expand-less" size={16} color="#FFFFFF" />
+        )}
       </View>
     </TouchableOpacity>
   );

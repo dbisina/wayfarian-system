@@ -1,10 +1,8 @@
 // Journey Controller
 // server/controllers/journeyController.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { calculateDistance, calculateAverageSpeed } = require('../utils/helpers');
-
-const prisma = new PrismaClient();
 
 /**
  * Start a new journey

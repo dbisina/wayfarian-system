@@ -6,9 +6,9 @@ import {
   TextInput,
   TouchableOpacity,
   Keyboard,
-  ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Skeleton } from './Skeleton';
 import { placesAPI } from '../services/api';
 
 interface LocationSuggestion {
@@ -204,11 +204,7 @@ export default function LocationPicker({
           />
           
           {loading && (
-            <ActivityIndicator 
-              size="small" 
-              color="#F4E04D" 
-              style={styles.loadingIndicator}
-            />
+            <Skeleton width={16} height={16} borderRadius={8} style={styles.loadingIndicator} />
           )}
           
           {query.length > 0 && !loading && (

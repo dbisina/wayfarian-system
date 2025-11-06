@@ -1,5 +1,9 @@
 // server/index.js 
 
+// IMPORTANT: Sentry must be initialized before any other imports
+const sentryService = require('./services/SentryService');
+sentryService.init();
+
 const app = require('./app');
 const http = require('http');
 const { initializeSocket } = require('./sockets');
@@ -8,7 +12,7 @@ const healthService = require('./services/HealthService');
 const logger = require('./services/Logger');
 const { startMetricsLogging } = require('./middleware/logging');
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 3001;
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -24,9 +28,10 @@ schedulePeriodicJobs();
 startMetricsLogging();
 healthService.startPeriodicChecks(5 * 60 * 1000); // Every 5 minutes
 
-// Start server
-server.listen(PORT, () => {
+// Start server - bind to 0.0.0.0 to allow network access
+server.listen(PORT, '0.0.0.0', () => {
   logger.info(`🚀 Wayfarian API Server running on port ${PORT}`);
+  logger.info(`🌐 Server accessible at http://0.0.0.0:${PORT}`);
   logger.info(`🔌 Socket.io server ready for real-time connections`);
   logger.info(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`🔧 Background jobs and health checks initialized`);
@@ -51,15 +56,18 @@ const gracefulShutdown = async () => {
     const { jobQueue } = require('./services/JobQueue');
     await jobQueue.shutdown();
     
-    // Close database connections
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    await prisma.$disconnect();
+  // Close database connections (shared client)
+  const prisma = require('./prisma/client');
+  await prisma.$disconnect();
     logger.info('Database connections closed');
+    
+    // Close Sentry client
+    await sentryService.close();
     
     process.exit(0);
   } catch (error) {
     logger.error('Error during shutdown', { error: error.message });
+    sentryService.captureException(error);
     process.exit(1);
   }
 };
@@ -70,11 +78,17 @@ process.on('SIGTERM', gracefulShutdown);
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
+  sentryService.captureException(error, {
+    tags: { type: 'uncaughtException' },
+  });
   gracefulShutdown();
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', { reason, promise });
+  sentryService.captureException(reason instanceof Error ? reason : new Error(String(reason)), {
+    tags: { type: 'unhandledRejection' },
+  });
   gracefulShutdown();
 });
 

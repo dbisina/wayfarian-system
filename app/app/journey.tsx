@@ -9,19 +9,27 @@ import {
   Dimensions,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useJourney } from '../contexts/JourneyContext';
-import { router } from 'expo-router';
-import FloatingJourneyStatus from '../components/FloatingJourneyStatus';
+import { useAuth } from '../contexts/AuthContext';
+import { router, useLocalSearchParams } from 'expo-router';
+import { apiRequest } from '../services/api';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
+import RideTimeline from '../components/RideTimeline';
+import MessageComposer from '../components/MessageComposer';
+import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
+import { useGroupJourney } from '../hooks/useGroupJourney';
+import { getSocket } from '../services/socket';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function JourneyScreen(): React.JSX.Element {
+  const { groupId: paramGroupId, groupJourneyId } = useLocalSearchParams<{ groupId?: string; groupJourneyId?: string }>();
   const {
     currentJourney,
     isTracking,
@@ -30,9 +38,11 @@ export default function JourneyScreen(): React.JSX.Element {
     routePoints,
     groupMembers,
     startJourney,
+    resumeJourney,
     endJourney,
     addPhoto,
     minimizeJourney,
+    loadGroupMembers,
   } = useJourney();
 
   const mapRef = useRef<MapView>(null);
@@ -44,15 +54,88 @@ export default function JourneyScreen(): React.JSX.Element {
   });
   const [manualRouteCoords, setManualRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const [groupView, setGroupView] = useState<{ start?: { latitude: number; longitude: number }; end?: { latitude: number; longitude: number } } | null>(null);
+  const [showTimeline, setShowTimeline] = useState(false);
 
-  const friendProfiles = [
-    { id: 1, avatar: 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' },
-    { id: 2, avatar: 'https://static.codia.ai/image/2025-09-26/nNFdUZfheL.png' },
-    { id: 3, avatar: 'https://static.codia.ai/image/2025-09-26/yAQdwAryr1.png' },
-  ];
+  // Real-time events for group journeys
+  const gJourneyId = typeof groupJourneyId === 'string' ? groupJourneyId : undefined;
+  const { events, postEvent } = useRealtimeEvents({ groupJourneyId: gJourneyId });
+
+  // Group journey real-time coordination
+  const socket = getSocket();
+  const {
+    memberLocations,
+    isTracking: isGroupTracking,
+    startLocationTracking,
+    setMyInstance,
+    myInstance,
+  } = useGroupJourney({
+    socket,
+    groupJourneyId: gJourneyId,
+    autoStart: true, // Auto-join the socket room when component mounts
+  });
+
+  // Debug: Log member locations when they change
+  useEffect(() => {
+    if (memberLocations.length > 0) {
+      console.log('👥 Member locations updated:', memberLocations.length, 'members');
+    }
+  }, [memberLocations]);
+
+  const { user } = useAuth();
 
   // Resolve Google Maps API key (single source of truth)
   const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
+
+  // If navigated with a groupId param, load group members overlay
+  useEffect(() => {
+    const gid = typeof paramGroupId === 'string' ? paramGroupId : undefined;
+    if (!gid) return;
+    // Load once when arriving with param
+    loadGroupMembers(gid).catch(() => {});
+  }, [paramGroupId, loadGroupMembers]);
+
+  // If a groupJourneyId param is present, fetch group journey data and user's instance
+  useEffect(() => {
+    (async () => {
+      if (!groupJourneyId || typeof groupJourneyId !== 'string') return;
+      try {
+        // Fetch group journey details
+        const res = await apiRequest(`/group-journey/${groupJourneyId}`, { method: 'GET' });
+        if (res?.groupJourney) {
+          const gj = res.groupJourney;
+          const start = gj.startLatitude && gj.startLongitude ? { latitude: gj.startLatitude, longitude: gj.startLongitude } : undefined;
+          const end = gj.endLatitude && gj.endLongitude ? { latitude: gj.endLatitude, longitude: gj.endLongitude } : undefined;
+          setGroupView({ start, end });
+          if (start && mapRef.current) {
+            const newRegion = { latitude: start.latitude, longitude: start.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+            setRegion(newRegion);
+            try { mapRef.current.animateToRegion(newRegion, 800); } catch {}
+          }
+        }
+
+        // Fetch user's journey instance for this group journey
+        const instanceRes = await apiRequest(`/group-journey/${groupJourneyId}/my-instance`, { method: 'GET' });
+        if (instanceRes?.instance) {
+          const instance = instanceRes.instance;
+          setMyInstance(instance); // Update the hook's instance state
+          console.log('📍 Loaded my group journey instance:', instance);
+          
+          // If instance is ACTIVE, start location tracking immediately
+          if (instance.status === 'ACTIVE' && !isGroupTracking) {
+            console.log('🚴 Instance is ACTIVE, starting location tracking...');
+            startLocationTracking(instance.id);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load group journey data:', e);
+      }
+    })();
+  }, [groupJourneyId, setMyInstance, isGroupTracking, startLocationTracking]);
+
+  const handleSendMessage = (message: string) => {
+    postEvent({ type: 'MESSAGE', message });
+  };
 
   // Update map region when journey starts or route changes
   useEffect(() => {
@@ -197,6 +280,71 @@ export default function JourneyScreen(): React.JSX.Element {
   const formatSpeed = (speed: number): string => speed.toFixed(1);
   const formatDistance = (distance: number): string => distance.toFixed(1);
 
+  const handleResumeIfPaused = async () => {
+    try {
+      // If this is a group journey context with a paused instance, resume it server-side and start tracking
+      if (gJourneyId && myInstance?.id && myInstance.status === 'PAUSED') {
+        await apiRequest(`/group-journey/instance/${myInstance.id}/resume`, { method: 'POST' });
+        startLocationTracking(myInstance.id);
+        return;
+      }
+      // Otherwise, fallback to solo journey resume via context
+      if (currentJourney?.status === 'paused') {
+        await resumeJourney();
+      } else {
+        Alert.alert('Resume', 'No paused journey to resume.');
+      }
+    } catch (e) {
+      console.warn('Failed to resume journey:', e);
+      Alert.alert('Error', 'Failed to resume. Please try again.');
+    }
+  };
+
+  const handleStopJourney = async () => {
+    try {
+      // Group journey instance complete
+      if (gJourneyId && myInstance?.id && (myInstance.status === 'ACTIVE' || myInstance.status === 'PAUSED')) {
+        Alert.alert(
+          'Stop Journey',
+          'Are you sure you want to stop and complete your group journey?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Stop', style: 'destructive', onPress: async () => {
+              try {
+                await apiRequest(`/group-journey/instance/${myInstance.id}/complete`, { method: 'POST' });
+                // Navigate away after stopping
+                try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
+              } catch {
+                Alert.alert('Error', 'Failed to stop group journey. Please try again.');
+              }
+            }}
+          ]
+        );
+        return;
+      }
+
+      // Solo journey complete
+      if (isTracking || currentJourney?.status === 'paused') {
+        Alert.alert(
+          'Stop Journey',
+          'Are you sure you want to stop your journey?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Stop', style: 'destructive', onPress: async () => {
+              await endJourney();
+              try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
+            }}
+          ]
+        );
+        return;
+      }
+
+      Alert.alert('Stop Journey', 'No active or paused journey to stop.');
+    } catch {
+      Alert.alert('Error', 'Failed to stop journey.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -215,17 +363,20 @@ export default function JourneyScreen(): React.JSX.Element {
             showsIndoors={false}
             mapType="standard"
           >
-            {Platform.OS === 'android' && currentJourney?.endLocation && GOOGLE_MAPS_API_KEY ? (
+            {Platform.OS === 'android' && (currentJourney?.endLocation || groupView?.end) && GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
                 origin={routePoints.length > 0
                   ? { latitude: routePoints[routePoints.length - 1].latitude, longitude: routePoints[routePoints.length - 1].longitude }
                   : currentJourney?.startLocation
                     ? { latitude: currentJourney.startLocation.latitude, longitude: currentJourney.startLocation.longitude }
-                    : { latitude: region.latitude, longitude: region.longitude }}
-                destination={{
-                  latitude: currentJourney.endLocation.latitude,
-                  longitude: currentJourney.endLocation.longitude,
-                }}
+                    : groupView?.start
+                      ? { latitude: groupView.start.latitude, longitude: groupView.start.longitude }
+                      : { latitude: region.latitude, longitude: region.longitude }}
+                destination={currentJourney?.endLocation
+                  ? { latitude: currentJourney.endLocation.latitude, longitude: currentJourney.endLocation.longitude }
+                  : groupView?.end
+                    ? { latitude: groupView.end.latitude, longitude: groupView.end.longitude }
+                    : undefined as any}
                 apikey={GOOGLE_MAPS_API_KEY}
                 mode="DRIVING"
                 strokeWidth={5}
@@ -233,13 +384,12 @@ export default function JourneyScreen(): React.JSX.Element {
                 optimizeWaypoints
                 onError={(err) => console.warn('Directions error:', err)}
               />
-            ) : currentJourney?.endLocation && manualRouteCoords.length > 1 ? (
+            ) : (currentJourney?.endLocation || groupView?.end) && manualRouteCoords.length > 1 ? (
               <Polyline coordinates={manualRouteCoords} strokeWidth={5} strokeColor="#2B8CFF" />
             ) : routePoints.length > 1 ? (
               <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#2B8CFF" />
             ) : null}
           </MapView>
-          <FloatingJourneyStatus />
         </>
       ) : (
         <>
@@ -287,45 +437,61 @@ export default function JourneyScreen(): React.JSX.Element {
               <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#2B8CFF" />
             ) : null}
 
-            {currentJourney?.startLocation && (
+            {(currentJourney?.startLocation || groupView?.start) && (
               <Marker
                 coordinate={{
-                  latitude: currentJourney.startLocation.latitude,
-                  longitude: currentJourney.startLocation.longitude,
+                  latitude: (currentJourney?.startLocation?.latitude ?? groupView!.start!.latitude),
+                  longitude: (currentJourney?.startLocation?.longitude ?? groupView!.start!.longitude),
                 }}
                 title="Start Location"
                 pinColor="green"
               />
             )}
 
-            {currentJourney?.endLocation && (
+            {(currentJourney?.endLocation || groupView?.end) && (
               <Marker
                 coordinate={{
-                  latitude: currentJourney.endLocation.latitude,
-                  longitude: currentJourney.endLocation.longitude,
+                  latitude: (currentJourney?.endLocation?.latitude ?? groupView!.end!.latitude),
+                  longitude: (currentJourney?.endLocation?.longitude ?? groupView!.end!.longitude),
                 }}
                 title="Destination"
                 pinColor="red"
               />
             )}
 
-            {groupMembers.map((member) => (
-              member.currentLocation && (
+            {/* Show member locations for group journeys */}
+            {gJourneyId && memberLocations.map((member) => (
+              member.latitude && member.longitude && (
                 <Marker
-                  key={member.id}
+                  key={member.userId}
                   coordinate={{
-                    latitude: member.currentLocation.latitude,
-                    longitude: member.currentLocation.longitude,
+                    latitude: member.latitude,
+                    longitude: member.longitude,
                   }}
                   title={member.displayName}
+                  description={`${member.status} • ${(member.totalDistance / 1000).toFixed(1)} km • ${member.speed?.toFixed(1) || 0} km/h`}
                 >
-                  <Image
-                    source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
-                    style={styles.friendMarkerImage}
-                  />
+                  <View style={styles.memberMarker}>
+                    <Image
+                      source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                      style={styles.friendMarkerImage}
+                    />
+                    {member.status === 'COMPLETED' && (
+                      <View style={styles.completedBadge}>
+                        <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+                      </View>
+                    )}
+                    {member.status === 'PAUSED' && (
+                      <View style={styles.pausedBadge}>
+                        <MaterialIcons name="pause-circle" size={16} color="#FFA726" />
+                      </View>
+                    )}
+                  </View>
                 </Marker>
               )
             ))}
+
+            {/* Solo journey: do not show other users on the map */}
           </MapView>
 
           {/* Header */}
@@ -366,19 +532,21 @@ export default function JourneyScreen(): React.JSX.Element {
             {/* Friends Row */}
             <View style={styles.friendsRow}>
               <View style={styles.friendsContainer}>
-                {groupMembers.slice(0, 3).map((member) => (
-                  <Image
-                    key={member.id}
-                    source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
-                    style={styles.friendAvatar}
-                  />
-                ))}
-                {groupMembers.length === 0 && friendProfiles.map((friend) => (
-                  <Image key={friend.id} source={{ uri: friend.avatar }} style={styles.friendAvatar} />
-                ))}
-                <View style={styles.addFriendButton}>
-                  <Text style={styles.addFriendText}>+</Text>
-                </View>
+                {gJourneyId ? (
+                  // Group journey: show group members
+                  groupMembers.slice(0, 6).map((member) => (
+                    <Image
+                      key={member.id}
+                      source={{ uri: member.photoURL || 'https://static.codia.ai/image/2025-09-26/byc45z4XPi.png' }}
+                      style={styles.friendAvatar}
+                    />
+                  ))
+                ) : (
+                  // Solo journey: show only current user (optional), no other profiles
+                  user?.photoURL ? (
+                    <Image source={{ uri: user.photoURL }} style={styles.friendAvatar} />
+                  ) : null
+                )}
               </View>
             </View>
 
@@ -412,6 +580,18 @@ export default function JourneyScreen(): React.JSX.Element {
 
             {/* Action Buttons */}
             <View style={styles.actionButtonsRow}>
+              {(currentJourney?.status === 'paused' || myInstance?.status === 'PAUSED') && (
+                <TouchableOpacity style={[styles.resumeButton]} onPress={handleResumeIfPaused}>
+                  <MaterialIcons name="play-arrow" size={24} color="#fff" />
+                  <Text style={styles.resumeText}>Resume</Text>
+                </TouchableOpacity>
+              )}
+              {(isTracking || currentJourney?.status === 'paused' || (gJourneyId && (myInstance?.status === 'ACTIVE' || myInstance?.status === 'PAUSED'))) && (
+                <TouchableOpacity style={styles.stopButton} onPress={handleStopJourney}>
+                  <MaterialIcons name="stop" size={20} color="#fff" />
+                  <Text style={styles.stopText}>Stop</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.startButton} onPress={handleStartJourney}>
                 {isTracking ? (
                   <MaterialIcons name="stop" size={24} color="#000" />
@@ -429,8 +609,23 @@ export default function JourneyScreen(): React.JSX.Element {
                 />
                 <Text style={styles.shareText}>Share live location</Text>
               </TouchableOpacity>
+              {gJourneyId && (
+                <TouchableOpacity style={styles.timelineButton} onPress={() => setShowTimeline(true)}>
+                  <MaterialIcons name="timeline" size={20} color="#000" />
+                </TouchableOpacity>
+              )}
             </View>
+
+            {gJourneyId && <MessageComposer onSend={handleSendMessage} />}
           </View>
+
+          <Modal visible={showTimeline} animationType="slide" transparent onRequestClose={() => setShowTimeline(false)}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <RideTimeline events={events} onClose={() => setShowTimeline(false)} />
+              </View>
+            </View>
+          </Modal>
         </>
       )}
     </View>
@@ -492,7 +687,12 @@ const styles = StyleSheet.create({
   cameraIcon: {
     position: 'absolute',
     right: 11,
-    top: 2.5,
+    top: 10.5,
+  },
+  memberMarker: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   friendMarkerImage: {
     width: 44,
@@ -500,6 +700,28 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 4,
     borderColor: '#0F2424',
+  },
+  completedBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pausedBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sosButton: {
     position: 'absolute',
@@ -647,5 +869,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: '#000000',
+  },
+  stopButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  stopText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  timelineButton: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  resumeButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  resumeText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '70%',
   },
 });

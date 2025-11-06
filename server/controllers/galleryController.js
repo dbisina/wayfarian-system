@@ -1,13 +1,13 @@
 // Gallery Controller
 // server/controllers/galleryController.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 
-const prisma = new PrismaClient();
+// Use shared Prisma client (singleton)
 
 // Configure multer for memory storage
 const upload = multer({

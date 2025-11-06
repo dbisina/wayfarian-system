@@ -1,37 +1,47 @@
-// server/services/firebase.js
-
+// Firebase Admin SDK service (canonical file name: Firebase.js)
 const admin = require('firebase-admin');
+const { uploadToLocalStorage, deleteFromLocalStorage } = require('./LocalStorage');
+const { uploadToCloudinary, deleteFromCloudinary, cloudinaryInitialized } = require('./CloudinaryService');
 
 // Initialize Firebase Admin SDK (for server-side operations)
 let firebaseInitialized = false;
+let storageAvailable = false;
 if (!admin.apps.length) {
   try {
     // Check if all required Firebase environment variables are present
-    if (process.env.FIREBASE_PROJECT_ID && 
-        process.env.FIREBASE_CLIENT_EMAIL && 
-        process.env.FIREBASE_PRIVATE_KEY) {
-      
+    if (
+      process.env.FIREBASE_PROJECT_ID &&
+      process.env.FIREBASE_CLIENT_EMAIL &&
+      process.env.FIREBASE_PRIVATE_KEY
+    ) {
       admin.initializeApp({
         credential: admin.credential.cert({
           projectId: process.env.FIREBASE_PROJECT_ID,
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         }),
         storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       });
       firebaseInitialized = true;
-      console.log('✅ Firebase Admin SDK initialized successfully');
+      console.log('Firebase Admin SDK initialized');
+      
+      // Test storage availability
+      if (process.env.FIREBASE_STORAGE_BUCKET) {
+        try {
+          const bucket = admin.storage().bucket();
+          storageAvailable = true;
+          console.log('Firebase Storage configured:', bucket.name);
+        } catch (error) {
+          console.warn('Firebase Storage bucket not accessible:', error.message);
+          console.warn('Will use local file storage as fallback');
+        }
+      }
     } else {
-      console.warn('⚠️  Firebase credentials not found. Firebase features will be disabled.');
-      console.warn('   To enable Firebase, set the following environment variables:');
-      console.warn('   - FIREBASE_PROJECT_ID');
-      console.warn('   - FIREBASE_CLIENT_EMAIL');
-      console.warn('   - FIREBASE_PRIVATE_KEY');
-      console.warn('   - FIREBASE_STORAGE_BUCKET (optional)');
+      console.warn('Firebase credentials not found. Firebase features will be disabled.');
     }
   } catch (error) {
-    console.error('❌ Failed to initialize Firebase Admin SDK:', error.message);
-    console.warn('   Firebase features will be disabled.');
+    console.error('Failed to initialize Firebase Admin SDK:', error.message);
+    console.warn('Firebase features will be disabled.');
   }
 }
 
@@ -40,87 +50,92 @@ const adminAuth = firebaseInitialized ? admin.auth() : null;
 const adminStorage = firebaseInitialized ? admin.storage() : null;
 const adminDb = firebaseInitialized ? admin.firestore() : null;
 
-/**
- * Verify Firebase ID token
- * @param {string} idToken - Firebase ID token
- * @returns {Promise<object>} - Decoded token
- */
+// Verify Firebase ID token
 const verifyIdToken = async (idToken) => {
   if (!firebaseInitialized || !adminAuth) {
     throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
   }
   try {
-    const decodedToken = await adminAuth.verifyIdToken(idToken);
-    return decodedToken;
+    return await adminAuth.verifyIdToken(idToken);
   } catch (error) {
     throw new Error('Invalid Firebase token');
   }
 };
 
-/**
- * Create custom token for user
- * @param {string} uid - User UID
- * @returns {Promise<string>} - Custom token
- */
+// Create custom token for user
 const createCustomToken = async (uid) => {
   if (!firebaseInitialized || !adminAuth) {
     throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
   }
   try {
-    const customToken = await adminAuth.createCustomToken(uid);
-    return customToken;
+    return await adminAuth.createCustomToken(uid);
   } catch (error) {
     throw new Error('Failed to create custom token');
   }
 };
 
-/**
- * Upload file to Firebase Storage
- * @param {Buffer} fileBuffer - File buffer
- * @param {string} fileName - File name
- * @param {string} contentType - MIME type
- * @param {string} folder - Storage folder path
- * @returns {Promise<string>} - Download URL
- */
+// Upload file to Storage (Cloudinary → Firebase → Local fallback)
 const uploadToStorage = async (fileBuffer, fileName, contentType, folder = 'uploads') => {
-  if (!firebaseInitialized || !adminStorage) {
-    throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
+  // Priority 1: Try Cloudinary (fastest, most reliable)
+  if (cloudinaryInitialized) {
+    try {
+      console.log('[Storage] Using Cloudinary for upload');
+      return await uploadToCloudinary(fileBuffer, fileName, folder);
+    } catch (error) {
+      console.error('[Storage] Cloudinary upload failed:', error.message);
+      console.warn('[Storage] Falling back to Firebase/Local storage');
+    }
   }
-  try {
-    const bucket = adminStorage.bucket();
-    const file = bucket.file(`${folder}/${fileName}`);
-    
-    await file.save(fileBuffer, {
-      metadata: {
-        contentType: contentType,
-      },
-    });
-
-    // Make file publicly accessible
-    await file.makePublic();
-    
-    return `https://storage.googleapis.com/${bucket.name}/${folder}/${fileName}`;
-  } catch (error) {
-    throw new Error('Failed to upload file to storage');
+  
+  // Priority 2: Try Firebase Storage
+  if (firebaseInitialized && adminStorage && storageAvailable) {
+    try {
+      const bucket = adminStorage.bucket();
+      const file = bucket.file(`${folder}/${fileName}`);
+      
+      console.log('[Storage] Using Firebase Storage for upload');
+      await file.save(fileBuffer, { metadata: { contentType } });
+      await file.makePublic();
+      
+      const url = `https://storage.googleapis.com/${bucket.name}/${folder}/${fileName}`;
+      console.log('[Storage] Firebase upload complete:', url);
+      return url;
+    } catch (error) {
+      console.error('[Storage] Firebase upload failed:', error.message);
+      console.warn('[Storage] Falling back to local storage');
+    }
   }
+  
+  // Priority 3: Fallback to local storage
+  console.warn('[Storage] Using local storage fallback');
+  return await uploadToLocalStorage(fileBuffer, fileName, contentType, folder);
 };
 
-/**
- * Delete file from Firebase Storage
- * @param {string} filePath - Path to file in storage
- * @returns {Promise<void>}
- */
+// Delete file from Storage (tries Cloudinary → Firebase → Local)
 const deleteFromStorage = async (filePath) => {
-  if (!firebaseInitialized || !adminStorage) {
-    console.warn('Firebase is not initialized. Cannot delete file from storage.');
-    return;
+  // Try Cloudinary first (check if URL is from Cloudinary)
+  if (cloudinaryInitialized && filePath.includes('cloudinary.com')) {
+    try {
+      await deleteFromCloudinary(filePath);
+      return;
+    } catch (error) {
+      console.error('[Storage] Cloudinary delete failed:', error.message);
+    }
   }
-  try {
-    const bucket = adminStorage.bucket();
-    await bucket.file(filePath).delete();
-  } catch (error) {
-    console.error('Failed to delete file from storage:', error);
+  
+  // Try Firebase Storage
+  if (firebaseInitialized && adminStorage && storageAvailable) {
+    try {
+      const bucket = adminStorage.bucket();
+      await bucket.file(filePath).delete();
+      return;
+    } catch (error) {
+      console.error('[Storage] Firebase delete failed:', error.message);
+    }
   }
+  
+  // Fallback to local storage
+  await deleteFromLocalStorage(filePath);
 };
 
 module.exports = {
@@ -129,6 +144,8 @@ module.exports = {
   adminStorage,
   adminDb,
   firebaseInitialized,
+  storageAvailable,
+  cloudinaryInitialized,
   verifyIdToken,
   createCustomToken,
   uploadToStorage,

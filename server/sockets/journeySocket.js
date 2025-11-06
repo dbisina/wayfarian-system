@@ -1,8 +1,7 @@
 // Journey Socket Handler for Real-time Journey Updates
 // server/sockets/journeySocket.js
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../prisma/client');
 
 /**
  * Handle journey-related socket events

@@ -3,6 +3,7 @@
 
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
+const prisma = require('../prisma/client');
 const {
   upload,
   getUserProfile,
@@ -139,117 +140,92 @@ router.get('/export-data', exportUserData);
 router.get('/dashboard', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    
-    // Get dashboard data
-    const [
-      user,
-      activeJourney,
-      recentJourneys,
-      activeGroups,
-      recentPhotos,
-      weeklyStats,
-    ] = await Promise.all([
-      prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          displayName: true,
-          photoURL: true,
-          totalDistance: true,
-          totalTime: true,
-          topSpeed: true,
-          totalTrips: true,
-        },
-      }),
-      prisma.journey.findFirst({
-        where: {
-          userId,
-          status: 'ACTIVE',
-        },
-        select: {
-          id: true,
-          title: true,
-          startTime: true,
-          totalDistance: true,
-          totalTime: true,
-          topSpeed: true,
-        },
-      }),
-      prisma.journey.findMany({
-        where: {
-          userId,
-          status: 'COMPLETED',
-        },
-        orderBy: { endTime: 'desc' },
-        take: 3,
-        select: {
-          id: true,
-          title: true,
-          startTime: true,
-          endTime: true,
-          totalDistance: true,
-          totalTime: true,
-        },
-      }),
-      prisma.groupMember.findMany({
-        where: {
-          userId,
-          group: { isActive: true },
-        },
-        take: 3,
-        include: {
-          group: {
-            select: {
-              id: true,
-              name: true,
-              _count: {
-                select: { members: true },
-              },
-            },
+    // Run queries sequentially to work with PgBouncer (connection_limit=1)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        displayName: true,
+        photoURL: true,
+        totalDistance: true,
+        totalTime: true,
+        topSpeed: true,
+        totalTrips: true,
+        xp: true,
+        level: true,
+      },
+    });
+
+    const activeJourney = await prisma.journey.findFirst({
+      where: { userId, status: 'ACTIVE' },
+      select: {
+        id: true,
+        title: true,
+        startTime: true,
+        totalDistance: true,
+        totalTime: true,
+        topSpeed: true,
+      },
+    });
+
+    const recentJourneys = await prisma.journey.findMany({
+      where: { userId, status: 'COMPLETED' },
+      orderBy: { endTime: 'desc' },
+      take: 3,
+      select: {
+        id: true,
+        title: true,
+        startTime: true,
+        endTime: true,
+        totalDistance: true,
+        totalTime: true,
+      },
+    });
+
+    const activeGroupsRaw = await prisma.groupMember.findMany({
+      where: { userId, group: { isActive: true } },
+      take: 3,
+      include: {
+        group: {
+          select: {
+            id: true,
+            name: true,
+            _count: { select: { members: true } },
           },
         },
-      }),
-      prisma.photo.findMany({
-        where: { userId },
-        orderBy: { takenAt: 'desc' },
-        take: 6,
-        select: {
-          id: true,
-          filename: true,
-          firebasePath: true,
-          takenAt: true,
-          journey: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-      }),
-      prisma.journey.aggregate({
-        where: {
-          userId,
-          status: 'COMPLETED',
-          startTime: {
-            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          },
-        },
-        _sum: {
-          totalDistance: true,
-          totalTime: true,
-        },
-        _count: true,
-      }),
-    ]);
-    
+      },
+    });
+    const activeGroups = activeGroupsRaw.map((ag) => ag.group);
+
+    const recentPhotos = await prisma.photo.findMany({
+      where: { userId },
+      orderBy: { takenAt: 'desc' },
+      take: 6,
+      select: {
+        id: true,
+        filename: true,
+        firebasePath: true,
+        takenAt: true,
+        journey: { select: { id: true, title: true } },
+      },
+    });
+
+    const weeklyStats = await prisma.journey.aggregate({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        startTime: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      },
+      _sum: { totalDistance: true, totalTime: true },
+      _count: true,
+    });
+
     res.json({
       success: true,
       dashboard: {
         user,
         activeJourney,
         recentJourneys,
-        activeGroups: activeGroups.map(ag => ag.group),
+        activeGroups,
         recentPhotos,
         weeklyStats: {
           journeys: weeklyStats._count,
@@ -258,13 +234,12 @@ router.get('/dashboard', async (req, res) => {
         },
       },
     });
-    
   } catch (error) {
+    if (error?.code === 'P2024' || /connection pool timeout/i.test(error?.message || '')) {
+      return res.status(503).json({ error: 'Service Unavailable', message: 'Database busy, please retry shortly' });
+    }
     console.error('Get dashboard error:', error);
-    res.status(500).json({
-      error: 'Failed to get dashboard data',
-      message: error.message,
-    });
+    res.status(500).json({ error: 'Failed to get dashboard data', message: error.message });
   }
 });
 
@@ -276,8 +251,7 @@ router.get('/dashboard', async (req, res) => {
 router.get('/achievements', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const { getAchievementXP, getLevelProgress } = require('../constants/xpSystem');
     
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -287,79 +261,142 @@ router.get('/achievements', async (req, res) => {
         topSpeed: true,
         totalTrips: true,
         createdAt: true,
+        xp: true,
+        level: true,
       },
     });
     
-    // Define achievements with multiple tiers
+    // Define achievements with multiple tiers and XP rewards
     const achievements = [
       {
         id: 'first_journey',
         name: 'First Journey',
         description: 'Complete your first journey',
         category: 'milestone',
+        xp: getAchievementXP('first_journey'),
         tiers: [
           { level: 1, threshold: 1, unlocked: user.totalTrips >= 1 }
         ],
         current: user.totalTrips,
         icon: '🚀',
+        badge: true,
       },
       {
-        id: 'distance_explorer',
-        name: 'Distance Explorer',
-        description: 'Travel various distances',
+        id: 'hundred_km',
+        name: '100 KM Explorer',
+        description: 'Travel 100 kilometers',
         category: 'distance',
+        xp: getAchievementXP('hundred_km'),
         tiers: [
-          { level: 1, threshold: 10, name: '10 KM Explorer', unlocked: user.totalDistance >= 10 },
-          { level: 2, threshold: 100, name: '100 KM Explorer', unlocked: user.totalDistance >= 100 },
-          { level: 3, threshold: 500, name: '500 KM Adventurer', unlocked: user.totalDistance >= 500 },
-          { level: 4, threshold: 1000, name: '1000 KM Voyager', unlocked: user.totalDistance >= 1000 },
-          { level: 5, threshold: 5000, name: '5000 KM Explorer', unlocked: user.totalDistance >= 5000 },
+          { level: 1, threshold: 100, name: '100 KM Explorer', unlocked: user.totalDistance >= 100 },
         ],
         current: user.totalDistance,
         icon: '🌍',
+        badge: true,
+      },
+      {
+        id: 'five_hundred_km',
+        name: '500 KM Adventurer',
+        description: 'Travel 500 kilometers',
+        category: 'distance',
+        xp: getAchievementXP('five_hundred_km'),
+        tiers: [
+          { level: 1, threshold: 500, name: '500 KM Adventurer', unlocked: user.totalDistance >= 500 },
+        ],
+        current: user.totalDistance,
+        icon: '🌍',
+        badge: true,
+      },
+      {
+        id: 'thousand_km',
+        name: '1000 KM Voyager',
+        description: 'Travel 1000 kilometers',
+        category: 'distance',
+        xp: getAchievementXP('thousand_km'),
+        tiers: [
+          { level: 1, threshold: 1000, name: '1000 KM Voyager', unlocked: user.totalDistance >= 1000 },
+        ],
+        current: user.totalDistance,
+        icon: '🌍',
+        badge: true,
       },
       {
         id: 'speed_demon',
         name: 'Speed Demon',
-        description: 'Reach high speeds',
+        description: 'Reach 100 km/h',
         category: 'speed',
+        xp: getAchievementXP('speed_demon'),
         tiers: [
-          { level: 1, threshold: 50, name: 'Speed Rookie', unlocked: user.topSpeed >= 50 },
-          { level: 2, threshold: 100, name: 'Speed Demon', unlocked: user.topSpeed >= 100 },
-          { level: 3, threshold: 150, name: 'Speed Master', unlocked: user.topSpeed >= 150 },
-          { level: 4, threshold: 200, name: 'Speed Legend', unlocked: user.topSpeed >= 200 },
+          { level: 1, threshold: 100, name: 'Speed Demon', unlocked: user.topSpeed >= 100 },
         ],
         current: user.topSpeed,
         icon: '⚡',
+        badge: true,
       },
       {
-        id: 'journey_count',
-        name: 'Journey Master',
-        description: 'Complete multiple journeys',
-        category: 'frequency',
+        id: 'velocity_master',
+        name: 'Velocity Master',
+        description: 'Reach 150 km/h',
+        category: 'speed',
+        xp: getAchievementXP('velocity_master'),
         tiers: [
-          { level: 1, threshold: 5, name: 'Journey Starter', unlocked: user.totalTrips >= 5 },
-          { level: 2, threshold: 25, name: 'Journey Regular', unlocked: user.totalTrips >= 25 },
-          { level: 3, threshold: 50, name: 'Journey Expert', unlocked: user.totalTrips >= 50 },
-          { level: 4, threshold: 100, name: 'Journey Master', unlocked: user.totalTrips >= 100 },
-          { level: 5, threshold: 500, name: 'Journey Legend', unlocked: user.totalTrips >= 500 },
+          { level: 1, threshold: 150, name: 'Velocity Master', unlocked: user.topSpeed >= 150 },
+        ],
+        current: user.topSpeed,
+        icon: '⚡',
+        badge: true,
+      },
+      {
+        id: 'ten_journeys',
+        name: 'Route Raider',
+        description: 'Complete 10 journeys',
+        category: 'frequency',
+        xp: getAchievementXP('ten_journeys'),
+        tiers: [
+          { level: 1, threshold: 10, name: 'Route Raider', unlocked: user.totalTrips >= 10 },
         ],
         current: user.totalTrips,
         icon: '🏆',
+        badge: true,
       },
       {
-        id: 'time_traveler',
-        name: 'Time Traveler',
-        description: 'Spend time on the road',
-        category: 'time',
+        id: 'fifty_journeys',
+        name: 'Trail Dominator',
+        description: 'Complete 50 journeys',
+        category: 'frequency',
+        xp: getAchievementXP('fifty_journeys'),
         tiers: [
-          { level: 1, threshold: 3600, name: '1 Hour Explorer', unlocked: user.totalTime >= 3600 },
-          { level: 2, threshold: 36000, name: '10 Hour Wanderer', unlocked: user.totalTime >= 36000 },
-          { level: 3, threshold: 180000, name: '50 Hour Voyager', unlocked: user.totalTime >= 180000 },
-          { level: 4, threshold: 360000, name: '100 Hour Nomad', unlocked: user.totalTime >= 360000 },
+          { level: 1, threshold: 50, name: 'Trail Dominator', unlocked: user.totalTrips >= 50 },
+        ],
+        current: user.totalTrips,
+        icon: '🏆',
+        badge: true,
+      },
+      {
+        id: 'hour_rider',
+        name: 'Time Master',
+        description: 'Ride for 1 hour total',
+        category: 'time',
+        xp: getAchievementXP('hour_rider'),
+        tiers: [
+          { level: 1, threshold: 3600, name: '1 Hour Rider', unlocked: user.totalTime >= 3600 },
         ],
         current: user.totalTime,
         icon: '⏰',
+        badge: true,
+      },
+      {
+        id: 'ten_hours',
+        name: 'Chrono Breaker',
+        description: 'Ride for 10 hours total',
+        category: 'time',
+        xp: getAchievementXP('ten_hours'),
+        tiers: [
+          { level: 1, threshold: 36000, name: '10 Hour Wanderer', unlocked: user.totalTime >= 36000 },
+        ],
+        current: user.totalTime,
+        icon: '⏰',
+        badge: true,
       },
     ];
     
@@ -368,6 +405,9 @@ router.get('/achievements', async (req, res) => {
     const unlockedTiers = achievements.reduce((sum, achievement) => 
       sum + achievement.tiers.filter(tier => tier.unlocked).length, 0
     );
+    
+    // Get level progress
+    const levelProgress = getLevelProgress(user.xp || 0, user.level || 1);
     
     res.json({
       success: true,
@@ -379,14 +419,19 @@ router.get('/achievements', async (req, res) => {
         progress: totalTiers > 0 ? (unlockedTiers / totalTiers * 100).toFixed(1) : 0,
         accountAge: Math.floor((new Date() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24)),
       },
+      xp: {
+        current: user.xp || 0,
+        level: user.level || 1,
+        progress: levelProgress,
+      },
     });
     
   } catch (error) {
+    if (error?.code === 'P2024' || /connection pool timeout/i.test(error?.message || '')) {
+      return res.status(503).json({ error: 'Service Unavailable', message: 'Database busy, please retry shortly' });
+    }
     console.error('Get achievements error:', error);
-    res.status(500).json({
-      error: 'Failed to get achievements',
-      message: error.message,
-    });
+    res.status(500).json({ error: 'Failed to get achievements', message: error.message });
   }
 });
 
@@ -398,8 +443,7 @@ router.get('/achievements', async (req, res) => {
 router.get('/friends', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     // Get friends through group memberships
     const friends = await prisma.groupMember.findMany({
@@ -464,8 +508,7 @@ router.post('/friends', async (req, res) => {
   try {
     const userId = req.user.id;
     const { friendId } = req.body;
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     if (!friendId) {
       return res.status(400).json({
@@ -549,9 +592,8 @@ router.post('/friends', async (req, res) => {
 router.delete('/profile-picture', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { PrismaClient } = require('@prisma/client');
     const { deleteFromStorage } = require('../services/Firebase');
-    const prisma = new PrismaClient();
+    
     
     // Get current user
     const user = await prisma.user.findUnique({

@@ -2,6 +2,7 @@
 // server/routes/leaderboard.js
 
 const express = require('express');
+const prisma = require('../prisma/client');
 const { param, query, validationResult } = require('express-validator');
 const {
   getGlobalLeaderboard,
@@ -83,9 +84,8 @@ router.get(
 router.get(
   '/group/:groupId',
   [
-    param('groupId')
-      .isUUID()
-      .withMessage('Invalid group ID'),
+    // IDs are Prisma CUID strings, not UUID
+    param('groupId').isString().withMessage('Invalid group ID'),
     query('sortBy')
       .optional()
       .isIn(['totalDistance', 'topSpeed', 'totalTrips', 'totalTime'])
@@ -130,8 +130,7 @@ router.get('/achievements', getAchievements);
  */
 router.get('/stats', async (req, res) => {
   try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     const [
       totalUsers,
@@ -197,8 +196,7 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/top-performers', async (req, res) => {
   try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    
     
     const [
       topDistance,

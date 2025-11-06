@@ -1,13 +1,13 @@
 // User Controller
 // server/controllers/userController.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 
-const prisma = new PrismaClient();
+// Use shared Prisma client (PgBouncer-friendly)
 
 // Configure multer for profile picture upload
 const upload = multer({
@@ -193,18 +193,22 @@ const uploadProfilePicture = async (req, res) => {
       select: { photoURL: true },
     });
     
-    // Process image
-    const fileExtension = req.file.originalname.split('.').pop();
-    const filename = `profile_${userId}_${uuidv4()}.${fileExtension}`;
-    const firebasePath = `profile-pictures/${filename}`;
+    // Process image - optimize for profile picture
+    const filename = `profile_${userId}_${uuidv4()}.jpg`;
     
     // Create optimized profile picture (300x300)
     const optimizedBuffer = await sharp(req.file.buffer)
-      .resize(300, 300, { fit: 'cover' })
-      .jpeg({ quality: 90 })
+      .resize(300, 300, { 
+        fit: 'cover',
+        position: 'center',
+      })
+      .jpeg({ 
+        quality: 85,
+        progressive: true,
+      })
       .toBuffer();
     
-    // Upload to Firebase Storage
+    // Upload to storage (Cloudinary → Firebase → Local fallback)
     const imageUrl = await uploadToStorage(
       optimizedBuffer,
       filename,

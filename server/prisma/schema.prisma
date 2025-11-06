@@ -1,12 +1,16 @@
 // server/prisma/schema.prisma
 
+// Connection pooling and retry configuration
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["tracing"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Use a direct connection for migrations (Supabase/pgbouncer compatibility)
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -24,12 +28,15 @@ model User {
   totalTime       Int      @default(0) // in seconds
   topSpeed        Float    @default(0)
   totalTrips      Int      @default(0)
+  xp              Int      @default(0) // Experience points from achievements
+  level           Int      @default(1) // User level based on XP
   
   // Relationships
   journeys        Journey[]
   photos          Photo[]
   groupMemberships GroupMember[]
   createdGroups   Group[]  @relation("GroupCreator")
+  rideEvents      RideEvent[]
   
   @@map("users")
 }
@@ -61,7 +68,7 @@ model Journey {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
-  // Group journey
+  // Group journey (deprecated - use GroupJourney instead)
   groupId         String?
   
   // Relationships
@@ -70,6 +77,104 @@ model Journey {
   photos          Photo[]
   
   @@map("journeys")
+}
+
+model GroupJourney {
+  id              String   @id @default(cuid())
+  groupId         String
+  creatorId       String
+  title           String
+  description     String?
+  
+  // Journey configuration
+  startLatitude   Float
+  startLongitude  Float
+  endLatitude     Float?
+  endLongitude    Float?
+  routePoints     Json?    // Shared route waypoints
+  
+  // Journey state
+  status          GroupJourneyStatus @default(ACTIVE)
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relationships
+  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  instances       JourneyInstance[]
+  events          RideEvent[]
+  
+  @@index([groupId])
+  @@index([creatorId])
+  @@index([status])
+  @@map("group_journeys")
+}
+
+model JourneyInstance {
+  id              String   @id @default(cuid())
+  groupJourneyId  String
+  userId          String
+  
+  // Individual progress
+  status          JourneyStatus @default(ACTIVE)
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  
+  // Stats
+  totalDistance   Float    @default(0)
+  totalTime       Int      @default(0) // in seconds
+  avgSpeed        Float    @default(0)
+  topSpeed        Float    @default(0)
+  
+  // Current location
+  currentLatitude  Float?
+  currentLongitude Float?
+  lastLocationUpdate DateTime?
+  
+  // Route tracking
+  routePoints     Json?    // Individual GPS trail
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relationships
+  groupJourney    GroupJourney @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
+  photos          JourneyPhoto[]
+  events          RideEvent[]
+  
+  @@unique([groupJourneyId, userId])
+  @@index([userId])
+  @@index([status])
+  @@map("journey_instances")
+}
+
+model JourneyPhoto {
+  id              String   @id @default(cuid())
+  instanceId      String
+  userId          String
+  
+  // File info
+  filename        String
+  originalName    String?
+  firebasePath    String
+  mimeType        String
+  fileSize        Int
+  
+  // Photo metadata
+  latitude        Float?
+  longitude       Float?
+  takenAt         DateTime
+  
+  createdAt       DateTime @default(now())
+  
+  // Relationships
+  instance        JourneyInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  @@index([instanceId])
+  @@index([userId])
+  @@map("journey_photos")
 }
 
 model Photo {
@@ -112,6 +217,7 @@ model Group {
   creatorId       String
   isActive        Boolean  @default(true)
   maxMembers      Int      @default(10)
+  coverPhotoURL   String?  // Group cover photo
   
   // Group settings
   allowLocationSharing Boolean @default(true)
@@ -124,8 +230,39 @@ model Group {
   creator         User     @relation("GroupCreator", fields: [creatorId], references: [id])
   members         GroupMember[]
   journeys        Journey[]
+  groupJourneys   GroupJourney[]
+  // Not a direct relation, events are tied to GroupJourney
   
+  @@index([creatorId])
+  @@index([isActive])
   @@map("groups")
+}
+
+model RideEvent {
+  id              String   @id @default(cuid())
+  groupJourneyId  String
+  instanceId      String?
+  userId          String
+
+  type            RideEventType
+  message         String?
+  latitude        Float?
+  longitude       Float?
+  mediaUrl        String?
+  data            Json?
+
+  createdAt       DateTime @default(now())
+
+  // Relations
+  groupJourney    GroupJourney @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
+  instance        JourneyInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupJourneyId])
+  @@index([instanceId])
+  @@index([userId])
+  @@index([type])
+  @@map("ride_events")
 }
 
 model GroupMember {
@@ -146,6 +283,8 @@ model GroupMember {
   group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   
   @@unique([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
   @@map("group_members")
 }
 
@@ -157,8 +296,23 @@ enum JourneyStatus {
   CANCELLED
 }
 
+enum GroupJourneyStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum GroupRole {
   CREATOR
   ADMIN
   MEMBER
+}
+
+enum RideEventType {
+  MESSAGE
+  PHOTO
+  CHECKPOINT
+  STATUS
+  EMERGENCY
+  CUSTOM
 }

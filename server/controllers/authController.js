@@ -1,10 +1,8 @@
 // Auth Controller
 // server/controllers/authController.js
 
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 const { verifyIdToken, createCustomToken } = require('../services/Firebase');
-
-const prisma = new PrismaClient();
 
 /**
  * Register/Login user with Firebase token
@@ -23,35 +21,43 @@ const authenticateUser = async (req, res) => {
     // Verify Firebase token
     const decodedToken = await verifyIdToken(idToken);
     
-    // Check if user exists
-    let user = await prisma.user.findUnique({
+    // Upsert user atomically to avoid race/unique errors
+    const now = new Date();
+    const inferredDisplayName = (() => {
+      if (displayName) return displayName;
+      if (decodedToken.name) return decodedToken.name;
+      if (decodedToken.email && typeof decodedToken.email === 'string') {
+        const beforeAt = decodedToken.email.split('@')[0];
+        if (beforeAt) return beforeAt;
+      }
+      if (phoneNumber || decodedToken.phone_number) return (phoneNumber || decodedToken.phone_number);
+      return 'Wayfarian User';
+    })();
+
+    const createData = {
+      firebaseUid: decodedToken.uid,
+      email: decodedToken.email || null,
+      phoneNumber: phoneNumber || decodedToken.phone_number || null,
+      displayName: inferredDisplayName,
+      photoURL: photoURL || decodedToken.picture || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // For updates, only include fields actually provided to avoid overwriting with generic fallbacks
+    const updateData = {
+      updatedAt: now,
+      ...(decodedToken.email ? { email: decodedToken.email } : {}),
+      ...(phoneNumber || decodedToken.phone_number ? { phoneNumber: phoneNumber || decodedToken.phone_number } : {}),
+      ...(displayName || decodedToken.name ? { displayName: displayName || decodedToken.name } : {}),
+      ...(photoURL || decodedToken.picture ? { photoURL: photoURL || decodedToken.picture } : {}),
+    };
+
+    const user = await prisma.user.upsert({
       where: { firebaseUid: decodedToken.uid },
+      create: createData,
+      update: updateData,
     });
-    
-    if (!user) {
-      // Create new user
-      user = await prisma.user.create({
-        data: {
-          firebaseUid: decodedToken.uid,
-          email: decodedToken.email,
-          phoneNumber: phoneNumber || decodedToken.phone_number,
-          displayName: displayName || decodedToken.name || 'Wayfarian User',
-          photoURL: photoURL || decodedToken.picture,
-        },
-      });
-    } else {
-      // Update existing user with latest info
-      user = await prisma.user.update({
-        where: { firebaseUid: decodedToken.uid },
-        data: {
-          ...(decodedToken.email && { email: decodedToken.email }),
-          ...(phoneNumber && { phoneNumber }),
-          ...(displayName && { displayName }),
-          ...(photoURL && { photoURL }),
-          updatedAt: new Date(),
-        },
-      });
-    }
     
     // Remove sensitive data
     const { firebaseUid, ...userData } = user;
@@ -70,6 +76,13 @@ const authenticateUser = async (req, res) => {
       return res.status(401).json({
         error: 'Invalid token',
         message: 'The provided Firebase token is invalid or expired',
+      });
+    }
+    const msg = (error && error.message) || '';
+    if (msg.includes('Timed out fetching a new connection') || msg.includes("Can't reach database server")) {
+      return res.status(503).json({
+        error: 'Service unavailable',
+        message: 'Database is temporarily unavailable. Please try again shortly.',
       });
     }
     

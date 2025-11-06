@@ -1,17 +1,10 @@
 // app/hooks/useUserData.ts
 // Custom hook for fetching and managing user data from backend
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { userAPI } from '../services/api';
 
-interface UserStats {
-  totalDistance: number;
-  totalTime: number;
-  topSpeed: number;
-  totalTrips: number;
-  averageSpeed: number;
-}
 
 interface DashboardData {
   user: {
@@ -21,6 +14,8 @@ interface DashboardData {
     totalTime: number;
     topSpeed: number;
     totalTrips: number;
+    xp?: number;
+    level?: number;
   };
   activeJourney: any;
   recentJourneys: any[];
@@ -38,24 +33,29 @@ interface Achievement {
   name: string;
   description: string;
   category: string;
-  tiers: Array<{
+  badge?: string; // Badge filename from server
+  tiers: {
     level: number;
     threshold: number;
     name?: string;
     unlocked: boolean;
-  }>;
+  }[];
   current: number;
   icon: string;
+  threshold?: number;
+  type?: string;
+  unlocked?: boolean;
 }
 
 export const useUserData = () => {
   const { user, isAuthenticated } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [achievementsSummary, setAchievementsSummary] = useState<{ totalAchievements: number; totalTiers: number; unlockedTiers: number; progress: number | string; accountAge: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     if (!isAuthenticated) return;
 
     try {
@@ -71,9 +71,9 @@ export const useUserData = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
-  const fetchAchievements = async () => {
+  const fetchAchievements = useCallback(async () => {
     if (!isAuthenticated) return;
 
     try {
@@ -81,12 +81,13 @@ export const useUserData = () => {
       const response = await userAPI.getAchievements();
       if (response?.achievements) {
         setAchievements(response.achievements);
+        if (response?.summary) setAchievementsSummary(response.summary);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch achievements');
       console.error('Achievements fetch error:', err);
     }
-  };
+  }, [isAuthenticated]);
 
   const fetchUserStats = async (period: 'allTime' | 'week' | 'month' | 'year' = 'allTime') => {
     if (!isAuthenticated) return null;
@@ -123,12 +124,12 @@ export const useUserData = () => {
     }
   };
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     await Promise.all([
       fetchDashboardData(),
       fetchAchievements(),
     ]);
-  };
+  }, [fetchDashboardData, fetchAchievements]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -138,11 +139,12 @@ export const useUserData = () => {
       setAchievements([]);
       setError(null);
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, refreshData]);
 
   return {
     dashboardData,
     achievements,
+    achievementsSummary,
     loading,
     error,
     refreshData,

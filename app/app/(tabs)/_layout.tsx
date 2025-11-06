@@ -1,6 +1,6 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, Image, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, Image, TouchableOpacity } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, interpolate, Extrapolation } from 'react-native-reanimated';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -112,14 +112,8 @@ export default function TabLayout() {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
-  // Subtle screen transition overlay
+  // Subtle screen transition value (overlay removed to avoid dual loaders)
   const transition = useSharedValue(0);
-  const transitionAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(transition.value, [0, 1], [0, 0.12], Extrapolation.CLAMP),
-    transform: [
-      { translateY: interpolate(transition.value, [0, 1], [0, 6], Extrapolation.CLAMP) },
-    ],
-  }));
 
   useEffect(() => {
     if (loading) return;
@@ -133,12 +127,8 @@ export default function TabLayout() {
   }, [isAuthenticated, loading, segments, router]);
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#F9A825" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
+    // Avoid overlay spinners; let navigator mount once auth settles
+    return null;
   }
 
   if (!isAuthenticated) {
@@ -154,8 +144,7 @@ export default function TabLayout() {
 
   return (
     <>
-      {/* Subtle crossfade/slide overlay on tab change */}
-      <Animated.View pointerEvents="none" style={[styles.transitionOverlay, transitionAnimatedStyle]} />
+  {/* Removed transition overlay to avoid dual overlays during loading */}
       <Tabs
         screenOptions={{
           headerShown: false,

@@ -2,7 +2,7 @@
 // server/middleware/auth.js
 
 const { verifyIdToken } = require('../services/Firebase');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 
 /**
  * Middleware to verify Firebase token and attach user to request
@@ -31,12 +31,42 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    req.firebaseUser = decodedToken;
+    // SECURITY: Check token expiration timestamp
+    const now = Math.floor(Date.now() / 1000);
+    if (decodedToken.exp && decodedToken.exp < now) {
+      return res.status(401).json({
+        error: 'Token expired',
+        message: 'Your authentication token has expired. Please sign in again.',
+      });
+    }
 
-    const prisma = new PrismaClient();
-    const user = await prisma.user.findUnique({
-      where: { firebaseUid: decodedToken.uid },
-    });
+    // Optional: Check if token is too old (issued more than 1 hour ago as an extra safety measure)
+    const TOKEN_MAX_AGE = parseInt(process.env.TOKEN_MAX_AGE_SECONDS) || 3600; // 1 hour default
+    if (decodedToken.iat && (now - decodedToken.iat) > TOKEN_MAX_AGE) {
+      return res.status(401).json({
+        error: 'Token too old',
+        message: 'Your authentication token is stale. Please refresh your session.',
+      });
+    }
+
+    req.firebaseUser = decodedToken;
+    let user;
+    try {
+      user = await prisma.user.findUnique({
+        where: { firebaseUid: decodedToken.uid },
+      });
+    } catch (dbErr) {
+      const msg = (dbErr && dbErr.message) || 'Database error';
+      // Fast-fail for pool timeouts or DB unreachable instead of hanging ~10s
+      if (msg.includes('Timed out fetching a new connection') || msg.includes("Can't reach database server")) {
+        return res.status(503).json({
+          error: 'Service unavailable',
+          message: 'Database is temporarily unavailable. Please try again shortly.',
+        });
+      }
+      console.error('Auth DB lookup failed:', dbErr);
+      return res.status(500).json({ error: 'Authentication failed', message: 'Database error' });
+    }
 
     if (!user) {
       return res.status(401).json({

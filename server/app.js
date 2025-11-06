@@ -4,13 +4,14 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./prisma/client');
 require('dotenv').config();
 
 // Import enhanced services
 const logger = require('./services/Logger');
 const healthService = require('./services/HealthService');
 const { cacheService } = require('./services/CacheService');
+const sentryService = require('./services/SentryService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -20,6 +21,7 @@ const leaderboardRoutes = require('./routes/leaderboard');
 const groupRoutes = require('./routes/group');
 const userRoutes = require('./routes/user');
 const mapsRoutes = require('./routes/maps');
+const groupJourneyRoutes = require('./routes/groupJourney');
 
 // Import middleware
 const authMiddleware = require('./middleware/auth');
@@ -50,13 +52,16 @@ const {
   clearCache,
 } = require('./middleware/cache');
 
-// Initialize Prisma Client with logging
-const prisma = dbLogger.wrapPrisma(new PrismaClient());
+// Prisma Client initialized via singleton (with logging)
 
 const app = express();
 
 // Trust proxy for accurate client IP
 app.set('trust proxy', 1);
+
+// Sentry request and tracing handlers (must be first)
+app.use(sentryService.getRequestHandler());
+app.use(sentryService.getTracingHandler());
 
 // Security middleware
 app.use(helmet({
@@ -75,29 +80,17 @@ app.use(helmet({
 // Enhanced CORS configuration
 app.use(cors({
   origin: (origin, callback) => {
-    const allowedOrigins = process.env.NODE_ENV === 'production' 
-      ? [process.env.FRONTEND_URL]
-      : [
-          'http://localhost:3000', 
-          'http://localhost:19006', 
-          'http://localhost:8081',
-          'exp://192.168.1.100:19000',
-          /^https:\/\/.*\.vercel\.app$/,
-          /^https:\/\/.*\.netlify\.app$/,
-        ];
+    // In development, allow all origins to simplify mobile/LAN testing
+    if ((process.env.NODE_ENV || 'development') !== 'production') {
+      return callback(null, true);
+    }
+
+    const allowedOrigins = [process.env.FRONTEND_URL];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    const isAllowed = allowedOrigins.some(allowed => {
-      if (typeof allowed === 'string') {
-        return allowed === origin;
-      } else if (allowed instanceof RegExp) {
-        return allowed.test(origin);
-      }
-      return false;
-    });
-    
+
+    const isAllowed = allowedOrigins.some(allowed => allowed && allowed === origin);
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -138,10 +131,21 @@ const createRateLimit = (windowMs, max, message) => rateLimit({
 });
 
 // Different rate limits for different endpoints
-app.use('/api/auth', createRateLimit(15 * 60 * 1000, 20, 'Too many authentication attempts'));
-app.use('/api/maps', createRateLimit(15 * 60 * 1000, 200, 'Too many map requests'));
-app.use('/api/gallery', createRateLimit(15 * 60 * 1000, 50, 'Too many gallery requests'));
-app.use('/api', createRateLimit(15 * 60 * 1000, 100, 'Too many requests'));
+// Development mode: very generous limits; Production: stricter but still reasonable
+const isDev = process.env.NODE_ENV !== 'production';
+const window15min = 15 * 60 * 1000;
+
+app.use('/api/auth', createRateLimit(window15min, isDev ? 100 : 30, 'Too many authentication attempts'));
+app.use('/api/maps', createRateLimit(window15min, isDev ? 1000 : 500, 'Too many map requests'));
+app.use('/api/gallery', createRateLimit(window15min, isDev ? 200 : 100, 'Too many gallery requests'));
+// Allow very high throughput for real-time tracking endpoints
+app.use('/api/journey', createRateLimit(window15min, isDev ? 5000 : 3000, 'Too many journey updates'));
+app.use('/api/group-journey', createRateLimit(window15min, isDev ? 3000 : 1500, 'Too many group journey requests'));
+app.use('/api/group', createRateLimit(window15min, isDev ? 1000 : 500, 'Too many group requests'));
+app.use('/api/user', createRateLimit(window15min, isDev ? 500 : 200, 'Too many user requests'));
+app.use('/api/leaderboard', createRateLimit(window15min, isDev ? 300 : 150, 'Too many leaderboard requests'));
+// Default catch-all
+app.use('/api', createRateLimit(window15min, isDev ? 500 : 200, 'Too many requests'));
 
 // Body parsing middleware with enhanced validation
 app.use(express.json({ 
@@ -168,6 +172,16 @@ app.use(express.urlencoded({
   extended: true, 
   limit: '10mb' 
 }));
+
+// Serve uploaded files statically
+const path = require('path');
+const uploadsPath = path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsPath, {
+  maxAge: '1d', // Cache for 1 day
+  etag: true,
+  lastModified: true,
+}));
+logger.info('Static file serving enabled for /uploads directory');
 
 // Global middleware
 app.use(sanitizeInput);
@@ -198,6 +212,8 @@ app.get('/health', cacheHealth(30), (req, res) => {
     version: '1.0.0',
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
+    // Optional: advertise a public base URL so clients can adopt it automatically
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || 'https://ban-indexed-deemed-hook.trycloudflare.com',
   });
 });
 
@@ -262,6 +278,7 @@ app.use('/api/auth', authRoutes);
 
 // Protected routes with caching where appropriate
 app.use('/api/journey', authMiddleware, journeyRoutes);
+app.use('/api/group-journey', authMiddleware, groupJourneyRoutes);
 app.use('/api/gallery', authMiddleware, galleryRoutes);
 app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRoutes);
 app.use('/api/group', authMiddleware, groupRoutes);
@@ -387,10 +404,73 @@ app.get('/api/system/metrics', authMiddleware, (req, res) => {
   });
 });
 
+// Storage status endpoint to help diagnose storage setup
+app.get('/api/system/storage', (req, res) => {
+  try {
+    const fb = require('./services/Firebase');
+    const { cloudinaryInitialized } = require('./services/CloudinaryService');
+    
+    res.json({
+      success: true,
+      storage: {
+        cloudinary: {
+          initialized: cloudinaryInitialized,
+          configured: !!process.env.CLOUDINARY_URL,
+          status: cloudinaryInitialized ? 'active' : 'not configured',
+        },
+        firebase: {
+          initialized: fb.firebaseInitialized === true,
+          storageAvailable: fb.storageAvailable === true,
+          configured: !!process.env.FIREBASE_STORAGE_BUCKET,
+          status: fb.storageAvailable ? 'active' : fb.firebaseInitialized ? 'initialized but bucket unavailable' : 'not configured',
+        },
+        local: {
+          available: true,
+          status: 'fallback',
+        },
+        priority: cloudinaryInitialized ? 'Cloudinary' : fb.storageAvailable ? 'Firebase' : 'Local',
+      },
+      requires: {
+        CLOUDINARY_URL: !!process.env.CLOUDINARY_URL,
+        FIREBASE_PROJECT_ID: !!process.env.FIREBASE_PROJECT_ID,
+        FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+        FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+        FIREBASE_STORAGE_BUCKET: !!process.env.FIREBASE_STORAGE_BUCKET,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Error handling middleware
 app.use(errorLogger);
 
+// Sentry error handler (must be before other error handlers)
+app.use(sentryService.getErrorHandler());
+
 app.use((err, req, res, next) => {
+  // Capture error in Sentry with context
+  sentryService.captureException(err, {
+    tags: {
+      errorName: err.name,
+      errorCode: err.code,
+      route: req.path,
+      method: req.method,
+    },
+    extra: {
+      requestId: req.id,
+      userId: req.user?.id,
+      ip: req.ip,
+    },
+    user: req.user ? {
+      id: req.user.id,
+      email: req.user.email,
+      username: req.user.displayName,
+    } : undefined,
+  });
+
   // Handle specific error types
   if (err.name === 'ValidationError') {
     return res.status(400).json({
@@ -434,14 +514,15 @@ app.use((err, req, res, next) => {
     });
   }
   
-  // Default error response
+  // Default error response - never expose internal details in production
   const isDevelopment = process.env.NODE_ENV === 'development';
   res.status(err.status || 500).json({
     error: 'Internal Server Error',
-    message: isDevelopment ? err.message : 'Something went wrong',
-    ...(isDevelopment && { stack: err.stack }),
+    message: isDevelopment ? err.message : 'Something went wrong. Please try again later.',
     requestId: req.id || 'unknown',
     timestamp: new Date().toISOString(),
+    // Only include stack trace in development
+    ...(isDevelopment && { stack: err.stack }),
   });
 });
 

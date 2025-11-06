@@ -6,12 +6,15 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserData } from '../../hooks/useUserData';
+import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
+import { router } from 'expo-router';
+import { Skeleton, SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
+import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 
 
 export default function HomeScreen(): React.JSX.Element {
@@ -51,8 +54,11 @@ export default function HomeScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Show mini floating bar on Home when a current journey exists */}
+      <FloatingJourneyStatus homeOnly />
       <ScrollView 
         style={styles.scrollView} 
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={onRefresh} />
@@ -69,10 +75,12 @@ export default function HomeScreen(): React.JSX.Element {
 
         {/* Header */}
         <View style={styles.header}>
-          <Image
-            source={{ uri: 'https://static.codia.ai/image/2025-09-26/MN0Tj1LcZr.png' }}
-            style={styles.profileImage}
-          />
+          <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
+            <Image
+              source={{ uri: 'https://static.codia.ai/image/2025-09-26/MN0Tj1LcZr.png' }}
+              style={styles.profileImage}
+            />
+          </TouchableOpacity>
           <Text style={styles.logo}>LOGO</Text>
           <View style={styles.notificationContainer}>
             <Image
@@ -83,7 +91,7 @@ export default function HomeScreen(): React.JSX.Element {
         </View>
 
         {/* User Profile Section */}
-        <View style={styles.profileSection}>
+        <TouchableOpacity style={styles.profileSection} activeOpacity={0.8} onPress={() => router.push('/profile')}>
           <Image
             source={{ 
               uri: dashboardData?.user?.photoURL || user?.photoURL || 'https://static.codia.ai/image/2025-09-26/i2yG8AHX5c.png' 
@@ -96,10 +104,10 @@ export default function HomeScreen(): React.JSX.Element {
             </Text>
             <Text style={styles.userRank}>Explorer Rank</Text>
             <Text style={styles.userStats}>
-              {formatDistance(dashboardData?.user?.totalDistance || 0)} | {formatTime(dashboardData?.user?.totalTime || 0)} | {achievements.length} Badges
+              {formatDistance(dashboardData?.user?.totalDistance || 0)} | {formatTime(dashboardData?.user?.totalTime || 0)} | {achievements.filter(a => a.unlocked).length} Badges
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Statistics Cards */}
         <View style={styles.statsContainer}>
@@ -108,7 +116,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={styles.statLabel}>Distance Covered</Text>
               <Text style={styles.statValue}>
                 {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
+                  <SkeletonLine width={80} height={16} />
                 ) : (
                   formatDistance(dashboardData?.user?.totalDistance || 0)
                 )}
@@ -118,7 +126,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={styles.statLabel}>Time Traveled</Text>
               <Text style={styles.statValue}>
                 {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
+                  <SkeletonLine width={70} height={16} />
                 ) : (
                   formatTime(dashboardData?.user?.totalTime || 0)
                 )}
@@ -130,7 +138,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={styles.statLabel}>Avg. Speed</Text>
               <Text style={styles.statValue}>
                 {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
+                  <SkeletonLine width={60} height={16} />
                 ) : (
                   formatSpeed((dashboardData?.user?.totalDistance || 0) / Math.max((dashboardData?.user?.totalTime || 1) / 3600, 0.1))
                 )}
@@ -140,7 +148,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={styles.statLabel}>Max Speed</Text>
               <Text style={styles.statValue}>
                 {loading ? (
-                  <ActivityIndicator size="small" color="#000000" />
+                  <SkeletonLine width={60} height={16} />
                 ) : (
                   formatSpeed(dashboardData?.user?.topSpeed || 0)
                 )}
@@ -151,15 +159,25 @@ export default function HomeScreen(): React.JSX.Element {
 
         {/* XP Progress Section */}
         <View style={styles.xpSection}>
-          <Text style={styles.xpTitle}>XP Progress</Text>
-          <View style={styles.progressBarContainer}>
-            <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/pyH5pJcAte.png' }}
-              style={styles.progressBar}
-              resizeMode="stretch"
-            />
+          <View style={styles.xpHeader}>
+            <Text style={styles.xpTitle}>Level {dashboardData?.user?.level || 1}</Text>
+            <Text style={styles.xpValue}>{dashboardData?.user?.xp || 0} XP</Text>
           </View>
-          <Text style={styles.nextBadge}>Next Badge: Explorer</Text>
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBarBackground}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { 
+                    width: `${Math.min(100, ((dashboardData?.user?.xp || 0) % 100))}%` 
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+          <Text style={styles.nextBadge}>
+            {loading ? <SkeletonLine width={160} height={12} /> : `${100 - ((dashboardData?.user?.xp || 0) % 100)} XP to Level ${(dashboardData?.user?.level || 1) + 1}`}
+          </Text>
         </View>
 
         {/* Achievements Section */}
@@ -170,28 +188,57 @@ export default function HomeScreen(): React.JSX.Element {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.achievementsScroll}>
           <View style={styles.achievementsContainer}>
             {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#F9A825" />
-                <Text style={styles.loadingText}>Loading achievements...</Text>
-              </View>
-            ) : achievements.length > 0 ? (
-              achievements.slice(0, 3).map((achievement, index) => (
-                <View key={achievement.id} style={styles.achievementCard}>
-                  <View style={styles.achievementImagePlaceholder}>
-                    <Text style={styles.achievementEmoji}>{achievement.icon}</Text>
+              <>
+                {[0,1,2].map((i) => (
+                  <View key={i} style={styles.achievementCard}>
+                    <View style={styles.achievementImagePlaceholder}>
+                      <SkeletonCircle size={60} />
+                    </View>
+                    <View style={styles.achievementInfo}>
+                      <SkeletonLine width={120} height={14} style={{ marginBottom: 6 }} />
+                      <SkeletonLine width={180} height={12} />
+                    </View>
                   </View>
-                  <View style={styles.achievementInfo}>
-                    <Text style={styles.achievementTitle}>{achievement.name}</Text>
-                    <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                ))}
+              </>
+            ) : (() => {
+                // Filter to only show unlocked/earned achievements
+                const unlockedAchievements = achievements.filter(achievement => achievement.unlocked === true);
+                
+                return unlockedAchievements.length > 0 ? (
+                  unlockedAchievements.slice(0, 3).map((achievement, index) => {
+                    // Get badge image from mapping
+                    const badgeSource = achievement.badge 
+                      ? ACHIEVEMENT_BADGES[achievement.id as keyof typeof ACHIEVEMENT_BADGES]
+                      : null;
+                    
+                    return (
+                      <View key={achievement.id} style={styles.achievementCard}>
+                        <View style={styles.achievementImagePlaceholder}>
+                          {badgeSource ? (
+                            <Image 
+                              source={badgeSource}
+                              style={styles.achievementBadgeImage}
+                              resizeMode="contain"
+                            />
+                          ) : (
+                            <Text style={styles.achievementEmoji}>🏆</Text>
+                          )}
+                        </View>
+                        <View style={styles.achievementInfo}>
+                          <Text style={styles.achievementTitle}>{achievement.name}</Text>
+                          <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No achievements unlocked yet</Text>
+                    <Text style={styles.emptySubtext}>Start your first journey to unlock achievements!</Text>
                   </View>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No achievements yet</Text>
-                <Text style={styles.emptySubtext}>Start your first journey to unlock achievements!</Text>
-              </View>
-            )}
+                );
+              })()}
           </View>
         </ScrollView>
 
@@ -203,10 +250,19 @@ export default function HomeScreen(): React.JSX.Element {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.journeysScroll}>
           <View style={styles.journeysContainer}>
             {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#F9A825" />
-                <Text style={styles.loadingText}>Loading journeys...</Text>
-              </View>
+              <>
+                {[0,1,2].map((i) => (
+                  <View key={i} style={styles.journeyCard}>
+                    <View style={styles.journeyImagePlaceholder}>
+                      <Skeleton width={165} height={80} borderRadius={5} />
+                    </View>
+                    <View style={styles.journeyInfo}>
+                      <SkeletonLine width={140} height={16} style={{ marginBottom: 8 }} />
+                      <SkeletonLine width={100} height={12} />
+                    </View>
+                  </View>
+                ))}
+              </>
             ) : dashboardData?.recentJourneys && dashboardData.recentJourneys.length > 0 ? (
               dashboardData.recentJourneys.map((journey, index) => (
                 <View key={journey.id} style={styles.journeyCard}>
@@ -231,17 +287,6 @@ export default function HomeScreen(): React.JSX.Element {
             )}
           </View>
         </ScrollView>
-
-        {/* Start Journey Button */}
-        <View style={styles.startJourneyContainer}>
-          <TouchableOpacity style={styles.startJourneyButton}>
-            <Image
-              source={{ uri: 'https://static.codia.ai/image/2025-09-26/PdS2AJiDCo.png' }}
-              style={styles.startJourneyIcon}
-            />
-            <Text style={styles.startJourneyText}>Start Journey</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -383,15 +428,39 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
   },
+  xpHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   xpTitle: {
     fontFamily: 'Space Grotesk',
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#000000',
     lineHeight: 24,
   },
+  xpValue: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6366f1',
+    lineHeight: 24,
+  },
   progressBarContainer: {
-    height: 8,
+    height: 12,
+  },
+  progressBarBackground: {
+    width: '100%',
+    height: 12,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#6366f1',
+    borderRadius: 6,
   },
   progressBar: {
     width: '100%',
@@ -573,6 +642,10 @@ const styles = StyleSheet.create({
   },
   achievementEmoji: {
     fontSize: 48,
+  },
+  achievementBadgeImage: {
+    width: 60,
+    height: 60,
   },
   journeyImagePlaceholder: {
     width: 160,

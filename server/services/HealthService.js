@@ -1,6 +1,6 @@
 // server/services/HealthService.js
 
-const { PrismaClient } = require('@prisma/client');
+const prismaSingleton = require('../prisma/client');
 const { adminStorage, adminAuth } = require('./Firebase');
 const mapsService = require('./MapsService');
 const { cacheService } = require('./CacheService');
@@ -9,7 +9,7 @@ const axios = require('axios');
 
 class HealthService {
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = prismaSingleton;
     this.healthChecks = new Map();
     this.lastHealthCheck = null;
     this.healthHistory = [];

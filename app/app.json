@@ -31,10 +31,7 @@
         "NSLocationWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map."
       },
-      "bundleIdentifier": "com.wayfarian.app",
-      "config": {
-        "googleMapsApiKey": "AIzaSyC6su5LGyJVGf8bxKR4q-C9CHx4l0crbxY"
-      }
+      "bundleIdentifier": "com.wayfarian.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -51,12 +48,7 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
-      "package": "com.wayfarian.app",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyC6su5LGyJVGf8bxKR4q-C9CHx4l0crbxY"
-        }
-      }
+      "package": "com.wayfarian.app"
     },
     "web": {
       "output": "static",
