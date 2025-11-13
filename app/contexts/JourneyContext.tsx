@@ -53,6 +53,7 @@ interface JourneyContextType {
   pauseJourney: () => Promise<void>;
   resumeJourney: () => Promise<void>;
   endJourney: () => Promise<void>;
+  clearStuckJourney: () => Promise<void>; // Force clear any stuck journey
   
   // Photo actions
   addPhoto: (photoUri: string) => Promise<void>;
@@ -332,6 +333,76 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Force clear any stuck journey - useful for debugging or when journey gets stuck
+  const clearStuckJourney = async () => {
+    try {
+      console.log('Force clearing stuck journey...');
+      
+      // Try to force-delete the journey in the backend if we have a journey ID
+      if (currentJourney?.id) {
+        try {
+          console.log('Attempting to force-clear journey in backend:', currentJourney.id);
+          
+          // Use the force-clear endpoint that deletes regardless of status
+          await journeyAPI.forceClearJourney(currentJourney.id);
+          console.log('Journey force-cleared in backend successfully');
+        } catch (apiError: any) {
+          console.error('Failed to force-clear journey in backend:', apiError);
+          
+          // If force-clear fails, try the normal end endpoint as fallback
+          try {
+            console.log('Attempting normal end as fallback...');
+            await journeyAPI.endJourney(currentJourney.id, {
+              latitude: 0,
+              longitude: 0,
+            });
+            console.log('Journey ended via fallback');
+          } catch (endError) {
+            console.error('Both force-clear and end failed, continuing with local clear:', endError);
+          }
+        }
+      }
+      
+      // Stop location tracking
+      await locationService.endJourney();
+      
+      // Leave any group rooms
+      if (currentJourney?.groupId) {
+        try { 
+          leaveGroupRoom(currentJourney.groupId); 
+        } catch (e) {
+          console.log('Error leaving group room:', e);
+        }
+      }
+      
+      // Clear all state immediately
+      setCurrentJourney(null);
+      setIsTracking(false);
+      setIsMinimized(false);
+      setStats({
+        totalDistance: 0,
+        totalTime: 0,
+        avgSpeed: 0,
+        topSpeed: 0,
+        currentSpeed: 0,
+      });
+      setRoutePoints([]);
+      setGroupMembers([]);
+      
+      // Clear AsyncStorage
+      await AsyncStorage.removeItem('currentJourney');
+      
+      console.log('Stuck journey cleared successfully');
+    } catch (error) {
+      console.error('Error clearing stuck journey:', error);
+      // Force clear anyway
+      setCurrentJourney(null);
+      setIsTracking(false);
+      setIsMinimized(false);
+      await AsyncStorage.removeItem('currentJourney').catch(() => {});
+    }
+  };
+
   const addPhoto = async (photoUri: string) => {
     if (!currentJourney) return;
 
@@ -489,6 +560,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     pauseJourney,
     resumeJourney,
     endJourney,
+    clearStuckJourney,
     addPhoto,
     minimizeJourney,
     maximizeJourney,

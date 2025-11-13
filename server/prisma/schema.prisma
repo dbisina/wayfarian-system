@@ -20,6 +20,8 @@ model User {
   phoneNumber     String?  @unique
   displayName     String?
   photoURL        String?
+  country         String?  // Country name
+  countryCode     String?  // ISO 3166-1 alpha-2 code (e.g., "US", "GB")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   

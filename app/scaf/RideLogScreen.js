@@ -107,7 +107,7 @@ const RideLogScreen = ({ onNavigate }) => {
             {badges.map((badge) => (
               <Image
                 key={badge.id}
-                source={{ uri: badge.image }}
+                source={badge.image}
                 style={styles.badgeImage}
               />
             ))}
@@ -136,7 +136,7 @@ const RideLogScreen = ({ onNavigate }) => {
           {challenges.map((challenge) => (
             <View key={challenge.id} style={styles.challengeItem}>
               <Image
-                source={{ uri: challenge.image }}
+                source={challenge.image}
                 style={styles.challengeImage}
               />
               <View style={styles.challengeInfo}>

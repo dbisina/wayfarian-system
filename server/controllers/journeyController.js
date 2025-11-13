@@ -266,8 +266,17 @@ const getJourneyHistory = async (req, res) => {
           group: {
             select: { id: true, name: true },
           },
-          _count: {
-            select: { photos: true },
+          photos: {
+            select: {
+              id: true,
+              filename: true,
+              firebasePath: true,
+              latitude: true,
+              longitude: true,
+              takenAt: true,
+            },
+            orderBy: { takenAt: 'desc' },
+            take: 10, // Include up to 10 photos for preview
           },
         },
       }),
@@ -397,6 +406,49 @@ module.exports = {
     } catch (error) {
       console.error('Resume journey error:', error);
       res.status(500).json({ error: 'Failed to resume journey', message: error.message });
+    }
+  },
+
+  /**
+   * Force clear/cancel a stuck journey (any status)
+   */
+  forceClearJourney: async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const userId = req.user.id;
+      
+      // Find journey regardless of status
+      const journey = await prisma.journey.findFirst({
+        where: {
+          id: journeyId,
+          userId,
+        },
+      });
+      
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Journey not found for this user',
+        });
+      }
+      
+      // Delete the journey completely
+      await prisma.journey.delete({
+        where: { id: journeyId },
+      });
+      
+      console.log(`Force cleared stuck journey ${journeyId} for user ${userId}`);
+      
+      res.json({ 
+        success: true, 
+        message: 'Journey force-cleared successfully' 
+      });
+    } catch (error) {
+      console.error('Force clear journey error:', error);
+      res.status(500).json({ 
+        error: 'Failed to force clear journey', 
+        message: error.message 
+      });
     }
   },
 };

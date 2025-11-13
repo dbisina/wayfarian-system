@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,86 +6,141 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { userAPI } from '../services/api';
 
 interface Journey {
   id: string;
   title: string;
-  date: string;
-  imageUrl: string;
+  startTime: string;
+  endTime?: string;
+  totalDistance: number;
+  totalTime: number;
+  vehicle?: string;
+  photos?: {
+    id: string;
+    firebasePath: string;
+    takenAt: string;
+  }[];
 }
 
 interface PastJourneysScreenProps {
   onBackPress?: () => void;
 }
 
-const PastJourneysScreen = ({ onBackPress = () => {} }: PastJourneysScreenProps): React.JSX.Element => {
-  const journeys: Journey[] = [
-    {
-      id: '1',
-      title: 'Coastal Drive',
-      date: '2023-08-15',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/XnFrxQkxNw.png',
-    },
-    {
-      id: '2',
-      title: 'Mountain Expedition',
-      date: '2023-07-22',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/60izea1RSp.png',
-    },
-    {
-      id: '3',
-      title: 'Desert Crossing',
-      date: '2023-06-10',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/HKahw9sEtu.png',
-    },
-    {
-      id: '4',
-      title: 'Forest Trail',
-      date: '2023-05-05',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/XO9BiLfGpS.png',
-    },
-    {
-      id: '5',
-      title: 'City Escape',
-      date: '2023-04-18',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/Z1gsBp3n06.png',
-    },
-    {
-      id: '6',
-      title: 'Lake Retreat',
-      date: '2023-03-02',
-      imageUrl: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/DBFsYcjdOn.png',
-    },
-  ];
+const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX.Element => {
+  const router = useRouter();
+  const [journeys, setJourneys] = useState<Journey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const formatDistance = (meters: number) => {
+    if (meters < 1000) return `${Math.round(meters)}m`;
+    return `${(meters / 1000).toFixed(2)}km`;
+  };
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
+
+  const fetchJourneys = async () => {
+    try {
+      setError(null);
+      const response = await userAPI.getJourneyHistory({ 
+        status: 'COMPLETED',
+        sortBy: 'startTime',
+        sortOrder: 'desc',
+        limit: 50 
+      });
+      setJourneys(response.journeys || []);
+    } catch (err: any) {
+      console.error('Error fetching journeys:', err);
+      setError(err.message || 'Failed to load journeys');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchJourneys();
+  }, []);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchJourneys();
+  };
+
+  const handleJourneyPress = (journey: Journey) => {
+    // @ts-ignore - journey-detail is a valid route
+    router.push({
+      pathname: '/journey-detail',
+      params: { journeyId: journey.id }
+    });
+  };
 
   const BackIcon = () => (
-    <Image
-      source={{ uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/34Cwm3ER9G.svg' }}
-      style={styles.backIcon}
-    />
+    <Text style={styles.backIconText}>←</Text>
   );
 
   const MoreIcon = () => (
-    <Image
-      source={{ uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/EjRQemP1Fg.svg' }}
-      style={styles.moreIcon}
-    />
+    <Text style={styles.moreIconText}>⋮</Text>
   );
 
   const ChevronIcon = () => (
-    <Image
-      source={{ uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/3KrGwd9oRq.svg' }}
-      style={styles.chevronIcon}
-    />
+    <Text style={styles.chevronIconText}>›</Text>
   );
+
+  const handleBackPress = () => {
+    if (onBackPress) {
+      onBackPress();
+    } else {
+      router.back();
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#3E4751" />
+        <Text style={styles.loadingText}>Loading journeys...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={fetchJourneys}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={onBackPress}
+          onPress={handleBackPress}
           activeOpacity={0.7}
         >
           <BackIcon />
@@ -96,36 +151,71 @@ const PastJourneysScreen = ({ onBackPress = () => {} }: PastJourneysScreenProps)
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {journeys.map((journey) => (
-          <TouchableOpacity
-            key={journey.id}
-            style={styles.journeyItem}
-            activeOpacity={0.7}
-          >
-            <View style={styles.journeyContent}>
-              <Image source={{ uri: journey.imageUrl }} style={styles.journeyImage} />
-              <View style={styles.journeyInfo}>
-                <Text style={styles.journeyTitle}>{journey.title}</Text>
-                <Text style={styles.journeyDate}>{journey.date}</Text>
-              </View>
-            </View>
-            <View style={styles.chevronContainer}>
-              <ChevronIcon />
-            </View>
-          </TouchableOpacity>
-        ))}
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {journeys.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateEmoji}>🚗</Text>
+            <Text style={styles.emptyStateTitle}>No Journeys Yet</Text>
+            <Text style={styles.emptyStateText}>
+              Start your first journey to see it here
+            </Text>
+          </View>
+        ) : (
+          journeys.map((journey, index) => {
+            const photoCount = journey.photos?.length || 0;
+            const thumbnail = journey.photos?.[0];
+            
+            return (
+              <TouchableOpacity
+                key={journey.id}
+                style={styles.journeyItem}
+                activeOpacity={0.7}
+                onPress={() => handleJourneyPress(journey)}
+              >
+                <View style={styles.journeyContent}>
+                  {thumbnail ? (
+                    <Image 
+                      source={{ uri: thumbnail.firebasePath }} 
+                      style={styles.journeyImage} 
+                    />
+                  ) : (
+                    <View style={styles.journeyImagePlaceholder}>
+                      <Text style={styles.journeyImageEmoji}>
+                        {journey.vehicle === 'bike' ? '🚴' : journey.vehicle === 'car' ? '🚗' : '🏃'}
+                      </Text>
+                    </View>
+                  )}
+                  {photoCount > 0 && (
+                    <View style={styles.photoBadge}>
+                      <Text style={styles.photoBadgeText}>📷 {photoCount}</Text>
+                    </View>
+                  )}
+                  <View style={styles.journeyInfo}>
+                    <Text style={styles.journeyTitle} numberOfLines={1}>
+                      {journey.title || `Journey ${index + 1}`}
+                    </Text>
+                    <Text style={styles.journeyDate}>
+                      {formatDate(journey.startTime)}
+                    </Text>
+                    <Text style={styles.journeyStats}>
+                      {formatDistance(journey.totalDistance)} • {formatTime(journey.totalTime)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.chevronContainer}>
+                  <ChevronIcon />
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
-
-      <View style={styles.bottomNavigation}>
-        <View style={styles.floatingButton}>
-          <Image
-            source={{ uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-19/mKBNFLiEUx.svg' }}
-            style={styles.floatingButtonIcon}
-          />
-        </View>
-        <View style={styles.homeIndicator} />
-      </View>
     </View>
   );
 };
@@ -134,6 +224,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#757575',
+    fontFamily: 'Space Grotesk',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#E53935',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#3E4751',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Space Grotesk',
   },
   header: {
     flexDirection: 'row',
@@ -150,9 +270,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backIcon: {
-    width: 24,
-    height: 24,
+  backIconText: {
+    fontSize: 24,
+    color: '#000000',
   },
   headerTitle: {
     fontSize: 18,
@@ -169,12 +289,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  moreIcon: {
-    width: 24,
-    height: 24,
+  moreIconText: {
+    fontSize: 24,
+    color: '#000000',
   },
   scrollView: {
     flex: 1,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyStateEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#000000',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#757575',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
   },
   journeyItem: {
     flexDirection: 'row',
@@ -183,6 +326,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
   journeyContent: {
     flexDirection: 'row',
@@ -194,6 +339,34 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 8,
     marginRight: 16,
+    backgroundColor: '#F5F5F5',
+  },
+  journeyImagePlaceholder: {
+    width: 100,
+    height: 56,
+    borderRadius: 8,
+    marginRight: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  journeyImageEmoji: {
+    fontSize: 32,
+  },
+  photoBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  photoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Space Grotesk',
   },
   journeyInfo: {
     flex: 1,
@@ -214,39 +387,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     lineHeight: 21,
   },
+  journeyStats: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#9E9E9E',
+    fontFamily: 'Space Grotesk',
+    marginTop: 2,
+  },
   chevronContainer: {
     width: 28,
     height: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  chevronIcon: {
-    width: 24,
-    height: 24,
-  },
-  bottomNavigation: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    alignItems: 'flex-end',
-  },
-  floatingButton: {
-    width: 64,
-    height: 56,
-    backgroundColor: '#3E4751',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  floatingButtonIcon: {
-    width: 24,
-    height: 24,
-    tintColor: '#FFFFFF',
-  },
-  homeIndicator: {
-    width: 390,
-    height: 20,
-    backgroundColor: 'transparent',
+  chevronIconText: {
+    fontSize: 24,
+    color: '#BDBDBD',
   },
 });
 

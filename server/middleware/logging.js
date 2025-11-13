@@ -1,6 +1,7 @@
 // server/middleware/logging.js
 
 const logger = require('../services/Logger');
+const { sanitizeLogData } = require('../utils/logSanitizer');
 
 /**
  * API request logging middleware
@@ -245,32 +246,6 @@ const performanceMonitor = (req, res, next) => {
   };
   
   next();
-};
-
-/**
- * Sanitize sensitive data for logging
- * @param {object} data - Data to sanitize
- * @returns {object} Sanitized data
- */
-const sanitizeLogData = (data) => {
-  if (!data || typeof data !== 'object') {
-    return data;
-  }
-  
-  const sensitiveFields = [
-    'password', 'token', 'secret', 'key', 'auth', 'authorization',
-    'idToken', 'refreshToken', 'accessToken', 'privateKey', 'apiKey',
-  ];
-  
-  const sanitized = { ...data };
-  
-  for (const field of sensitiveFields) {
-    if (sanitized[field]) {
-      sanitized[field] = '[REDACTED]';
-    }
-  }
-  
-  return sanitized;
 };
 
 /**

@@ -92,7 +92,7 @@ const JourneyScreen = () => {
             {friendProfiles.map((friend) => (
               <Image
                 key={friend.id}
-                source={{ uri: friend.avatar }}
+                source={friend.avatar}
                 style={styles.friendAvatar}
               />
             ))}

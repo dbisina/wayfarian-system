@@ -1,6 +1,6 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, Image, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, Image, TouchableOpacity, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, interpolate, Extrapolation } from 'react-native-reanimated';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -18,7 +18,7 @@ function AdaptiveTabIcon({
 }: {
   color: string;
   focused: boolean;
-  iconSource: string;
+  iconSource: number; // require() returns a number
   title: string;
   onFocusChange?: (focused: boolean) => void;
 }) {
@@ -92,7 +92,7 @@ function AdaptiveTabIcon({
         pillAnimatedStyle
       ]}>
         <Animated.View style={iconAnimatedStyle}>
-          <Image source={{ uri: iconSource }} style={styles.tabIcon} />
+          <Image source={iconSource} style={styles.tabIcon} />
         </Animated.View>
         <Animated.View style={textAnimatedStyle}>
           <Text style={[
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 30,
     paddingHorizontal: 2,
-    bottom: 7
+    bottom: Platform.OS === 'android' ? 7 : 0
   },
   tabIcon: {
     width: 22,

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { sanitizeLogData } = require('../utils/logSanitizer');
 
 class Logger {
   constructor() {
@@ -62,11 +63,13 @@ class Logger {
    */
   formatLog(level, message, meta = {}) {
     const timestamp = new Date().toISOString();
+    const sanitizedMeta = sanitizeLogData(meta);
+    const metaPayload = sanitizedMeta && typeof sanitizedMeta === 'object' ? sanitizedMeta : { meta: sanitizedMeta };
     const logEntry = {
       timestamp,
       level: level.toUpperCase(),
       message,
-      ...meta,
+      ...metaPayload,
       environment: process.env.NODE_ENV || 'development',
       service: 'wayfarian-api',
     };
@@ -105,7 +108,16 @@ class Logger {
     const timestamp = new Date().toISOString();
     
     const coloredLevel = `${colors[level]}${level.toUpperCase()}${reset}`;
-    const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+    const sanitizedMeta = sanitizeLogData(meta);
+    let metaStr = '';
+    if (sanitizedMeta && typeof sanitizedMeta === 'object') {
+      const keys = Object.keys(sanitizedMeta);
+      if (keys.length > 0) {
+        metaStr = ` ${JSON.stringify(sanitizedMeta)}`;
+      }
+    } else if (sanitizedMeta !== undefined && sanitizedMeta !== null) {
+      metaStr = ` ${JSON.stringify(sanitizedMeta)}`;
+    }
     
     console.log(`[${timestamp}] ${coloredLevel}: ${message}${metaStr}`);
   }

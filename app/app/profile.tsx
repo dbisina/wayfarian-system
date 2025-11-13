@@ -161,7 +161,11 @@ export default function ProfileScreen() {
         <View style={styles.profileTop}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: dashboardData?.user?.photoURL || user?.photoURL || require('../assets/images/2025-09-26/i2yG8AHX5c.png') }}
+              source={
+                dashboardData?.user?.photoURL || user?.photoURL
+                  ? { uri: dashboardData?.user?.photoURL || user?.photoURL }
+                  : require('../assets/images/2025-09-26/i2yG8AHX5c.png')
+              }
               style={styles.avatar}
             />
             <TouchableOpacity 

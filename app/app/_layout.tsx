@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import 'react-native-reanimated';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '../contexts/AuthContext';
@@ -16,6 +18,9 @@ import { initSentry } from '../services/sentry';
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
 
+// Prevent splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync();
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };
@@ -24,6 +29,17 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [fontsLoaded] = useFonts({
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
 
   useEffect(() => {
     // Check onboarding status
@@ -45,8 +61,8 @@ export default function RootLayout() {
     checkOnboardingStatus();
   }, []);
 
-  if (isLoading) {
-    return null; // You could show a loading screen here
+  if (!fontsLoaded || isLoading) {
+    return null; // Font loading and onboarding check
   }
 
   const stackScreenOptions = { headerShown: false };

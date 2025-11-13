@@ -13,7 +13,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -31,7 +31,10 @@
         "NSLocationWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map."
       },
-      "bundleIdentifier": "com.wayfarian.app"
+      "bundleIdentifier": "com.wayfarian.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyC6su5LGyJVGf8bxKR4q-C9CHx4l0crbxY"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -48,7 +51,12 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
-      "package": "com.wayfarian.app"
+      "package": "com.wayfarian.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyC6su5LGyJVGf8bxKR4q-C9CHx4l0crbxY"
+        }
+      }
     },
     "web": {
       "output": "static",

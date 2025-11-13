@@ -265,6 +265,52 @@ class MapsService {
   }
 
   /**
+   * Fetch a place photo and return the raw image payload
+   * @param {string} photoReference - Google Places photo reference
+   * @param {number} maxWidth - Maximum width for the request
+   * @returns {Promise<{buffer: Buffer, length: number, contentType: string}>}
+   */
+  async fetchPlacePhoto(photoReference, maxWidth = 400) {
+    if (!this.googleMapsApiKey) {
+      throw new Error('Google Maps API key not configured');
+    }
+
+    try {
+      const response = await axios.get('https://maps.googleapis.com/maps/api/place/photo', {
+        params: {
+          maxwidth: maxWidth,
+          photo_reference: photoReference,
+          key: this.googleMapsApiKey,
+        },
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        maxRedirects: 5,
+      });
+
+      const buffer = Buffer.from(response.data);
+      const contentType = response.headers['content-type'] || 'image/jpeg';
+      const lengthHeader = response.headers['content-length'];
+      const length = typeof lengthHeader === 'string' ? parseInt(lengthHeader, 10) : buffer.length;
+
+      return {
+        buffer,
+        length: Number.isFinite(length) ? length : buffer.length,
+        contentType,
+      };
+    } catch (error) {
+      const status = error.response?.status;
+      if (status === 404) {
+        const notFound = new Error('Photo not found');
+        notFound.status = 404;
+        throw notFound;
+      }
+
+      console.error('Fetch place photo error:', error);
+      throw new Error('Failed to fetch place photo');
+    }
+  }
+
+  /**
    * Calculate distance between two coordinates using Haversine formula
    * @param {number} lat1 - Latitude 1
    * @param {number} lon1 - Longitude 1

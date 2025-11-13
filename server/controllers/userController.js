@@ -39,6 +39,8 @@ const getUserProfile = async (req, res) => {
         phoneNumber: true,
         displayName: true,
         photoURL: true,
+        country: true,
+        countryCode: true,
         totalDistance: true,
         totalTime: true,
         topSpeed: true,
@@ -135,13 +137,15 @@ const getUserProfile = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { displayName, phoneNumber } = req.body;
+    const { displayName, phoneNumber, country, countryCode } = req.body;
     
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        ...(displayName && { displayName }),
-        ...(phoneNumber && { phoneNumber }),
+        ...(displayName !== undefined && { displayName }),
+        ...(phoneNumber !== undefined && { phoneNumber }),
+        ...(country !== undefined && { country }),
+        ...(countryCode !== undefined && { countryCode }),
         updatedAt: new Date(),
       },
       select: {
@@ -150,6 +154,8 @@ const updateUserProfile = async (req, res) => {
         phoneNumber: true,
         displayName: true,
         photoURL: true,
+        country: true,
+        countryCode: true,
         totalDistance: true,
         totalTime: true,
         topSpeed: true,

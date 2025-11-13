@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ImageBackground,
+  Image,
   TouchableOpacity,
   Dimensions,
   StatusBar,
@@ -27,7 +28,7 @@ export default function OnboardingScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logo}>LOGO</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <TouchableOpacity style={styles.skipButton}>
               <Text style={styles.skipText}>Skip</Text>
             </TouchableOpacity>
@@ -102,11 +103,8 @@ const styles = StyleSheet.create({
     marginBottom: 58,
   },
   logo: {
-    fontFamily: 'Inter',
-    fontSize: 18,
-    fontWeight: '400',
-    color: '#FFFFFF',
-    lineHeight: 22,
+    height: 30,
+    width: 120,
   },
   skipButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',

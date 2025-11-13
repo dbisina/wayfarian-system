@@ -256,7 +256,7 @@ router.get(
 
 /**
  * @route GET /api/maps/photo
- * @desc Get Google Places photo URL
+ * @desc Get proxied Google Places photo URL (no API key leakage)
  * @access Private
  */
 router.get(
@@ -274,20 +274,67 @@ router.get(
   async (req, res) => {
     try {
       const { reference, maxwidth = 400 } = req.query;
-      
-      const photoUrl = mapsService.getPhotoUrl(reference, parseInt(maxwidth));
+      const parsedWidth = parseInt(maxwidth);
+
+      const baseOverride = process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '') : null;
+      const origin = baseOverride || `${req.protocol}://${req.get('host')}`;
+      const apiBase = origin.endsWith('/api') ? origin : `${origin}/api`;
+      const proxyUrl = `${apiBase}/maps/photo/proxy?reference=${encodeURIComponent(reference)}&maxwidth=${parsedWidth}`;
 
       res.json({
         success: true,
-        photoUrl,
+        photoUrl: proxyUrl,
         reference,
-        maxwidth: parseInt(maxwidth),
+        maxwidth: parsedWidth,
       });
       
     } catch (error) {
       console.error('Photo URL error:', error);
       res.status(500).json({
         error: 'Failed to get photo URL',
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route GET /api/maps/photo/proxy
+ * @desc Stream Google Places photo through backend proxy
+ * @access Private
+ */
+router.get(
+  '/photo/proxy',
+  [
+    query('reference')
+      .notEmpty()
+      .withMessage('Photo reference is required'),
+    query('maxwidth')
+      .optional()
+      .isInt({ min: 50, max: 1600 })
+      .withMessage('Max width must be between 50 and 1600'),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { reference, maxwidth = 400 } = req.query;
+      const parsedWidth = parseInt(maxwidth);
+
+      const photo = await mapsService.fetchPlacePhoto(reference, parsedWidth);
+
+      res.set({
+        'Content-Type': photo.contentType,
+        'Cache-Control': 'public, max-age=86400',
+        'Content-Length': `${photo.length}`,
+      });
+
+      return res.send(photo.buffer);
+      
+    } catch (error) {
+      console.error('Photo proxy error:', error);
+      const status = error.status === 404 || error.response?.status === 404 ? 404 : 500;
+      res.status(status).json({
+        error: status === 404 ? 'Photo not found' : 'Failed to retrieve photo',
         message: error.message,
       });
     }

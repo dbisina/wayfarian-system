@@ -52,6 +52,8 @@ const {
   clearCache,
 } = require('./middleware/cache');
 
+const { requireOperator } = require('./middleware/authorization');
+
 // Prisma Client initialized via singleton (with logging)
 
 const app = express();
@@ -294,7 +296,7 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
 }
 
 // System and admin endpoints
-app.get('/api/system/status', authMiddleware, (req, res) => {
+app.get('/api/system/status', authMiddleware, requireOperator, (req, res) => {
   const memUsage = process.memoryUsage();
   const cpuUsage = process.cpuUsage();
   
@@ -318,10 +320,10 @@ app.get('/api/system/status', authMiddleware, (req, res) => {
   });
 });
 
-app.get('/api/system/cache/stats', authMiddleware, getCacheStats);
-app.delete('/api/system/cache', authMiddleware, clearCache);
+app.get('/api/system/cache/stats', authMiddleware, requireOperator, getCacheStats);
+app.delete('/api/system/cache', authMiddleware, requireOperator, clearCache);
 
-app.get('/api/system/logs/stats', authMiddleware, (req, res) => {
+app.get('/api/system/logs/stats', authMiddleware, requireOperator, (req, res) => {
   const metrics = logger.getMetrics();
   const logFiles = logger.getLogFiles();
   
@@ -333,7 +335,7 @@ app.get('/api/system/logs/stats', authMiddleware, (req, res) => {
   });
 });
 
-app.get('/api/system/jobs/stats', authMiddleware, (req, res) => {
+app.get('/api/system/jobs/stats', authMiddleware, requireOperator, (req, res) => {
   const { jobQueue } = require('./services/JobQueue');
   const stats = jobQueue.getStats();
   
@@ -345,7 +347,7 @@ app.get('/api/system/jobs/stats', authMiddleware, (req, res) => {
 });
 
 // Database connection test endpoint
-app.get('/api/system/database', authMiddleware, async (req, res) => {
+app.get('/api/system/database', authMiddleware, requireOperator, async (req, res) => {
   try {
     const startTime = Date.now();
     await prisma.$queryRaw`SELECT 1`;
@@ -382,7 +384,7 @@ app.get('/api/system/database', authMiddleware, async (req, res) => {
 });
 
 // API metrics endpoint
-app.get('/api/system/metrics', authMiddleware, (req, res) => {
+app.get('/api/system/metrics', authMiddleware, requireOperator, (req, res) => {
   const metrics = logger.getMetrics();
   const cacheStats = cacheService.getStats();
   const { jobQueue } = require('./services/JobQueue');
@@ -405,7 +407,7 @@ app.get('/api/system/metrics', authMiddleware, (req, res) => {
 });
 
 // Storage status endpoint to help diagnose storage setup
-app.get('/api/system/storage', (req, res) => {
+app.get('/api/system/storage', authMiddleware, requireOperator, (req, res) => {
   try {
     const fb = require('./services/Firebase');
     const { cloudinaryInitialized } = require('./services/CloudinaryService');

@@ -3,6 +3,35 @@
 
 const { verifyIdToken } = require('../services/Firebase');
 const prisma = require('../prisma/client');
+const logger = require('../services/Logger');
+const { cacheService } = require('../services/CacheService');
+
+// Token blacklist cache
+const TOKEN_BLACKLIST_KEY = 'token_blacklist';
+
+/**
+ * Check if token is blacklisted
+ */
+const isTokenBlacklisted = async (token) => {
+  try {
+    const blacklisted = await cacheService.get(`${TOKEN_BLACKLIST_KEY}:${token}`);
+    return !!blacklisted;
+  } catch (error) {
+    logger.error('Token blacklist check failed', { error: error.message });
+    return false;
+  }
+};
+
+/**
+ * Blacklist a token
+ */
+const blacklistToken = async (token, expiresIn = 3600) => {
+  try {
+    await cacheService.set(`${TOKEN_BLACKLIST_KEY}:${token}`, '1', expiresIn);
+  } catch (error) {
+    logger.error('Token blacklist failed', { error: error.message });
+  }
+};
 
 /**
  * Middleware to verify Firebase token and attach user to request
@@ -10,7 +39,7 @@ const prisma = require('../prisma/client');
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         error: 'Unauthorized',
@@ -20,11 +49,26 @@ const authMiddleware = async (req, res, next) => {
 
     const token = authHeader.substring(7);
 
+    // Check if token is blacklisted
+    if (await isTokenBlacklisted(token)) {
+      logger.security('Blacklisted token attempt', {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      return res.status(401).json({
+        error: 'Token revoked',
+        message: 'This token has been revoked. Please sign in again.',
+      });
+    }
+
     let decodedToken;
     try {
       decodedToken = await verifyIdToken(token);
     } catch (firebaseError) {
-      console.error('Firebase token verification failed:', firebaseError);
+      logger.security('Firebase token verification failed', {
+        error: firebaseError.message,
+        ip: req.ip,
+      });
       return res.status(401).json({
         error: 'Invalid token',
         message: 'The authentication token is invalid or expired',
@@ -64,7 +108,7 @@ const authMiddleware = async (req, res, next) => {
           message: 'Database is temporarily unavailable. Please try again shortly.',
         });
       }
-      console.error('Auth DB lookup failed:', dbErr);
+      logger.error('Auth DB lookup failed', { error: dbErr.message });
       return res.status(500).json({ error: 'Authentication failed', message: 'Database error' });
     }
 
@@ -76,15 +120,18 @@ const authMiddleware = async (req, res, next) => {
     }
 
     req.user = user;
+    req.authToken = token; // Store token for potential blacklisting
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    logger.error('Auth middleware error', { error: error.message });
     return res.status(500).json({
       error: 'Authentication failed',
-      message: error.message,
+      message: 'Internal server error',
     });
   }
 };
 
 module.exports = authMiddleware;
+module.exports.blacklistToken = blacklistToken;
+module.exports.isTokenBlacklisted = isTokenBlacklisted;
 

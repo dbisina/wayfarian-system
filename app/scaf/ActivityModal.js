@@ -93,12 +93,12 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
                     <View style={styles.iconContainer}>
                       {activity.iconBg && (
                         <Image
-                          source={{ uri: activity.iconBg }}
+                          source={activity.iconBg}
                           style={styles.iconBackground}
                         />
                       )}
                       <Image
-                        source={{ uri: activity.icon }}
+                        source={activity.icon}
                         style={styles.activityIcon}
                       />
                     </View>
@@ -117,12 +117,12 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
                     <View style={styles.iconContainer}>
                       {activity.iconBg && (
                         <Image
-                          source={{ uri: activity.iconBg }}
+                          source={activity.iconBg}
                           style={styles.iconBackground}
                         />
                       )}
                       <Image
-                        source={{ uri: activity.icon }}
+                        source={activity.icon}
                         style={styles.activityIcon}
                       />
                     </View>

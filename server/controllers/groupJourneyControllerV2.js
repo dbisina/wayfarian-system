@@ -230,16 +230,28 @@ const startMyInstance = async (req, res) => {
   try {
     const { groupJourneyId } = req.params;
     const userId = req.user.id;
-    const { 
-      startLatitude, 
-      startLongitude,
-      startAddress 
+    const {
+      startLatitude: rawStartLatitude,
+      startLongitude: rawStartLongitude,
+      startAddress
     } = req.body;
 
-    if (!startLatitude || !startLongitude) {
+    const hasCoordinate = value => value !== null && value !== undefined && value !== '' && !Number.isNaN(Number(value));
+
+    if (!hasCoordinate(rawStartLatitude) || !hasCoordinate(rawStartLongitude)) {
       return res.status(400).json({
         error: 'Missing start location',
         message: 'startLatitude and startLongitude are required'
+      });
+    }
+
+    const startLatitude = Number(rawStartLatitude);
+    const startLongitude = Number(rawStartLongitude);
+
+    if (!Number.isFinite(startLatitude) || !Number.isFinite(startLongitude)) {
+      return res.status(400).json({
+        error: 'Invalid start location',
+        message: 'startLatitude and startLongitude must be numeric'
       });
     }
 

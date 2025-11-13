@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   ActionSheetIOS,
+  StatusBar,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -129,6 +130,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
@@ -151,9 +153,9 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Account Settings</Text>
           
           <SettingItem
-            title="Username"
-            subtitle="Change your display name"
-            onPress={() => router.push('/profile')}
+            title="Edit Profile"
+            subtitle="Change your name, country, and more"
+            onPress={() => router.push('/edit-profile')}
           />
 
           <View style={styles.settingItem}>
@@ -288,7 +290,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 30,
+    paddingBottom: 16,
     backgroundColor: '#F6F6F6',
   },
   backButton: {

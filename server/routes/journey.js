@@ -11,6 +11,7 @@ const {
   getActiveJourney,
   pauseJourney,
   resumeJourney,
+  forceClearJourney,
 } = require("../controllers/journeyController");
 const { body, param, query, validationResult } = require("express-validator");
 
@@ -138,6 +139,20 @@ router.post(
   ],
   handleValidationErrors,
   resumeJourney
+);
+
+/**
+ * @route DELETE /api/journey/:journeyId/force-clear
+ * @desc Force clear/delete a stuck journey (any status)
+ * @access Private
+ */
+router.delete(
+  "/:journeyId/force-clear",
+  [
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+  ],
+  handleValidationErrors,
+  forceClearJourney
 );
 
 /**

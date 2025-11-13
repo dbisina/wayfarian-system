@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   StatusBar,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
 import { router } from 'expo-router';
 import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
+import { getCountryByCode } from '../../constants/countries';
 
 // const { width: screenWidth } = Dimensions.get('window');
 
@@ -77,8 +79,17 @@ export default function LeaderboardScreen(): React.JSX.Element {
             {isCurrentUser && ' (You)'}
           </Text>
           <View style={styles.countryContainer}>
-            {item.flag && <Image source={{ uri: item.flag }} style={styles.flagIcon} />}
-            <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
+            {item.countryCode ? (
+              <>
+                {(() => {
+                  const country = getCountryByCode(item.countryCode);
+                  return country ? <Image source={country.flag} style={styles.flagIcon} /> : null;
+                })()}
+                <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
+              </>
+            ) : (
+              <Text style={styles.countryText}>Unknown</Text>
+            )}
           </View>
         </View>
         <Text style={styles.rank}>#{item.rank || item.position || 'N/A'}</Text>
@@ -230,7 +241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 27,
+    paddingTop: Platform.OS === 'android' ? 27 : 40,
     paddingBottom: 11,
   },
   backButton: {
@@ -324,9 +335,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   flagIcon: {
-    width: 11,
-    height: 8,
-    marginRight: 3,
+    width: 20,
+    height: 15,
+    marginRight: 6,
+    resizeMode: 'contain',
   },
   countryText: {
     fontFamily: 'Poppins',

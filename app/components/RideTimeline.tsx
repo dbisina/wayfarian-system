@@ -65,7 +65,11 @@ export default function RideTimeline({ events, onClose }: RideTimelineProps) {
         {events.map((evt) => (
           <View key={evt.id} style={styles.eventRow}>
             <Image
-              source={{ uri: evt.user.photoURL || require('../assets/images/2025-09-26/byc45z4XPi.png') }}
+              source={
+                evt.user.photoURL
+                  ? { uri: evt.user.photoURL }
+                  : require('../assets/images/2025-09-26/byc45z4XPi.png')
+              }
               style={styles.avatar}
             />
             <View style={styles.eventContent}>

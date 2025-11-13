@@ -392,6 +392,15 @@ export const userAPI = {
     return apiRequest('/user/profile', 'GET');
   },
   
+  updateProfile: async (data: {
+    displayName?: string;
+    phoneNumber?: string;
+    country?: string | null;
+    countryCode?: string | null;
+  }) => {
+    return apiRequest('/user/profile', 'PUT', data);
+  },
+  
   getStats: async (timeframe: 'allTime' | 'week' | 'month' | 'year' = 'allTime') => {
     return apiRequest(`/user/stats?timeframe=${timeframe}`, 'GET');
   },
@@ -493,6 +502,10 @@ export const journeyAPI = {
   
   resumeJourney: async (journeyId: string) => {
     return apiRequest(`/journey/${journeyId}/resume`, 'POST');
+  },
+
+  forceClearJourney: async (journeyId: string) => {
+    return apiRequest(`/journey/${journeyId}/force-clear`, 'DELETE');
   },
   
   getActiveJourney: async () => {

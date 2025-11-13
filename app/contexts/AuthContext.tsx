@@ -76,6 +76,8 @@ interface User {
   phoneNumber?: string;
   displayName?: string;
   photoURL?: string;
+  country?: string;
+  countryCode?: string;
   totalDistance: number;
   totalTime: number;
   topSpeed: number;

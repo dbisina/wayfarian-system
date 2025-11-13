@@ -7,6 +7,7 @@ import {
   Image,
   TouchableOpacity,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -53,11 +54,11 @@ export default function HomeScreen(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* Show mini floating bar on Home when a current journey exists */}
       <FloatingJourneyStatus homeOnly />
-      <ScrollView 
-        style={styles.scrollView} 
+      <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -67,7 +68,7 @@ export default function HomeScreen(): React.JSX.Element {
         {/* Background Image */}
         <View style={styles.backgroundImageContainer}>
           <Image
-            source={require('../../assets/images/2025-09-26/pvtm78LBD6.png')}
+            source={require("../../assets/images/2025-09-26/pvtm78LBD6.png")}
             style={styles.backgroundImage}
             resizeMode="cover"
           />
@@ -75,36 +76,48 @@ export default function HomeScreen(): React.JSX.Element {
 
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => router.push("/settings")}
+            activeOpacity={0.7}
+            style={{ borderRadius: 50, backgroundColor: '#fff', padding: 5 }}
+          >
             <Image
-              source={require('../../assets/images/2025-09-26/MN0Tj1LcZr.png')}
+              source={require("../../assets/logo.png")}
               style={styles.profileImage}
             />
           </TouchableOpacity>
-          <Text style={styles.logo}>LOGO</Text>
-          <View style={styles.notificationContainer}>
+          <Text style={styles.logo}></Text>
+          <TouchableOpacity style={styles.notificationContainer} onPress={() => router.push('/settings')}>
             <Image
-              source={require('../../assets/images/2025-09-26/dcUiUAEFXH.png')}
+              source={require("../../assets/images/2025-09-26/dcUiUAEFXH.png")}
               style={styles.notificationIcon}
             />
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* User Profile Section */}
-        <TouchableOpacity style={styles.profileSection} activeOpacity={0.8} onPress={() => router.push('/profile')}>
+        <TouchableOpacity
+          style={styles.profileSection}
+          activeOpacity={0.8}
+          onPress={() => router.push("/profile")}
+        >
           <Image
-            source={{ 
-              uri: dashboardData?.user?.photoURL || user?.photoURL || require('../../assets/images/2025-09-26/i2yG8AHX5c.png') 
-            }}
+            source={
+              dashboardData?.user?.photoURL || user?.photoURL
+                ? { uri: dashboardData?.user?.photoURL || user?.photoURL }
+                : require("../../assets/images/2025-09-26/i2yG8AHX5c.png")
+            }
             style={styles.userAvatar}
           />
           <View style={styles.userInfo}>
             <Text style={styles.userName}>
-              {dashboardData?.user?.displayName || user?.displayName || 'User'}
+              {dashboardData?.user?.displayName || user?.displayName || "User"}
             </Text>
             <Text style={styles.userRank}>Explorer Rank</Text>
             <Text style={styles.userStats}>
-              {formatDistance(dashboardData?.user?.totalDistance || 0)} | {formatTime(dashboardData?.user?.totalTime || 0)} | {achievements.filter(a => a.unlocked).length} Badges
+              {formatDistance(dashboardData?.user?.totalDistance || 0)} |{" "}
+              {formatTime(dashboardData?.user?.totalTime || 0)} |{" "}
+              {achievements.filter((a) => a.unlocked).length} Badges
             </Text>
           </View>
         </TouchableOpacity>
@@ -140,7 +153,13 @@ export default function HomeScreen(): React.JSX.Element {
                 {loading ? (
                   <SkeletonLine width={60} height={16} />
                 ) : (
-                  formatSpeed((dashboardData?.user?.totalDistance || 0) / Math.max((dashboardData?.user?.totalTime || 1) / 3600, 0.1))
+                  formatSpeed(
+                    (dashboardData?.user?.totalDistance || 0) /
+                      Math.max(
+                        (dashboardData?.user?.totalTime || 1) / 3600,
+                        0.1
+                      )
+                  )
                 )}
               </Text>
             </View>
@@ -160,23 +179,36 @@ export default function HomeScreen(): React.JSX.Element {
         {/* XP Progress Section */}
         <View style={styles.xpSection}>
           <View style={styles.xpHeader}>
-            <Text style={styles.xpTitle}>Level {dashboardData?.user?.level || 1}</Text>
-            <Text style={styles.xpValue}>{dashboardData?.user?.xp || 0} XP</Text>
+            <Text style={styles.xpTitle}>
+              Level {dashboardData?.user?.level || 1}
+            </Text>
+            <Text style={styles.xpValue}>
+              {dashboardData?.user?.xp || 0} XP
+            </Text>
           </View>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBarBackground}>
-              <View 
+              <View
                 style={[
-                  styles.progressBarFill, 
-                  { 
-                    width: `${Math.min(100, ((dashboardData?.user?.xp || 0) % 100))}%` 
-                  }
-                ]} 
+                  styles.progressBarFill,
+                  {
+                    width: `${Math.min(
+                      100,
+                      (dashboardData?.user?.xp || 0) % 100
+                    )}%`,
+                  },
+                ]}
               />
             </View>
           </View>
           <Text style={styles.nextBadge}>
-            {loading ? <SkeletonLine width={160} height={12} /> : `${100 - ((dashboardData?.user?.xp || 0) % 100)} XP to Level ${(dashboardData?.user?.level || 1) + 1}`}
+            {loading ? (
+              <SkeletonLine width={160} height={12} />
+            ) : (
+              `${100 - ((dashboardData?.user?.xp || 0) % 100)} XP to Level ${
+                (dashboardData?.user?.level || 1) + 1
+              }`
+            )}
           </Text>
         </View>
 
@@ -185,38 +217,51 @@ export default function HomeScreen(): React.JSX.Element {
           <Text style={styles.sectionTitle}>Achievements</Text>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.achievementsScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.achievementsScroll}
+        >
           <View style={styles.achievementsContainer}>
             {loading ? (
               <>
-                {[0,1,2].map((i) => (
+                {[0, 1, 2].map((i) => (
                   <View key={i} style={styles.achievementCard}>
                     <View style={styles.achievementImagePlaceholder}>
                       <SkeletonCircle size={60} />
                     </View>
                     <View style={styles.achievementInfo}>
-                      <SkeletonLine width={120} height={14} style={{ marginBottom: 6 }} />
+                      <SkeletonLine
+                        width={120}
+                        height={14}
+                        style={{ marginBottom: 6 }}
+                      />
                       <SkeletonLine width={180} height={12} />
                     </View>
                   </View>
                 ))}
               </>
-            ) : (() => {
+            ) : (
+              (() => {
                 // Filter to only show unlocked/earned achievements
-                const unlockedAchievements = achievements.filter(achievement => achievement.unlocked === true);
-                
+                const unlockedAchievements = achievements.filter(
+                  (achievement) => achievement.unlocked === true
+                );
+
                 return unlockedAchievements.length > 0 ? (
                   unlockedAchievements.slice(0, 3).map((achievement, index) => {
                     // Get badge image from mapping
-                    const badgeSource = achievement.badge 
-                      ? ACHIEVEMENT_BADGES[achievement.id as keyof typeof ACHIEVEMENT_BADGES]
+                    const badgeSource = achievement.badge
+                      ? ACHIEVEMENT_BADGES[
+                          achievement.id as keyof typeof ACHIEVEMENT_BADGES
+                        ]
                       : null;
-                    
+
                     return (
                       <View key={achievement.id} style={styles.achievementCard}>
                         <View style={styles.achievementImagePlaceholder}>
                           {badgeSource ? (
-                            <Image 
+                            <Image
                               source={badgeSource}
                               style={styles.achievementBadgeImage}
                               resizeMode="contain"
@@ -226,44 +271,73 @@ export default function HomeScreen(): React.JSX.Element {
                           )}
                         </View>
                         <View style={styles.achievementInfo}>
-                          <Text style={styles.achievementTitle}>{achievement.name}</Text>
-                          <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                          <Text style={styles.achievementTitle}>
+                            {achievement.name}
+                          </Text>
+                          <Text style={styles.achievementDescription}>
+                            {achievement.description}
+                          </Text>
                         </View>
                       </View>
                     );
                   })
                 ) : (
                   <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No achievements unlocked yet</Text>
-                    <Text style={styles.emptySubtext}>Start your first journey to unlock achievements!</Text>
+                    <Text style={styles.emptyText}>
+                      No achievements unlocked yet
+                    </Text>
+                    <Text style={styles.emptySubtext}>
+                      Start your first journey to unlock achievements!
+                    </Text>
                   </View>
                 );
-              })()}
+              })()
+            )}
           </View>
         </ScrollView>
 
         {/* Past Journeys Section */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Past Journeys</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Past Journeys</Text>
+            {dashboardData?.recentJourneys &&
+              dashboardData.recentJourneys.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.push("/PastJourneysScreen")}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              )}
+          </View>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.journeysScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.journeysScroll}
+        >
           <View style={styles.journeysContainer}>
             {loading ? (
               <>
-                {[0,1,2].map((i) => (
+                {[0, 1, 2].map((i) => (
                   <View key={i} style={styles.journeyCard}>
                     <View style={styles.journeyImagePlaceholder}>
                       <Skeleton width={165} height={80} borderRadius={5} />
                     </View>
                     <View style={styles.journeyInfo}>
-                      <SkeletonLine width={140} height={16} style={{ marginBottom: 8 }} />
+                      <SkeletonLine
+                        width={140}
+                        height={16}
+                        style={{ marginBottom: 8 }}
+                      />
                       <SkeletonLine width={100} height={12} />
                     </View>
                   </View>
                 ))}
               </>
-            ) : dashboardData?.recentJourneys && dashboardData.recentJourneys.length > 0 ? (
+            ) : dashboardData?.recentJourneys &&
+              dashboardData.recentJourneys.length > 0 ? (
               dashboardData.recentJourneys.map((journey, index) => (
                 <View key={journey.id} style={styles.journeyCard}>
                   <View style={styles.journeyImagePlaceholder}>
@@ -274,7 +348,8 @@ export default function HomeScreen(): React.JSX.Element {
                       {journey.title || `Journey ${index + 1}`}
                     </Text>
                     <Text style={styles.journeyStats}>
-                      {formatDistance(journey.totalDistance || 0)} | {formatTime(journey.totalTime || 0)}
+                      {formatDistance(journey.totalDistance || 0)} |{" "}
+                      {formatTime(journey.totalTime || 0)}
                     </Text>
                   </View>
                 </View>
@@ -282,13 +357,15 @@ export default function HomeScreen(): React.JSX.Element {
             ) : (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No journeys yet</Text>
-                <Text style={styles.emptySubtext}>Start your first journey to see it here!</Text>
+                <Text style={styles.emptySubtext}>
+                  Start your first journey to see it here!
+                </Text>
               </View>
             )}
           </View>
         </ScrollView>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -316,7 +393,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 27,
+    paddingTop: 40,
     paddingBottom: 11,
   },
   profileImage: {
@@ -403,11 +480,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 24,
     gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 1, height: 2.2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 1, height: 2.2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+        shadowColor: '#000',
+      },
+    }),
   },
   statLabel: {
     fontFamily: 'Space Grotesk',
@@ -478,12 +562,24 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 12,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   sectionTitle: {
     fontFamily: 'Space Grotesk',
     fontSize: 22,
     fontWeight: '700',
     color: '#000000',
     lineHeight: 28,
+  },
+  seeAllText: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366f1',
+    lineHeight: 21,
   },
   achievementsScroll: {
     paddingLeft: 16,
