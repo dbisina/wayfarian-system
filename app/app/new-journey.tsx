@@ -9,7 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
@@ -29,9 +31,12 @@ export default function NewJourneyScreen() {
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
   const [endLocation, setEndLocation] = useState<LocationData | null>(null);
-  const [startDateTime, setStartDateTime] = useState('');
+  const [startDateTime, setStartDateTime] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const keyboardVerticalOffset = Platform.select({ ios: 100, android: 140 }) ?? 0;
 
   // Get current location for better autocomplete results
   useEffect(() => {
@@ -62,6 +67,8 @@ export default function NewJourneyScreen() {
       return;
     }
     
+    setIsStarting(true);
+    
     try {
       const success = await startJourney({
         title: journeyName,
@@ -88,6 +95,8 @@ export default function NewJourneyScreen() {
     } catch (error) {
       console.error('Error starting journey:', error);
       Alert.alert('Error', 'Failed to start journey. Please try again.');
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -114,7 +123,7 @@ export default function NewJourneyScreen() {
           longitude: endLocation.longitude,
         },
       } : null,
-      startDateTime,
+      startDateTime: startDateTime.toISOString(),
       notes,
     });
     
@@ -124,11 +133,24 @@ export default function NewJourneyScreen() {
   };
 
   const openDateTimePicker = () => {
-    // This would typically open a date/time picker
-    // For now, we'll just set a placeholder
-    const now = new Date();
-    const formatted = now.toLocaleString();
-    setStartDateTime(formatted);
+    setShowDatePicker(true);
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios'); // Keep open on iOS
+    if (selectedDate) {
+      setStartDateTime(selectedDate);
+    }
+  };
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -142,11 +164,18 @@ export default function NewJourneyScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior="padding"
+        keyboardVerticalOffset={keyboardVerticalOffset}
+        style={{ flex: 1 }}
+        enabled
+      >
       <ScrollView
         style={styles.content}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         contentInsetAdjustmentBehavior="automatic"
       >
         {/* Journey Name */}
@@ -201,13 +230,23 @@ export default function NewJourneyScreen() {
             <TextInput
               style={[styles.input, styles.dateTimeInput]}
               placeholder="Start Date & Time"
-              value={startDateTime}
+              value={formatDateTime(startDateTime)}
               editable={false}
               placeholderTextColor="#999999"
             />
             <MaterialIcons name="event" size={24} color="#999999" style={styles.calendarIcon} />
           </View>
         </TouchableOpacity>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={startDateTime}
+            mode="datetime"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onDateChange}
+            minimumDate={new Date()}
+          />
+        )}
 
         {/* Notes/Description */}
         <View style={styles.notesContainer}>
@@ -227,15 +266,23 @@ export default function NewJourneyScreen() {
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity 
-          style={styles.primaryButton} 
+          style={[styles.primaryButton, isStarting && styles.buttonDisabled]} 
           onPress={handleSaveAndStart}
+          disabled={isStarting}
+          activeOpacity={0.7}
         >
-          <Text style={styles.primaryButtonText}>Save & Start Tracking</Text>
+          {isStarting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryButtonText}>Save & Start Tracking</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.secondaryButton} 
+          style={[styles.secondaryButton, isStarting && styles.buttonDisabled]} 
           onPress={handleSaveForLater}
+          disabled={isStarting}
+          activeOpacity={0.7}
         >
           <Text style={styles.secondaryButtonText}>Save for Later</Text>
         </TouchableOpacity>
@@ -273,6 +320,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  scrollContent: {
+    paddingBottom: 220,
   },
   inputContainer: {
     marginBottom: 20,
@@ -370,6 +420,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#000000',
     fontFamily: 'Poppins',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   locationSection: {
     marginBottom: 20,

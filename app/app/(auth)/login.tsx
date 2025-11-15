@@ -1,4 +1,6 @@
 import React, {useState} from 'react';
+import TermsAndConditionsModal from '../../components/TermsAndConditionsModal';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import {
   View,
   Text,
@@ -10,10 +12,14 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -21,7 +27,12 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, loginWithGoogle, loginWithApple } = useAuth();
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const { login, loginWithGoogle, loginWithApple, resetPassword } = useAuth();
+  const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
+  const isBusy = loading || resettingPassword;
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -32,7 +43,6 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await login(email, password);
-      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'An error occurred during login');
     } finally {
@@ -44,7 +54,6 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await loginWithGoogle();
-      router.replace('/(tabs)');
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
         Alert.alert('Google Sign-In Failed', error.message);
@@ -58,7 +67,6 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await loginWithApple();
-      router.replace('/(tabs)');
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
         Alert.alert('Apple Sign-In Failed', error.message);
@@ -71,6 +79,28 @@ export default function LoginScreen() {
   const handleSignUp = () => {
     router.push('/(auth)/register');
   };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Reset Password', 'Please enter your email address first.');
+      return;
+    }
+
+    try {
+      setResettingPassword(true);
+      await resetPassword(email.trim());
+      Alert.alert(
+        'Check Your Email',
+        'If an account exists for this email, we sent password reset instructions.'
+      );
+    } catch (error: any) {
+      Alert.alert('Reset Password Failed', error.message || 'Could not send reset email. Please try again.');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+  const handleShowTerms = () => setShowTerms(true);
+  const handleHideTerms = () => setShowTerms(false);
 
   const GoogleIcon = () => (
     <Svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -103,7 +133,11 @@ export default function LoginScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={keyboardVerticalOffset ?? 0}
+    >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ImageBackground
         source={{uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/Hp5N7fnQN4.png'}}
@@ -111,75 +145,97 @@ export default function LoginScreen() {
         resizeMode="cover"
       >
         <View style={styles.overlay}>
-          <View style={styles.formContainer}>
-            <View style={styles.profileCircle} />
-            
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.formContainer}>
+            <AnimatedLogoButton containerStyle={styles.logoButton} />
             <Text style={styles.title}>Sign into your account</Text>
-            
             {/* Google Sign In Button */}
             <TouchableOpacity 
-              style={[styles.socialButton, loading && styles.disabledButton]} 
+              style={[styles.socialButton, isBusy && styles.disabledButton]} 
               onPress={handleGoogleSignIn}
-              disabled={loading}
+              disabled={isBusy}
             >
               <GoogleIcon />
               <Text style={styles.socialButtonText}>Sign in with Google</Text>
             </TouchableOpacity>
-            
             {/* Apple Sign In Button */}
             <TouchableOpacity 
-              style={[styles.socialButton, loading && styles.disabledButton]} 
+              style={[styles.socialButton, isBusy && styles.disabledButton]} 
               onPress={handleAppleSignIn}
-              disabled={loading}
+              disabled={isBusy}
             >
               <AppleIcon />
               <Text style={styles.socialButtonText}>Sign in with Apple</Text>
             </TouchableOpacity>
-            
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>Or continue with</Text>
               <View style={styles.dividerLine} />
             </View>
-            
             {/* Email Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter your Email Address"
-                placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your Email Address"
+                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  returnKeyType="next"
+                />
+              </View>
             </View>
-            
             {/* Password Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter Your Password"
-                placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter Your Password"
+                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setShowPassword(prev => !prev)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={18}
+                    color="rgba(0, 0, 0, 0.6)"
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
-            
             {/* Forgot Password */}
-            <TouchableOpacity style={styles.forgotPasswordContainer}>
-              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            <TouchableOpacity 
+              style={styles.forgotPasswordContainer}
+              onPress={handleForgotPassword}
+              disabled={resettingPassword}
+            >
+              <Text style={styles.forgotPasswordText}>
+                {resettingPassword ? 'Sending reset link…' : 'Forgot password?'}
+              </Text>
             </TouchableOpacity>
-            
             {/* Sign In Button */}
             <TouchableOpacity 
-              style={[styles.signInButton, loading && styles.disabledButton]} 
+              style={[styles.signInButton, isBusy && styles.disabledButton]} 
               onPress={handleSignIn}
-              disabled={loading}
+              disabled={isBusy}
             >
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
@@ -187,18 +243,27 @@ export default function LoginScreen() {
                 <Text style={styles.signInButtonText}>Sign in</Text>
               )}
             </TouchableOpacity>
-            
-            {/* Sign Up Link */}
+            {/* Sign Up Link and Terms */}
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
               <TouchableOpacity onPress={handleSignUp}>
                 <Text style={styles.signUpLink}>SignUp</Text>
               </TouchableOpacity>
             </View>
-          </View>
+            <View style={{alignItems: 'center', marginTop: 8}}>
+              <Text style={{fontSize: 10, color: 'rgba(255,255,255,0.7)', textAlign: 'center'}}>
+                By signing in, you accept our{' '}
+                <Text style={{color: '#2196F3', textDecorationLine: 'underline'}} onPress={handleShowTerms}>
+                  Terms and Conditions
+                </Text>.
+              </Text>
+            </View>
+            </View>
+          </ScrollView>
         </View>
+        <TermsAndConditionsModal visible={showTerms} onClose={handleHideTerms} />
       </ImageBackground>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -215,21 +280,24 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
     paddingHorizontal: 29,
+  },
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 64,
   },
   formContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 30,
     paddingHorizontal: 12,
     paddingVertical: 14,
-    height: 521,
+    minHeight: 521,
   },
-  profileCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#D9D9D9',
+  logoButton: {
     alignSelf: 'center',
     marginBottom: 43,
   },
@@ -291,17 +359,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins',
     lineHeight: 18,
   },
-  textInput: {
+  inputWrapper: {
     backgroundColor: '#EEEEEE',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+  },
+  textInput: {
+    flex: 1,
+    paddingVertical: 12,
     fontSize: 12,
     fontWeight: '300',
     color: '#000000',
     fontFamily: 'Poppins',
     lineHeight: 18,
-    height: 42.77,
+  },
+  passwordToggle: {
+    paddingLeft: 8,
   },
   forgotPasswordContainer: {
     alignSelf: 'flex-end',

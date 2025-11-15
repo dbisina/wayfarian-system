@@ -15,11 +15,10 @@ export default function AuthLayout() {
     if (isAuthenticated && inAuthGroup) {
       // User is authenticated but still in auth screens, redirect to tabs
       router.replace('/(tabs)');
-    } else if (!isAuthenticated && !inAuthGroup) {
-      // User is not authenticated and not in auth screens, redirect to login
-      router.replace('/(auth)/login');
     }
-  }, [isAuthenticated, loading, segments]);
+    // Don't redirect non-authenticated users away from auth screens
+    // The main layout will handle showing auth screens for non-authenticated users
+  }, [isAuthenticated, loading, segments, router]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -28,3 +27,4 @@ export default function AuthLayout() {
     </Stack>
   );
 }
+

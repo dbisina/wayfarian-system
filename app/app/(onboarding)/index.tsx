@@ -5,24 +5,30 @@ import {
   StyleSheet,
   ImageBackground,
   TouchableOpacity,
-  Dimensions,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-
-const { width, height } = Dimensions.get('window');
+import { useAuth } from '../../contexts/AuthContext';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 export default function OnboardingScreen() {
+  const { completeOnboarding } = useAuth();
+
   const handleNext = () => {
     router.push('/(onboarding)/step2');
+  };
+
+  const handleSkip = async () => {
+    await completeOnboarding();
+    router.replace('/(auth)/login');
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <ImageBackground
-        source={require('../../assets/images/2025-09-26/1ofOx9yGqJ.png')}
+        source={require('../../assets/images/2025-09-26/1ofOx9yGqJ.jpg')}
         style={styles.backgroundImage}
         resizeMode="cover"
       >
@@ -32,8 +38,8 @@ export default function OnboardingScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logo}>LOGO</Text>
-            <TouchableOpacity style={styles.skipButton}>
+            <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
+            <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
               <Text style={styles.skipText}>Skip</Text>
             </TouchableOpacity>
           </View>
@@ -42,7 +48,7 @@ export default function OnboardingScreen() {
           <View style={styles.content}>
             <Text style={styles.mainTitle}>The adventure begins.</Text>
             <Text style={styles.subtitle}>
-              Your Traveler's Digital Diary. every ride, every memory, forever stored..
+              Your Traveler&apos;s Digital Diary. every ride, every memory, forever stored..
             </Text>
           </View>
 
@@ -107,17 +113,15 @@ const styles = StyleSheet.create({
     paddingTop: 27,
     marginBottom: 58,
   },
-  logo: {
-    fontFamily: 'Inter',
-    fontSize: 18,
-    fontWeight: '400',
-    color: '#FFFFFF',
-    lineHeight: 22,
+  logoButton: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   skipButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
     borderRadius: 5,
     width: 40,
     height: 18,
@@ -127,7 +131,6 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 10,
     color: '#FFFFFF',
-    lineHeight: 15,
     textAlign: 'center',
   },
   content: {

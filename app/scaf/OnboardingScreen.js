@@ -18,7 +18,7 @@ export default function OnboardingScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <ImageBackground
-        source={require('../assets/images/2025-09-26/1ofOx9yGqJ.png')}
+  source={require('../assets/images/2025-09-26/1ofOx9yGqJ.jpg')}
         style={styles.backgroundImage}
         resizeMode="cover"
       >
@@ -38,7 +38,7 @@ export default function OnboardingScreen() {
           <View style={styles.content}>
             <Text style={styles.mainTitle}>The adventure begins.</Text>
             <Text style={styles.subtitle}>
-              Your Traveler's Digital Diary. every ride, every memory, forever stored..
+              Your Traveler&apos;s Digital Diary. every ride, every memory, forever stored..
             </Text>
           </View>
 

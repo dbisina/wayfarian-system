@@ -1,8 +1,11 @@
 // app/context/AuthContext.tsx
 // Global authentication state management
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
+import { Buffer } from 'buffer';
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import Constants from 'expo-constants';
+import { makeRedirectUri, fetchDiscoveryAsync, AuthRequest, ResponseType, type AuthSessionResult } from 'expo-auth-session';
 import { 
   initializeAuth,
   getAuth,
@@ -10,6 +13,8 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  onIdTokenChanged,
+  sendPasswordResetEmail,
   User as FirebaseUser,
   updateProfile,
   GoogleAuthProvider,
@@ -22,17 +27,21 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI, setAuthToken, removeAuthToken, clearApiOverride } from '../services/api';
-import { makeRedirectUri } from 'expo-auth-session';
-import * as AuthSession from 'expo-auth-session';
+import { authAPI, setAuthToken, removeAuthToken } from '../services/api';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as FirebaseAuthNS from 'firebase/auth';
 import { setUser as setSentryUser, clearUser as clearSentryUser, captureException } from '../services/sentry';
+
+if (typeof globalThis.Buffer === 'undefined') {
+  (globalThis as any).Buffer = Buffer;
+}
 
 // Workaround for RN persistence: access symbol from namespace and cast to any to avoid TS type gaps
 const getReactNativePersistence: ((storage: any) => any) | undefined = (FirebaseAuthNS as any).getReactNativePersistence;
 
 // Complete the auth session
 WebBrowser.maybeCompleteAuthSession();
+
 
 // Firebase configuration - all values must be provided via environment variables
 // SECURITY: Never hardcode API keys or sensitive credentials
@@ -60,14 +69,27 @@ if (missingKeys.length > 0) {
 // Initialize Firebase app once (avoid HMR duplicate init)
 const app = (getApps().length ? getApp() : initializeApp(firebaseConfig));
 
-// Initialize Firebase Auth explicitly with React Native persistence when available
-// Avoid calling getAuth() before initializeAuth() to prevent memory-only persistence and warnings
-const auth = getReactNativePersistence
-  ? initializeAuth(app, { persistence: getReactNativePersistence(ReactNativeAsyncStorage) })
-  : getAuth(app);
+// Initialize Firebase Auth explicitly with React Native persistence when available.
+// We attempt initializeAuth first so the persistence layer is applied on the initial run.
+let auth: FirebaseAuthNS.Auth;
+try {
+  if (Platform.OS === 'web') {
+    auth = getAuth(app);
+  } else {
+    const persistenceOptions = getReactNativePersistence
+      ? { persistence: getReactNativePersistence(ReactNativeAsyncStorage) }
+      : undefined;
+    auth = initializeAuth(app, persistenceOptions ?? {});
+  }
+} catch {
+  // If an auth instance already exists (e.g., during Fast Refresh), re-use it.
+  auth = getAuth(app);
+}
 
 // Configure Google Sign-In
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
 interface User {
   id: string;
@@ -91,12 +113,15 @@ interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   loading: boolean;
   isAuthenticated: boolean;
+  hasCompletedOnboarding: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -109,15 +134,113 @@ export const useAuth = () => {
   return context;
 };
 
+const useSentryContextBridge = () => {
+  const lastUserIdRef = useRef<string | null>(null);
+
+  const setUserContext = (user: User | null) => {
+    try {
+      const nextId = user?.id ?? null;
+      if (nextId === lastUserIdRef.current) {
+        return;
+      }
+      if (user) {
+        setSentryUser({
+          id: user.id,
+          email: user.email,
+          username: user.displayName,
+        });
+      } else {
+        clearSentryUser();
+      }
+      lastUserIdRef.current = nextId;
+    } catch (error) {
+      console.error('Failed to update Sentry user context:', error);
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      captureException(normalized);
+    }
+  };
+
+  return { setUserContext };
+};
+
 interface AuthProviderProps {
   children: ReactNode;
 }
+
+const ONBOARDING_KEY = '@wayfarian:onboarding_completed';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [onboardingStatusChecked, setOnboardingStatusChecked] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const { setUserContext } = useSentryContextBridge();
+  const tokenRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncInFlightRef = useRef<Promise<void> | null>(null);
+  const currentUserRef = useRef<User | null>(null);
+
+  const clearTokenRefreshTimer = useCallback(() => {
+    if (tokenRefreshTimeoutRef.current) {
+      clearTimeout(tokenRefreshTimeoutRef.current);
+      tokenRefreshTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleTokenRefresh = useCallback(async (fbUser: FirebaseUser) => {
+    try {
+      const token = await fbUser.getIdToken();
+      await setAuthToken(token);
+
+      const [, payload] = token.split('.');
+      if (!payload) {
+        return;
+      }
+
+      let expiresAtMs: number | null = null;
+      try {
+        const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
+        if (decoded?.exp) {
+          expiresAtMs = decoded.exp * 1000;
+        }
+      } catch (decodeError) {
+        console.warn('Failed to decode token payload for refresh scheduling:', decodeError);
+      }
+
+      if (!expiresAtMs) {
+        return;
+      }
+
+      const refreshInMs = Math.max(expiresAtMs - Date.now() - 2 * 60 * 1000, 30_000);
+
+      clearTokenRefreshTimer();
+      tokenRefreshTimeoutRef.current = setTimeout(async () => {
+        try {
+          const refreshed = await fbUser.getIdToken(true);
+          await setAuthToken(refreshed);
+        } catch (refreshError) {
+          console.warn('Auth token auto-refresh failed:', refreshError);
+        } finally {
+          scheduleTokenRefresh(fbUser).catch(() => {});
+        }
+      }, refreshInMs);
+    } catch (error) {
+      console.warn('Unable to schedule auth token refresh:', error);
+    }
+  }, [clearTokenRefreshTimer]);
+
+  useEffect(() => {
+    if (Constants.appOwnership !== 'expo' && Platform.OS !== 'web' && GOOGLE_WEB_CLIENT_ID) {
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+        offlineAccess: true,
+        ...(GOOGLE_ANDROID_CLIENT_ID ? { androidClientId: GOOGLE_ANDROID_CLIENT_ID } : {}),
+        ...(GOOGLE_IOS_CLIENT_ID ? { iosClientId: GOOGLE_IOS_CLIENT_ID } : {}),
+      });
+    }
+  }, []);
 
   // Warm up the browser for better UX on Android
   useEffect(() => {
@@ -130,127 +253,274 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   // Sync backend user data
-  const syncUserData = async (firebaseUser: FirebaseUser) => {
-    try {
+  const syncUserData = useCallback(async (firebaseUser: FirebaseUser) => {
+    if (syncInFlightRef.current) {
+      await syncInFlightRef.current;
+      return;
+    }
+
+    const syncPromise = (async () => {
+      const normalizeUser = (payload: any): User | null => {
+        if (!payload) return null;
+        const candidate = payload.user ?? payload.data?.user ?? payload.data ?? (payload.success ? payload.user ?? payload.data : payload);
+        if (candidate && typeof candidate === 'object' && 'id' in candidate) {
+          return candidate as User;
+        }
+        return null;
+      };
+
+      const attemptFetchCurrentUser = async (): Promise<User | null> => {
+        try {
+          const me = await authAPI.getCurrentUser();
+          return normalizeUser(me);
+        } catch {
+          return null;
+        }
+      };
+
       const idToken = await firebaseUser.getIdToken();
       await setAuthToken(idToken);
-      
-      // Call backend to get/create user, include optional profile fields to avoid default 'Wayfarian User'
-      const response = await authAPI.login(idToken, {
-        displayName: firebaseUser.displayName || undefined,
-        photoURL: firebaseUser.photoURL || undefined,
-        phoneNumber: firebaseUser.phoneNumber || undefined,
-      });
-      
-      if (response && response.success && response.user) {
-        let srvUser = response.user as User;
-        // Auto-fix generic display name if we can infer a better one
-        if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
-          try {
-            const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
-            if (inferred && inferred !== 'Wayfarian User') {
-              const upd = await authAPI.updateProfile({ displayName: inferred });
-              if (upd?.success && upd.user) {
-                srvUser = upd.user as User;
-              }
-            }
-          } catch {}
-        }
-        setUser(srvUser);
-        setIsAuthenticated(true);
-        return;
-      }
 
-      if (response && response.user) {
-        setUser(response.user);
-        setIsAuthenticated(true);
-        return;
-      }
+      let backendUser: User | null = null;
 
-      // If login failed or user not found, attempt auto-register once
-      const registerResp = await authAPI.register(idToken, {});
-      if (registerResp && (registerResp.user || registerResp.success)) {
-        const createdUser = registerResp.user || registerResp.data || registerResp;
-        if (createdUser) {
-          setUser(createdUser.user || createdUser);
-          setIsAuthenticated(true);
-          return;
-        }
-      }
-
-      // As a final check, try to fetch the current user if token is valid
-      const me = await authAPI.getCurrentUser();
-      if (me && me.success && me.user) {
-        let srvUser = me.user as User;
-        if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
-          try {
-            const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
-            if (inferred && inferred !== 'Wayfarian User') {
-              const upd = await authAPI.updateProfile({ displayName: inferred });
-              if (upd?.success && upd.user) {
-                srvUser = upd.user as User;
-              }
-            }
-          } catch {}
-        }
-        setUser(srvUser);
-        setIsAuthenticated(true);
-        return;
-      }
-
-      // If register also fails, treat as backend unavailable
-      throw new Error('Network request failed');
-    } catch (error: any) {
-      console.error('Error syncing user data:', error);
-      // If backend is down, create a minimal user object from Firebase
-      if (error?.message?.includes('Network request failed') || 
-          error?.message?.includes('localhost') ||
-          error?.message?.includes('Failed to sync user data')) {
-        console.log('Backend unavailable, using Firebase user data');
-        const minimalUser: User = {
-          id: firebaseUser.uid,
-          firebaseUid: firebaseUser.uid,
-          email: firebaseUser.email || undefined,
-          phoneNumber: firebaseUser.phoneNumber || undefined,
-          displayName: firebaseUser.displayName || 'Wayfarian User',
+      try {
+        const response = await authAPI.login(idToken, {
+          displayName: firebaseUser.displayName || undefined,
           photoURL: firebaseUser.photoURL || undefined,
-          totalDistance: 0,
-          totalTime: 0,
-          topSpeed: 0,
-          totalTrips: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        setUser(minimalUser);
+          phoneNumber: firebaseUser.phoneNumber || undefined,
+        });
+        backendUser = normalizeUser(response);
+      } catch (error: any) {
+        const message = String(error?.message || '');
+        const status = error?.status;
+        const isRecoverable = 
+          status === 429 || 
+          /Too many requests|Network request failed|Failed to fetch|timed out/i.test(message);
+
+        if (isRecoverable) {
+          // Try direct fetch as fallback
+          backendUser = await attemptFetchCurrentUser();
+          
+          // CRITICAL: Use cached user if available, even on cold start
+          if (!backendUser && currentUserRef.current) {
+            backendUser = currentUserRef.current;
+          }
+          
+          // If we still have no backend user but Firebase session is valid,
+          // mark as authenticated and let background refresh handle sync
+          if (!backendUser) {
+            console.warn('[AuthContext] Backend unreachable, preserving Firebase session');
+            setIsAuthenticated(true);
+            // Schedule token refresh to attempt backend sync later
+            await scheduleTokenRefresh(firebaseUser);
+            return;
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      if (!backendUser) {
+        backendUser = await attemptFetchCurrentUser();
+      }
+
+      if (!backendUser) {
+        throw new Error('Unable to load Wayfarian account details.');
+      }
+
+      let srvUser = backendUser;
+
+      if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
+        try {
+          const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
+          if (inferred && inferred !== 'Wayfarian User') {
+            const updated = await authAPI.updateProfile({ displayName: inferred });
+            const normalizedUpdated = normalizeUser(updated);
+            if (normalizedUpdated) {
+              srvUser = normalizedUpdated;
+            } else {
+              srvUser = { ...srvUser, displayName: inferred };
+            }
+          }
+        } catch (updateError) {
+          console.warn('Failed to auto-update display name:', updateError);
+        }
+      }
+
+      setUser(srvUser);
+      setIsAuthenticated(true);
+      setUserContext(srvUser);
+      
+      // Schedule token refresh AFTER successful sync
+      await scheduleTokenRefresh(firebaseUser);
+    })();
+
+    syncInFlightRef.current = syncPromise;
+
+    try {
+      await syncPromise;
+    } catch (error: any) {
+      const existingUser = currentUserRef.current;
+      const message = String(error?.message || '');
+      const status = error?.status;
+      const isRecoverable = 
+        status === 429 || 
+        /Network request failed|Failed to fetch|timed out/i.test(message);
+
+      // CRITICAL: On cold start with network issues, preserve Firebase session
+      if (isRecoverable) {
+        console.warn('[AuthContext] Backend sync failed, preserving Firebase session');
         setIsAuthenticated(true);
+        if (existingUser) {
+          setUserContext(existingUser);
+        }
         return;
       }
-      throw error;
-    }
-  };
 
-  // Monitor Firebase auth state
+      // Only clear auth on non-recoverable errors (invalid token, account disabled, etc.)
+      console.error('[AuthContext] Critical auth error, signing out:', error);
+      clearTokenRefreshTimer();
+      await removeAuthToken();
+      setUser(null);
+      setIsAuthenticated(false);
+      setUserContext(null);
+
+      throw new Error(
+        isRecoverable
+          ? 'Unable to reach Wayfarian servers. Please try again in a moment.'
+          : (message || 'Failed to sync user data')
+      );
+    } finally {
+      syncInFlightRef.current = null;
+    }
+  }, [setUserContext, scheduleTokenRefresh, clearTokenRefreshTimer]);
+  useEffect(() => {
+    currentUserRef.current = user;
+  }, [user]);
+
+  // CRITICAL: Load onboarding state FIRST before Firebase restores session
+  useEffect(() => {
+    let mounted = true;
+    
+    const initializeAuthState = async () => {
+      try {
+        // 1. Load onboarding flag from AsyncStorage
+        console.log('[AuthContext] Loading onboarding state from AsyncStorage...');
+        const completed = await ReactNativeAsyncStorage.getItem(ONBOARDING_KEY);
+        console.log('[AuthContext] Onboarding flag retrieved:', completed);
+        if (mounted) {
+          setHasCompletedOnboarding(completed === 'true');
+          console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
+        }
+      } catch (error) {
+        console.error('[AuthContext] Failed to load onboarding state:', error);
+      } finally {
+        if (mounted) {
+          setOnboardingStatusChecked(true);
+        }
+      }
+    };
+
+    initializeAuthState();
+    
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || hasCompletedOnboarding) {
+      return;
+    }
+
+    let canceled = false;
+    const persistOnboardingFlag = async () => {
+      try {
+        await ReactNativeAsyncStorage.setItem(ONBOARDING_KEY, 'true');
+        if (!canceled) {
+          setHasCompletedOnboarding(true);
+          setOnboardingStatusChecked(true);
+        }
+      } catch (error) {
+        console.error('[AuthContext] Failed to auto-complete onboarding for authenticated user:', error);
+      }
+    };
+
+    persistOnboardingFlag();
+
+    return () => {
+      canceled = true;
+    };
+  }, [isAuthenticated, hasCompletedOnboarding]);
+
+  // Monitor Firebase auth state - this triggers AFTER Firebase persistence restores the session
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
           setFirebaseUser(firebaseUser);
-          await syncUserData(firebaseUser);
+          try {
+            await syncUserData(firebaseUser);
+          } catch (syncError: any) {
+            // If sync fails due to rate-limiting or network but we have cached user, preserve auth
+            const isRecoverable = syncError?.status === 429 || /Too many requests|Network request failed|Failed to fetch/i.test(syncError?.message);
+            if (isRecoverable && currentUserRef.current) {
+              setIsAuthenticated(true);
+            } else {
+              throw syncError;
+            }
+          }
         } else {
           setFirebaseUser(null);
           setUser(null);
           setIsAuthenticated(false);
+          setUserContext(null);
+          clearTokenRefreshTimer();
           await removeAuthToken();
         }
       } catch (error) {
-        console.error('Auth state change error:', error);
+        console.error('[AuthContext] Auth state change error:', error);
+        try {
+          await signOut(auth);
+        } catch {}
+        clearTokenRefreshTimer();
+        await removeAuthToken();
+        setUser(null);
+        setIsAuthenticated(false);
+        setUserContext(null);
       } finally {
         setLoading(false);
+        setInitializing(false);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [setUserContext, syncUserData, clearTokenRefreshTimer]);
+
+  useEffect(() => {
+    const unsubscribe = onIdTokenChanged(auth, (latestUser) => {
+      if (latestUser) {
+        scheduleTokenRefresh(latestUser).catch((error) => {
+          console.warn('Failed to refresh auth token on change:', error);
+        });
+      } else {
+        clearTokenRefreshTimer();
+        removeAuthToken().catch((error) => {
+          console.warn('Failed to clear auth token on sign-out:', error);
+        });
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [scheduleTokenRefresh, clearTokenRefreshTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearTokenRefreshTimer();
+    };
+  }, [clearTokenRefreshTimer]);
 
   // Login with email and password
   const login = async (email: string, password: string) => {
@@ -284,6 +554,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else if (error.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled. Please contact support.';
       }
+
+      try {
+        await signOut(auth);
+      } catch {}
+      await removeAuthToken();
+      setUser(null);
+      setIsAuthenticated(false);
+      setUserContext(null);
       
       throw new Error(errorMessage);
     } finally {
@@ -329,6 +607,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many failed attempts. Please try again later.';
       }
+
+      try {
+        await signOut(auth);
+      } catch {}
+      await removeAuthToken();
+      setUser(null);
+      setIsAuthenticated(false);
+      setUserContext(null);
       
       throw new Error(errorMessage);
     } finally {
@@ -336,7 +622,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Login with Google - Using proper Expo AuthSession with Google-approved redirect URIs
+  // Login with Google
   const loginWithGoogle = async () => {
     try {
       setLoading(true);
@@ -357,104 +643,83 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // For mobile platforms, use Expo AuthSession with proper redirect URI
-      console.log('Starting Google OAuth flow...');
-      console.log('Google Client ID:', GOOGLE_WEB_CLIENT_ID);
+      // If running inside Expo Go, fall back to AuthSession-based flow
+      if (Constants.appOwnership === 'expo') {
+        const redirectUri = makeRedirectUri({
+          scheme: 'app',
+          preferLocalhost: false,
+        });
 
-      // Use Expo's makeRedirectUri for proper redirect URI handling
-      const redirectUri = makeRedirectUri({
-        scheme: 'wayfarian-system', // Use your app scheme
-        preferLocalhost: false, // Force use of Expo proxy instead of localhost
-      });
-
-      console.log('Using redirect URI:', redirectUri);
-      
-      // If makeRedirectUri still returns an exp:// URL, manually set the correct one
-      const finalRedirectUri = redirectUri.startsWith('exp://') 
-        ? 'https://auth.expo.io/@anonymous/wayfarian-system'
-        : redirectUri;
-        
-      console.log('Final redirect URI:', finalRedirectUri);
-
-      // Get Google's discovery document
-      const discovery = await AuthSession.fetchDiscoveryAsync('https://accounts.google.com');
-
-      // Create auth request configuration
-      const request = new AuthSession.AuthRequest({
-        clientId: GOOGLE_WEB_CLIENT_ID,
-        scopes: ['openid', 'profile', 'email'],
-        responseType: AuthSession.ResponseType.Code,
-        redirectUri: finalRedirectUri,
-        prompt: AuthSession.Prompt.SelectAccount,
-      });
-
-      console.log('Making auth request...');
-      const result = await request.promptAsync(discovery);
-      
-      console.log('Auth result:', { type: result.type });
-
-      if (result.type === 'success') {
-        console.log('Authorization successful, exchanging code for tokens...');
-        
-        if (!result.params.code) {
-          throw new Error('No authorization code received');
-        }
-
-        // Exchange authorization code for tokens
-        const tokenResult = await AuthSession.exchangeCodeAsync(
-          {
-            clientId: GOOGLE_WEB_CLIENT_ID,
-            code: result.params.code,
-            redirectUri: finalRedirectUri,
-            extraParams: {
-              grant_type: 'authorization_code',
-            },
+        const discovery = await fetchDiscoveryAsync('https://accounts.google.com');
+        const request = new AuthRequest({
+          clientId: GOOGLE_WEB_CLIENT_ID,
+          responseType: ResponseType.IdToken,
+          scopes: ['openid', 'profile', 'email'],
+          redirectUri,
+          extraParams: {
+            prompt: 'select_account',
           },
-          discovery
-        );
+        });
 
-        if (!tokenResult.idToken) {
-          console.error('Token exchange result:', tokenResult);
-          throw new Error('No ID token received from Google');
+  const result = (await request.promptAsync(discovery, { useProxy: true } as any)) as AuthSessionResult;
+
+        if (result.type === 'cancel' || result.type === 'dismiss') {
+          return;
         }
 
-        console.log('Token exchange successful');
+        if (result.type !== 'success') {
+          throw new Error('Google Sign-In was interrupted. Please try again.');
+        }
 
-        // Create Firebase credential
-        const googleCredential = GoogleAuthProvider.credential(tokenResult.idToken);
-        
-        // Sign in to Firebase
-        console.log('Signing into Firebase...');
+        const idToken = result.authentication?.idToken ?? result.params?.id_token;
+        if (!idToken) {
+          throw new Error(result.params?.error_description || 'Google Sign-In failed. Please try again.');
+        }
+
+        const googleCredential = GoogleAuthProvider.credential(idToken);
         const firebaseResult = await signInWithCredential(auth, googleCredential);
-        console.log('Firebase sign-in successful');
-        
-        // Sync with backend
-        console.log('Syncing with backend...');
         await syncUserData(firebaseResult.user);
-        console.log('Google Sign-In completed successfully');
-        
-      } else if (result.type === 'cancel') {
-        console.log('User cancelled Google Sign-In');
         return;
-      } else {
-        throw new Error('Google Sign-In was dismissed or failed');
       }
+
+      // For native builds, use @react-native-google-signin
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = (signInResult as unknown as { idToken?: string })?.idToken ?? (signInResult as any)?.data?.idToken;
+
+      if (!idToken) {
+        throw new Error('Google Sign-In failed: No ID token received.');
+      }
+
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const firebaseResult = await signInWithCredential(auth, googleCredential);
+      await syncUserData(firebaseResult.user);
         
     } catch (error: any) {
       console.error('Google login error:', error);
-      
-      // Handle specific Firebase errors
+
+      let errorMessage = error?.message || 'Google sign-in failed. Please try again.';
       if (error.code === 'auth/account-exists-with-different-credential') {
-        throw new Error('An account already exists with this email address using a different sign-in method.');
+        errorMessage = 'An account already exists with this email address using a different sign-in method.';
       } else if (error.code === 'auth/invalid-credential') {
-        throw new Error('The credential received is malformed or has expired.');
+        errorMessage = 'The credential received is malformed or has expired.';
       } else if (error.code === 'auth/operation-not-allowed') {
-        throw new Error('Google sign-in is not enabled. Please contact support.');
+        errorMessage = 'Google sign-in is not enabled. Please contact support.';
       } else if (error.code === 'auth/user-disabled') {
-        throw new Error('This account has been disabled. Please contact support.');
-      } else {
-        throw new Error(error.message || 'Google sign-in failed. Please try again.');
+        errorMessage = 'This account has been disabled. Please contact support.';
+      } else if (error.code === 12501) { // Google Sign-In cancelled
+        return; // User cancelled, so we just return without an error
       }
+
+      try {
+        await signOut(auth);
+      } catch {}
+      await removeAuthToken();
+      setUser(null);
+      setIsAuthenticated(false);
+      setUserContext(null);
+
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -475,8 +740,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('Apple Sign-In is not available on this device.');
       }
       
-      // Generate a nonce for additional security
-      const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      // Generate a nonce for additional security using cryptographically secure randomness
+      const randomBytes = await Crypto.getRandomBytesAsync(32);
+      const nonce = Buffer.from(randomBytes)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '')
+        .substring(0, 32);
       const hashedNonce = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         nonce,
@@ -550,18 +821,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.warn('Server logout failed or unreachable; proceeding with local cleanup');
       }
     } finally {
+      if (Platform.OS !== 'web') {
+        try {
+          await GoogleSignin.signOut();
+        } catch (err) {
+          console.warn('Google sign-out failed:', err);
+        }
+      }
       try {
         await signOut(auth);
       } catch {
         console.warn('Firebase signOut failed (possibly already signed out)');
       }
       // Clear local auth state regardless
+      clearTokenRefreshTimer();
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);
+      setUserContext(null);
       try { await removeAuthToken(); } catch {}
-      // Also clear any API base override so app can adopt the new backend automatically
-      try { await clearApiOverride(); } catch {}
       setLoading(false);
     }
   };
@@ -577,17 +855,66 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Complete onboarding
+  const completeOnboarding = async () => {
+    try {
+      console.log('[AuthContext] Marking onboarding complete, writing to AsyncStorage...');
+      await ReactNativeAsyncStorage.setItem(ONBOARDING_KEY, 'true');
+      const verify = await ReactNativeAsyncStorage.getItem(ONBOARDING_KEY);
+      console.log('[AuthContext] Onboarding flag written and verified:', verify);
+      setHasCompletedOnboarding(true);
+      setOnboardingStatusChecked(true);
+    } catch (error) {
+      console.error('[AuthContext] Failed to save onboarding completion:', error);
+      throw error;
+    }
+  };
+
+  // Send password reset email
+  const resetPassword = async (email: string) => {
+    if (!email) {
+      throw new Error('Please provide an email address.');
+    }
+
+    try {
+      const trimmedEmail = email.trim();
+      await sendPasswordResetEmail(auth, trimmedEmail);
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+
+      if (error?.code === 'auth/user-not-found') {
+        // Silently succeed to avoid account enumeration
+        return;
+      }
+
+      let errorMessage = error?.message || 'Failed to send password reset email. Please try again.';
+
+      if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many password reset attempts. Please try again later.';
+      }
+
+      throw new Error(errorMessage);
+    }
+  };
+
   const value: AuthContextType = {
     user,
     firebaseUser,
-    loading,
+    loading: loading || initializing || !onboardingStatusChecked,
     isAuthenticated,
+    hasCompletedOnboarding,
     login,
     register,
     loginWithGoogle,
     loginWithApple,
     logout,
     refreshUser,
+    completeOnboarding,
+    resetPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

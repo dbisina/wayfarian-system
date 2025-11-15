@@ -214,8 +214,8 @@ app.get('/health', cacheHealth(30), (req, res) => {
     version: '1.0.0',
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    // Optional: advertise a public base URL so clients can adopt it automatically
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || 'https://ban-indexed-deemed-hook.trycloudflare.com',
+    // Advertise the production base URL so clients can adopt it automatically
+    publicBaseUrl: 'https://wayfarian-system-production.up.railway.app',
   });
 });
 

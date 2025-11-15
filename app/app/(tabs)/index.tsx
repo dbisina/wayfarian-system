@@ -16,6 +16,7 @@ import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { router } from 'expo-router';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
 import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 
 export default function HomeScreen(): React.JSX.Element {
@@ -76,16 +77,10 @@ export default function HomeScreen(): React.JSX.Element {
 
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.push("/settings")}
-            activeOpacity={0.7}
-            style={{ borderRadius: 50, backgroundColor: '#fff', padding: 5 }}
-          >
-            <Image
-              source={require("../../assets/logo.png")}
-              style={styles.profileImage}
-            />
-          </TouchableOpacity>
+          <AnimatedLogoButton
+            containerStyle={styles.logoButtonContainer}
+            imageStyle={styles.profileImage}
+          />
           <Text style={styles.logo}></Text>
           <TouchableOpacity style={styles.notificationContainer} onPress={() => router.push('/settings')}>
             <Image
@@ -243,19 +238,39 @@ export default function HomeScreen(): React.JSX.Element {
               </>
             ) : (
               (() => {
-                // Filter to only show unlocked/earned achievements
+                // Filter to show achievements that have at least one unlocked tier
                 const unlockedAchievements = achievements.filter(
-                  (achievement) => achievement.unlocked === true
+                  (achievement) => {
+                    // Check if achievement has direct unlocked property
+                    if (achievement.unlocked === true) return true;
+                    // Check if any tier is unlocked
+                    if (achievement.tiers && Array.isArray(achievement.tiers)) {
+                      return achievement.tiers.some(tier => tier.unlocked === true);
+                    }
+                    return false;
+                  }
                 );
 
                 return unlockedAchievements.length > 0 ? (
-                  unlockedAchievements.slice(0, 3).map((achievement, index) => {
+                  unlockedAchievements.slice(0, 3).map((achievement) => {
                     // Get badge image from mapping
                     const badgeSource = achievement.badge
                       ? ACHIEVEMENT_BADGES[
                           achievement.id as keyof typeof ACHIEVEMENT_BADGES
                         ]
                       : null;
+
+                    // Get highest unlocked tier for description
+                    let description = achievement.description;
+                    if (achievement.tiers && Array.isArray(achievement.tiers)) {
+                      const unlockedTiers = achievement.tiers
+                        .filter(t => t.unlocked)
+                        .sort((a, b) => b.level - a.level);
+                      if (unlockedTiers.length > 0) {
+                        const tier = unlockedTiers[0];
+                        description = tier.name || `Tier ${tier.level} - ${achievement.description}`;
+                      }
+                    }
 
                     return (
                       <View key={achievement.id} style={styles.achievementCard}>
@@ -275,7 +290,7 @@ export default function HomeScreen(): React.JSX.Element {
                             {achievement.name}
                           </Text>
                           <Text style={styles.achievementDescription}>
-                            {achievement.description}
+                            {description}
                           </Text>
                         </View>
                       </View>
@@ -339,12 +354,17 @@ export default function HomeScreen(): React.JSX.Element {
             ) : dashboardData?.recentJourneys &&
               dashboardData.recentJourneys.length > 0 ? (
               dashboardData.recentJourneys.map((journey, index) => (
-                <View key={journey.id} style={styles.journeyCard}>
+                <TouchableOpacity
+                  key={journey.id}
+                  style={styles.journeyCard}
+                  onPress={() => router.push(`/journey-detail?journeyId=${journey.id}`)}
+                  activeOpacity={0.7}
+                >
                   <View style={styles.journeyImagePlaceholder}>
                     <Text style={styles.journeyEmoji}>🚗</Text>
                   </View>
                   <View style={styles.journeyInfo}>
-                    <Text style={styles.journeyTitle}>
+                    <Text style={styles.journeyTitle} numberOfLines={1}>
                       {journey.title || `Journey ${index + 1}`}
                     </Text>
                     <Text style={styles.journeyStats}>
@@ -352,7 +372,7 @@ export default function HomeScreen(): React.JSX.Element {
                       {formatTime(journey.totalTime || 0)}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))
             ) : (
               <View style={styles.emptyContainer}>
@@ -395,6 +415,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 40,
     paddingBottom: 11,
+  },
+  logoButtonContainer: {
+    padding: 5,
+    borderRadius: 50,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 1, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   profileImage: {
     width: 34,

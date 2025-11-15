@@ -46,7 +46,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
+  image: require('../assets/images/2025-10-15/gmEkLn9yyy.jpg'),
     },
     {
       id: 2,
@@ -54,7 +54,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
+  image: require('../assets/images/2025-10-15/gmEkLn9yyy.jpg'),
     },
     {
       id: 3,
@@ -62,7 +62,7 @@ const RideLogScreen = ({ onNavigate }) => {
       duration: '3hrs 30 mins',
       distance: '10ml',
       progress: 0.36,
-      image: require('../assets/images/2025-10-15/gmEkLn9yyy.png'),
+  image: require('../assets/images/2025-10-15/gmEkLn9yyy.jpg'),
     },
   ];
 

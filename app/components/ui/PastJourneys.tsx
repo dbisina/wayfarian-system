@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { router } from 'expo-router';
 import JourneyCard from './JourneyCard';
 
 interface PastJourneysProps {
@@ -34,6 +35,10 @@ const PastJourneys = ({ onSeeAllPress }: PastJourneysProps): React.JSX.Element =
     },
   ];
 
+  const handleJourneyPress = (journeyId: string) => {
+    router.push(`/journey-detail?journeyId=${journeyId}`);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
@@ -54,9 +59,11 @@ const PastJourneys = ({ onSeeAllPress }: PastJourneysProps): React.JSX.Element =
         {journeys.map((journey) => (
           <JourneyCard
             key={journey.id}
+            id={journey.id}
             title={journey.title}
             stats={journey.stats}
             imageUrl={journey.imageUrl}
+            onPress={() => handleJourneyPress(journey.id)}
           />
         ))}
       </ScrollView>

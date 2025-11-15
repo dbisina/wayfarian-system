@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { locationService, JourneyStats, LocationPoint } from '../services/locationService';
 import { journeyAPI, groupJourneyAPI } from '../services/api';
 import { connectSocket, joinGroupRoom, requestGroupLocations, on as socketOn, off as socketOff, leaveGroupRoom } from '../services/socket';
+import { getFirebaseDownloadUrl } from '../utils/storage';
 
 export interface JourneyData {
   id: string;
@@ -78,6 +79,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<JourneyStats>({
     totalDistance: 0,
     totalTime: 0,
+    movingTime: 0,
     avgSpeed: 0,
     topSpeed: 0,
     currentSpeed: 0,
@@ -312,15 +314,16 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           try { leaveGroupRoom(currentJourney.groupId); } catch {}
         }
       }
-      
       setIsTracking(false);
       setStats({
         totalDistance: 0,
         totalTime: 0,
+        movingTime: 0,
         avgSpeed: 0,
         topSpeed: 0,
         currentSpeed: 0,
       });
+      setRoutePoints([]);
       setRoutePoints([]);
       setGroupMembers([]);
       
@@ -376,12 +379,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }
       
       // Clear all state immediately
-      setCurrentJourney(null);
-      setIsTracking(false);
       setIsMinimized(false);
       setStats({
         totalDistance: 0,
         totalTime: 0,
+        movingTime: 0,
         avgSpeed: 0,
         topSpeed: 0,
         currentSpeed: 0,
@@ -404,22 +406,54 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   };
 
   const addPhoto = async (photoUri: string) => {
-    if (!currentJourney) return;
+    if (!currentJourney) {
+      throw new Error('No active journey');
+    }
 
     try {
-      // Here you would upload the photo to your backend
-      // For now, we'll just add it to the local state
+      // Create FormData for photo upload
+      const formData = new FormData();
+      
+      // Extract filename from URI
+      const filename = photoUri.split('/').pop() || 'photo.jpg';
+      const fileType = filename.split('.').pop() || 'jpg';
+      
+      // Append photo file
+      formData.append('photo', {
+        uri: photoUri,
+        name: filename,
+        type: `image/${fileType}`,
+      } as any);
+      
+      // Append journey context
+      formData.append('journeyId', currentJourney.id);
+      
+      // Upload to backend
+      const { galleryAPI } = await import('../services/api');
+      const response = await galleryAPI.uploadPhoto(formData);
+      
+      if (!response || !response.photo) {
+        throw new Error('Failed to upload photo');
+      }
+      
+      // Add uploaded photo to local state
+      const uploadedPhotoUri =
+        response.photo.imageUrl ||
+        getFirebaseDownloadUrl(response.photo.firebasePath) ||
+        response.photo.firebasePath;
+
       const updatedJourney = {
         ...currentJourney,
-        photos: [...currentJourney.photos, photoUri],
+        photos: [...currentJourney.photos, uploadedPhotoUri],
       };
       
       setCurrentJourney(updatedJourney);
       
-      // TODO: Upload photo to backend with journey context
-      console.log('Photo added to journey:', photoUri);
+      console.log('Photo uploaded successfully:', uploadedPhotoUri);
+      return response.photo;
     } catch (error) {
-      console.error('Error adding photo:', error);
+      console.error('Error uploading photo:', error);
+      throw error;
     }
   };
 

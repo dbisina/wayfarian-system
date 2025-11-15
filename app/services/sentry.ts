@@ -2,6 +2,7 @@
 // Sentry error tracking and performance monitoring for React Native
 
 import * as Sentry from '@sentry/react-native';
+import { reactNativeTracingIntegration, reactNavigationIntegration } from '@sentry/react-native';
 import Constants from 'expo-constants';
 
 // SECURITY: Never hardcode DSN - must be provided via environment variable
@@ -10,6 +11,8 @@ const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 /**
  * Initialize Sentry for React Native
  */
+const navigationIntegration = reactNavigationIntegration();
+
 export function initSentry() {
   // Only initialize if DSN is provided
   if (!SENTRY_DSN) {
@@ -105,19 +108,10 @@ export function initSentry() {
 
       // Integration configuration
       integrations: [
-        new Sentry.ReactNativeTracing({
-          // Routing instrumentation for react-navigation
-          routingInstrumentation: new Sentry.ReactNavigationInstrumentation(),
-          
-          // Track app start performance
-          enableAppStartTracking: true,
-          
-          // Track stall performance
-          enableStallTracking: true,
-          
-          // Track user interaction events
-          enableUserInteractionTracing: true,
+        reactNativeTracingIntegration({
+          enableHTTPTimings: true,
         }),
+        navigationIntegration,
       ],
     });
 

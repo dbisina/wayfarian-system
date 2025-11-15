@@ -17,7 +17,7 @@ const GroupDetailExpanded = () => {
         {/* Header Image with Overlay */}
         <View style={styles.headerContainer}>
           <Image
-            source={require('../assets/images/2025-09-26/TLVU12RXWd.png')}
+            source={require('../assets/images/2025-09-26/TLVU12RXWd.jpg')}
             style={styles.headerImage}
           />
           <LinearGradient
@@ -44,25 +44,25 @@ const GroupDetailExpanded = () => {
             />
             <View style={styles.avatar1}>
               <Image
-                source={require('../assets/images/2025-09-26/nYT3NXd6kT.png')}
+                source={require('../assets/images/2025-09-26/nYT3NXd6kT.jpg')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar2}>
               <Image
-                source={require('../assets/images/2025-09-26/nYT3NXd6kT.png')}
+                source={require('../assets/images/2025-09-26/nYT3NXd6kT.jpg')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar3}>
               <Image
-                source={require('../assets/images/2025-09-26/AuSwH1po1o.png')}
+                source={require('../assets/images/2025-09-26/AuSwH1po1o.jpg')}
                 style={styles.avatarImage}
               />
             </View>
             <View style={styles.avatar4}>
               <Image
-                source={require('../assets/images/2025-09-26/e3nhUuQzps.png')}
+                source={require('../assets/images/2025-09-26/e3nhUuQzps.jpg')}
                 style={styles.avatarImage}
               />
               <LinearGradient
@@ -101,7 +101,7 @@ const GroupDetailExpanded = () => {
           {/* Trip Card */}
           <View style={styles.tripCard}>
             <Image
-              source={require('../assets/images/2025-09-26/LTXaqwn6od.png')}
+              source={require('../assets/images/2025-09-26/LTXaqwn6od.jpg')}
               style={styles.tripImage}
             />
             <View style={styles.tripOverlay}>
@@ -144,7 +144,7 @@ const GroupDetailExpanded = () => {
         {/* Past Trip 1 */}
         <View style={styles.pastTripCard}>
           <Image
-            source={require('../assets/images/2025-09-26/kVuHV2t72W.png')}
+            source={require('../assets/images/2025-09-26/kVuHV2t72W.jpg')}
             style={styles.pastTripImage}
           />
           <View style={styles.tripOverlay}>
@@ -164,7 +164,7 @@ const GroupDetailExpanded = () => {
         {/* Past Trip 2 */}
         <View style={styles.pastTripCard}>
           <Image
-            source={require('../assets/images/2025-09-26/18KjnBf2w3.png')}
+            source={require('../assets/images/2025-09-26/18KjnBf2w3.jpg')}
             style={styles.pastTripImage}
           />
           <View style={styles.tripOverlay}>

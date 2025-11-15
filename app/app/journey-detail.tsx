@@ -13,9 +13,10 @@ import {
   StatusBar,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { getCurrentApiUrl, journeyAPI } from '../services/api';
+import { getFirebaseDownloadUrl } from '../utils/storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PHOTO_SIZE = (SCREEN_WIDTH - 48) / 3; // 3 columns with padding
 
 interface JourneyPhoto {
   id: string;
@@ -23,6 +24,8 @@ interface JourneyPhoto {
   takenAt: string;
   latitude?: number;
   longitude?: number;
+  imageUrl?: string;
+  thumbnailPath?: string;
 }
 
 interface JourneyDetail {
@@ -44,7 +47,8 @@ interface JourneyDetail {
 
 const JourneyDetailScreen = (): React.JSX.Element => {
   const router = useRouter();
-  const { journeyId } = useLocalSearchParams<{ journeyId: string }>();
+  const params = useLocalSearchParams<{ journeyId: string | string[] }>();
+  const journeyId = Array.isArray(params.journeyId) ? params.journeyId[0] : params.journeyId;
   
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,31 +85,38 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
   useEffect(() => {
     const fetchJourneyDetail = async () => {
+      if (!journeyId) {
+        setError('No journey ID provided');
+        setLoading(false);
+        return;
+      }
+
       try {
+        setLoading(true);
         setError(null);
-        // Use the existing API pattern
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
-        const response = await fetch(`${API_URL}/journey/${journeyId}`, {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch journey details');
-        
-        const data = await response.json();
+        const apiBase = getCurrentApiUrl();
+        console.log('Fetching journey from:', `${apiBase}/journey/${journeyId}`);
+
+        const data = await journeyAPI.getJourney(journeyId);
+
+        if (!data?.journey) {
+          throw new Error('Invalid response format - missing journey data');
+        }
+
         setJourney(data.journey);
       } catch (err: any) {
         console.error('Error fetching journey details:', err);
+        if (err?.status === 401) {
+          setError('Session expired. Please sign in again.');
+        } else {
         setError(err.message || 'Failed to load journey details');
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    if (journeyId) {
-      fetchJourneyDetail();
-    }
+    fetchJourneyDetail();
   }, [journeyId]);
 
   const openPhotoViewer = (index: number) => {
@@ -135,6 +146,8 @@ const JourneyDetailScreen = (): React.JSX.Element => {
       </View>
     );
   }
+
+  const journeyPhotos = journey.photos ?? [];
 
   return (
     <View style={styles.container}>
@@ -200,33 +213,73 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           )}
         </View>
 
-        {/* Photo Gallery */}
-        {journey.photos && journey.photos.length > 0 && (
-          <View style={styles.gallerySection}>
-            <View style={styles.gallerySectionHeader}>
-              <Text style={styles.sectionTitle}>Journey Photos</Text>
-              <Text style={styles.photoCount}>{journey.photos.length} photos</Text>
+        {/* Photo Timeline */}
+        {journeyPhotos.length > 0 && (
+          <View style={styles.timelineSection}>
+            <View style={styles.timelineSectionHeader}>
+              <Text style={styles.sectionTitle}>Journey Timeline</Text>
+              <Text style={styles.photoCount}>{journeyPhotos.length} moments</Text>
             </View>
-            <View style={styles.photoGrid}>
-              {journey.photos.map((photo, index) => (
-                <TouchableOpacity
-                  key={photo.id}
-                  style={styles.photoItem}
-                  activeOpacity={0.8}
-                  onPress={() => openPhotoViewer(index)}
-                >
-                  <Image 
-                    source={{ uri: photo.firebasePath }} 
-                    style={styles.photoThumbnail}
-                  />
-                </TouchableOpacity>
-              ))}
+            <View style={styles.timeline}>
+              {journeyPhotos.map((photo, index) => {
+                const photoDate = new Date(photo.takenAt);
+                const timeDisplay = photoDate.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                const hasLocation = photo.latitude && photo.longitude;
+                const isLast = index >= journeyPhotos.length - 1;
+
+                const photoUri =
+                  getFirebaseDownloadUrl(photo.imageUrl || photo.firebasePath) ||
+                  photo.imageUrl ||
+                  photo.firebasePath;
+
+                return (
+                  <View key={photo.id} style={styles.timelineItem}>
+                    {/* Timeline dot and line */}
+                    <View style={styles.timelineMarker}>
+                      <View style={[styles.timelineDot, index === 0 && styles.firstDot]} />
+                      {!isLast && <View style={styles.timelineLine} />}
+                    </View>
+
+                    {/* Content */}
+                    <View style={styles.timelineContent}>
+                      <Text style={styles.timelineTime}>{timeDisplay}</Text>
+                      <TouchableOpacity
+                        style={styles.timelinePhoto}
+                        activeOpacity={0.8}
+                        onPress={() => openPhotoViewer(index)}
+                      >
+                        <Image 
+                          source={photoUri ? { uri: photoUri } : undefined} 
+                          style={styles.timelinePhotoImage}
+                          resizeMode="cover"
+                        />
+                        {index === 0 && (
+                          <View style={styles.coverBadge}>
+                            <Text style={styles.coverBadgeText}>Cover</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                      {hasLocation && (
+                        <View style={styles.timelineLocation}>
+                          <Text style={styles.locationIcon}>📍</Text>
+                          <Text style={styles.locationText}>
+                            {photo.latitude?.toFixed(4)}, {photo.longitude?.toFixed(4)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </View>
         )}
 
         {/* Empty state for no photos */}
-        {(!journey.photos || journey.photos.length === 0) && (
+        {journeyPhotos.length === 0 && (
           <View style={styles.emptyPhotos}>
             <Text style={styles.emptyPhotosEmoji}>📷</Text>
             <Text style={styles.emptyPhotosText}>No photos from this journey</Text>
@@ -235,7 +288,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
       </ScrollView>
 
       {/* Photo Viewer Modal */}
-      {selectedPhotoIndex !== null && journey.photos && (
+      {selectedPhotoIndex !== null && journeyPhotos.length > 0 && (
         <Modal
           visible={true}
           transparent={false}
@@ -257,13 +310,13 @@ const JourneyDetailScreen = (): React.JSX.Element => {
             {/* Photo Counter */}
             <View style={styles.photoCounter}>
               <Text style={styles.photoCounterText}>
-                {selectedPhotoIndex + 1} / {journey.photos.length}
+                {selectedPhotoIndex + 1} / {journeyPhotos.length}
               </Text>
             </View>
 
             {/* Swipeable Photo Gallery */}
             <FlatList
-              data={journey.photos}
+              data={journeyPhotos}
               horizontal
               pagingEnabled
               initialScrollIndex={selectedPhotoIndex}
@@ -272,15 +325,22 @@ const JourneyDetailScreen = (): React.JSX.Element => {
                 offset: SCREEN_WIDTH * index,
                 index,
               })}
-              renderItem={({ item }) => (
+              renderItem={({ item }) => {
+                const sourceUri =
+                  getFirebaseDownloadUrl(item.imageUrl || item.firebasePath) ||
+                  item.imageUrl ||
+                  item.firebasePath;
+
+                return (
                 <View style={styles.photoViewerImageContainer}>
                   <Image 
-                    source={{ uri: item.firebasePath }} 
+                    source={sourceUri ? { uri: sourceUri } : undefined} 
                     style={styles.photoViewerImage}
                     resizeMode="contain"
                   />
                 </View>
-              )}
+                );
+              }}
               keyExtractor={(item) => item.id}
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={(event) => {
@@ -443,18 +503,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     textTransform: 'capitalize',
   },
-  gallerySection: {
+  timelineSection: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginBottom: 16,
     padding: 16,
     borderRadius: 16,
   },
-  gallerySectionHeader: {
+  timelineSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
@@ -467,21 +527,86 @@ const styles = StyleSheet.create({
     color: '#757575',
     fontFamily: 'Space Grotesk',
   },
-  photoGrid: {
+  timeline: {
+    paddingLeft: 8,
+  },
+  timelineItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -4,
+    marginBottom: 24,
   },
-  photoItem: {
-    width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
-    padding: 4,
+  timelineMarker: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: 16,
   },
-  photoThumbnail: {
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#F4E04D',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  firstDot: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#2E7D32',
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#E0E0E0',
+    marginTop: 4,
+  },
+  timelineContent: {
+    flex: 1,
+  },
+  timelineTime: {
+    fontSize: 12,
+    color: '#757575',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  timelinePhoto: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F5F5F5',
+    position: 'relative',
+  },
+  timelinePhotoImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+  },
+  coverBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#F4E04D',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  coverBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#000000',
+    fontFamily: 'Space Grotesk',
+  },
+  timelineLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  locationIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#757575',
+    fontFamily: 'Space Grotesk',
   },
   emptyPhotos: {
     alignItems: 'center',

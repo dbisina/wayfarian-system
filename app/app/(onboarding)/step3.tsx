@@ -3,42 +3,50 @@ import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
   TouchableOpacity,
   ImageBackground,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-
-const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
+import { useAuth } from '../../contexts/AuthContext';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 export default function OnboardingScreen3() {
-  const handleGetStarted = () => {
+  const { completeOnboarding } = useAuth();
+
+  const completeAndContinue = async () => {
+    await completeOnboarding();
     router.replace('/(auth)/login');
   };
 
+  const handleGetStarted = () => {
+    void completeAndContinue();
+  };
+
   const handleSkip = () => {
-    router.replace('/(auth)/login');
+    void completeAndContinue();
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent
+      />
       <ImageBackground
-        source={{
-          uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-16/Y8uOfUFSkG.png'
-        }}
+        source={require("../../assets/images/2025-09-26/road-6221011_1920.jpg")}
         style={styles.backgroundImage}
         resizeMode="cover"
       >
         <LinearGradient
-          colors={['rgba(0, 0, 0, 0.3)', 'rgba(0, 0, 0, 0.8)']}
+          colors={["rgba(0, 0, 0, 0.3)", "rgba(0, 0, 0, 0.8)"]}
           style={styles.overlay}
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logo}>LOGO</Text>
+            <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
             <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
               <Text style={styles.skipText}>Skip</Text>
             </TouchableOpacity>
@@ -48,7 +56,8 @@ export default function OnboardingScreen3() {
           <View style={styles.content}>
             <Text style={styles.mainTitle}>The Challenge Awaits.</Text>
             <Text style={styles.description}>
-              Solo rides. Group rides. Extra challenges. Earn rewards as you travel.
+              Solo rides. Group rides. Extra challenges. Earn rewards as you
+              travel.
             </Text>
           </View>
 
@@ -62,7 +71,10 @@ export default function OnboardingScreen3() {
             </View>
 
             {/* Get Started Button */}
-            <TouchableOpacity style={styles.getStartedButton} onPress={handleGetStarted}>
+            <TouchableOpacity
+              style={styles.getStartedButton}
+              onPress={handleGetStarted}
+            >
               <Text style={styles.getStartedText}>Get Started</Text>
             </TouchableOpacity>
           </View>
@@ -93,17 +105,15 @@ const styles = StyleSheet.create({
     paddingTop: 27,
     marginBottom: 58,
   },
-  logo: {
-    fontFamily: 'Inter',
-    fontSize: 18,
-    fontWeight: '400',
-    color: '#FFFFFF',
-    lineHeight: 22,
+  logoButton: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   skipButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
     borderRadius: 5,
     width: 40,
     height: 18,
@@ -113,7 +123,6 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 10,
     color: '#FFFFFF',
-    lineHeight: 15,
     textAlign: 'center',
   },
   content: {

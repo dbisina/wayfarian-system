@@ -2,38 +2,29 @@
 // Central API service for all backend communication
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
-// Resolve API base URL dynamically for dev: env > LAN IP from Expo host > Android emulator alias > localhost
-const deriveApiUrl = (): string => {
-  // 1) In development, ignore EXPO_PUBLIC_API_URL and auto-detect
-  if (!__DEV__ && process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-  if (__DEV__ && process.env.EXPO_PUBLIC_API_URL) {
-    console.log('[API] Dev mode: ignoring EXPO_PUBLIC_API_URL in favor of auto-detect');
-  }
+const DEFAULT_API_URL = 'https://wayfarian-system-production.up.railway.app/api';
+const TOKEN_STORAGE_KEY = 'authToken';
 
-  // 2) Try to derive LAN IP from Expo dev server hostUri
-  const hostUri = (Constants as any)?.expoConfig?.hostUri
-    || (Constants as any)?.manifest?.hostUri
-    || '';
-  const hostIp = typeof hostUri === 'string' ? hostUri.split(':')[0] : '';
-  if (hostIp && /^\d+\.\d+\.\d+\.\d+$/.test(hostIp)) {
-    return `http://${hostIp}:3001/api`;
-  }
-
-  // 3) Android emulator special alias to host machine
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3001/api';
-  }
-
-  // 4) Fallback to localhost
-  return 'http://localhost:3001/api';
+export type ApiRequestOptions = {
+  method?: string;
+  body?: any;
+  requiresAuth?: boolean;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
 };
 
-export const API_URL = deriveApiUrl();
+const resolveBaseUrl = (): string => {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (envUrl) {
+    return envUrl;
+  }
+  console.warn('[API] EXPO_PUBLIC_API_URL is not set; falling back to production default');
+  return DEFAULT_API_URL;
+};
+
+export const API_URL = resolveBaseUrl();
 console.log(`[API] Base URL: ${API_URL}`);
 
 // Returns the host base (without trailing /api)
@@ -62,121 +53,55 @@ export const pingServer = async (timeoutMs: number = 5000): Promise<{ ok: boolea
   }
 };
 
-// Runtime fallback: if first request fails with timeout/network error, probe common bases and switch
-let currentApiUrl = API_URL;
-let probingInProgress: Promise<string | null> | null = null;
-
-// Optional developer override persisted in AsyncStorage (e.g., tunnel URL)
-const API_OVERRIDE_KEY = 'apiOverrideUrl';
-let overrideLoaded = false;
-let loadOverridePromise: Promise<void> | null = null;
-
-const normalizeBase = (base: string): string => {
-  // ensure protocol present and append /api when missing
-  let b = base.trim();
-  if (!/^https?:\/\//i.test(b)) {
-    b = `http://${b}`;
-  }
-  if (!/\/api\/?$/i.test(b)) {
-    b = b.replace(/\/$/, '') + '/api';
-  }
-  return b;
-};
-
-const loadApiOverride = async () => {
-  if (overrideLoaded) return;
-  const saved = await AsyncStorage.getItem(API_OVERRIDE_KEY);
-  if (saved) {
-    const normalized = normalizeBase(saved);
-    currentApiUrl = normalized;
-    console.log(`[API] Using saved override base: ${currentApiUrl}`);
-  }
-  // If no saved override, try to adopt server-advertised public base from /health
-  if (!saved) {
-    try {
-      const baseHost = currentApiUrl.endsWith('/api') ? currentApiUrl.slice(0, -4) : currentApiUrl;
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${baseHost}/health`, { signal: controller.signal });
-      clearTimeout(id);
-      if (res.ok) {
-        const json = await res.json();
-        const adv = json?.publicBaseUrl as string | undefined;
-        if (adv && typeof adv === 'string') {
-          const normalized = normalizeBase(adv);
-          currentApiUrl = normalized;
-          await AsyncStorage.setItem(API_OVERRIDE_KEY, normalized);
-          console.log(`[API] Adopted server public base: ${currentApiUrl}`);
-        }
-      }
-    } catch {
-      // ignore network errors here
-    }
-  }
-  overrideLoaded = true;
-};
-
-export const getApiOverride = async (): Promise<string | null> => {
-  try {
-    return await AsyncStorage.getItem(API_OVERRIDE_KEY);
-  } catch {
-    return null;
-  }
-};
-
-export const setApiOverride = async (base: string): Promise<void> => {
-  const normalized = normalizeBase(base);
-  await AsyncStorage.setItem(API_OVERRIDE_KEY, normalized);
-  currentApiUrl = normalized;
-  console.log(`[API] Override base set: ${currentApiUrl}`);
-};
-
-export const clearApiOverride = async (): Promise<void> => {
-  await AsyncStorage.removeItem(API_OVERRIDE_KEY);
-  // Revert to derived default
-  currentApiUrl = deriveApiUrl();
-  console.log('[API] Override cleared; using derived base:', currentApiUrl);
-};
-
-// Expose the live base for non-json/multipart helpers
-export const getCurrentApiUrl = () => currentApiUrl;
-
-const probeBases = async (): Promise<string | null> => {
-  const candidates: string[] = [];
-  // Keep current first, then emulator alias, then derived LAN, then localhost
-  candidates.push(currentApiUrl);
-  candidates.push('http://10.0.2.2:3001/api');
-  const hostUri = (Constants as any)?.expoConfig?.hostUri || (Constants as any)?.manifest?.hostUri || '';
-  const hostIp = typeof hostUri === 'string' ? hostUri.split(':')[0] : '';
-  if (hostIp && /^\d+\.\d+\.\d+\.\d+$/.test(hostIp)) {
-    candidates.push(`http://${hostIp}:3001/api`);
-  }
-  candidates.push('http://localhost:3001/api');
-
-  for (const base of candidates) {
-    try {
-      const baseHost = base.endsWith('/api') ? base.slice(0, -4) : base;
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${baseHost}/health`, { signal: controller.signal });
-      clearTimeout(id);
-      if (res.ok) {
-        console.log(`[API] Fallback selected: ${base}`);
-        return base;
-      }
-    } catch {
-      // ignore and try next
-    }
-  }
-  return null;
-};
+const currentApiUrl = API_URL;
 // const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+
+export const getCurrentApiUrl = (): string => currentApiUrl;
 
 
 // Token management
+const secureStoreAvailable = Boolean(SecureStore?.setItemAsync);
+
+const secureGetItem = async (key: string): Promise<string | null> => {
+  if (secureStoreAvailable) {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (error) {
+      console.warn('[SecureStore] getItem failed, falling back to AsyncStorage', error);
+    }
+  }
+  return AsyncStorage.getItem(key);
+};
+
+const secureSetItem = async (key: string, value: string): Promise<void> => {
+  if (secureStoreAvailable) {
+    try {
+      await SecureStore.setItemAsync(key, value, {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      });
+      return;
+    } catch (error) {
+      console.warn('[SecureStore] setItem failed, falling back to AsyncStorage', error);
+    }
+  }
+  await AsyncStorage.setItem(key, value);
+};
+
+const secureRemoveItem = async (key: string): Promise<void> => {
+  if (secureStoreAvailable) {
+    try {
+      await SecureStore.deleteItemAsync(key);
+      return;
+    } catch (error) {
+      console.warn('[SecureStore] deleteItem failed, falling back to AsyncStorage', error);
+    }
+  }
+  await AsyncStorage.removeItem(key);
+};
+
 export const getAuthToken = async (): Promise<string | null> => {
   try {
-    return await AsyncStorage.getItem('authToken');
+    return await secureGetItem(TOKEN_STORAGE_KEY);
   } catch (error) {
     console.error('Error getting auth token:', error);
     return null;
@@ -185,7 +110,7 @@ export const getAuthToken = async (): Promise<string | null> => {
 
 export const setAuthToken = async (token: string): Promise<void> => {
   try {
-    await AsyncStorage.setItem('authToken', token);
+    await secureSetItem(TOKEN_STORAGE_KEY, token);
   } catch (error) {
     console.error('Error setting auth token:', error);
   }
@@ -193,34 +118,37 @@ export const setAuthToken = async (token: string): Promise<void> => {
 
 export const removeAuthToken = async (): Promise<void> => {
   try {
-    await AsyncStorage.removeItem('authToken');
+    await secureRemoveItem(TOKEN_STORAGE_KEY);
   } catch (error) {
     console.error('Error removing auth token:', error);
   }
 };
 
 // Base API request function with timeout and retry logic
-const apiRequest = async (
+export const apiRequest = async (
   endpoint: string,
-  method: string = 'GET',
+  methodOrOptions: string | ApiRequestOptions = 'GET',
   data: any = null,
-  requiresAuth: boolean = true,
-  timeoutMs: number = 20000, // Increased to 20 seconds
+  requiresAuthDefault: boolean = true,
+  timeoutMsDefault: number = 20000, // Increased to 20 seconds
   retryCount: number = 0
-) => {
+): Promise<any> => {
   const maxRetries = 2; // Will try up to 3 times total (initial + 2 retries)
-  
+
+  const isOptionsObject = typeof methodOrOptions === 'object' && methodOrOptions !== null;
+  const options = isOptionsObject ? (methodOrOptions as ApiRequestOptions) : undefined;
+
+  const method = isOptionsObject ? options?.method ?? 'GET' : (methodOrOptions as string) ?? 'GET';
+  const requiresAuth = isOptionsObject ? options?.requiresAuth ?? true : requiresAuthDefault;
+  const timeoutMs = isOptionsObject ? options?.timeoutMs ?? timeoutMsDefault : timeoutMsDefault;
+  const headersOverride = options?.headers;
+  const payload = isOptionsObject ? options?.body : data;
+
   try {
-    // Ensure any saved override is loaded before first network call
-    if (!overrideLoaded) {
-      loadOverridePromise = loadOverridePromise || loadApiOverride();
-      await loadOverridePromise;
-      loadOverridePromise = null;
-    }
-    
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      ...(headersOverride ?? {}),
     };
 
     if (requiresAuth) {
@@ -235,8 +163,17 @@ const apiRequest = async (
       headers,
     };
 
-    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      config.body = JSON.stringify(data);
+    const shouldAttachBody = payload !== undefined && payload !== null && (method === 'POST' || method === 'PUT' || method === 'PATCH');
+
+    if (shouldAttachBody) {
+      if (payload instanceof FormData) {
+        config.body = payload;
+        delete (config.headers as Record<string, string>)['Content-Type'];
+      } else if (typeof payload === 'string') {
+        config.body = payload;
+      } else {
+        config.body = JSON.stringify(payload);
+      }
     }
 
     // Add timeout to fetch request
@@ -249,10 +186,10 @@ const apiRequest = async (
     } else {
       console.log(`[API] Retry ${retryCount}/${maxRetries}: ${method} ${currentApiUrl}${endpoint}`);
     }
-    
+
     const response = await fetch(`${currentApiUrl}${endpoint}`, config);
     clearTimeout(timeoutId);
-    
+
     const text = await response.text();
     let responseData: any = null;
     try {
@@ -263,8 +200,7 @@ const apiRequest = async (
 
     if (!response.ok) {
       const errMsg = (responseData && (responseData.message || responseData.error)) || 'API request failed';
-      
-      // Rate limit - don't retry
+
       if (response.status === 429) {
         const retryAfter = responseData?.retryAfter || 60;
         console.warn(`[API] Rate limited: ${endpoint} - Retry after ${retryAfter}s`);
@@ -273,15 +209,14 @@ const apiRequest = async (
         error.retryAfter = retryAfter;
         throw error;
       }
-      
-      // Server errors (5xx) - retry with exponential backoff
+
       if (response.status >= 500 && retryCount < maxRetries) {
         const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000); // Max 5s backoff
         console.warn(`[API] Server error ${response.status}, retrying after ${backoffMs}ms...`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
-        return apiRequest(endpoint, method, data, requiresAuth, timeoutMs, retryCount + 1);
+        return apiRequest(endpoint, method, payload, requiresAuth, timeoutMs, retryCount + 1);
       }
-      
+
       if (responseData && (responseData.errors || responseData.details)) {
         console.error(`[API Error] ${method} ${endpoint}: ${response.status} - ${errMsg}`, {
           errors: responseData.errors || responseData.details,
@@ -289,7 +224,7 @@ const apiRequest = async (
       } else {
         console.error(`[API Error] ${method} ${endpoint}: ${response.status} - ${errMsg}`);
       }
-      
+
       const error = new Error(errMsg) as any;
       error.status = response.status;
       error.body = responseData;
@@ -305,37 +240,20 @@ const apiRequest = async (
   } catch (error: any) {
     const isTimeout = error?.name === 'AbortError' || /timed out/i.test(String(error?.message || ''));
     const isNetwork = /Network request failed|Failed to fetch|TypeError/i.test(String(error?.message || ''));
-    
-    // Retry on timeout/network errors
+
     if ((isTimeout || isNetwork) && retryCount < maxRetries) {
       const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000);
       console.warn(`[API] ${isTimeout ? 'Timeout' : 'Network error'}, retrying after ${backoffMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
-      
-      // Try probing for better base on first retry
-      if (retryCount === 0) {
-        try {
-          probingInProgress = probingInProgress || probeBases();
-          const newBase = await probingInProgress;
-          probingInProgress = null;
-          if (newBase && newBase !== currentApiUrl) {
-            currentApiUrl = newBase;
-            console.log(`[API] Switched to new base: ${currentApiUrl}`);
-          }
-        } catch {
-          // Continue with retry even if probing fails
-        }
-      }
-      
-      return apiRequest(endpoint, method, data, requiresAuth, timeoutMs, retryCount + 1);
+
+      return apiRequest(endpoint, method, payload, requiresAuth, timeoutMs, retryCount + 1);
     }
-    
+
     if (error?.name === 'AbortError') {
       console.error(`[API Timeout] ${method} ${endpoint} - Request timed out after ${timeoutMs}ms`);
       throw new Error('Request timed out. Please check your internet connection and try again.');
     }
-    
-    // Don't log again if we already threw a formatted error
+
     if (!error?.status) {
       console.error(`[API Request Error] ${method} ${endpoint}:`, error);
     }
@@ -697,23 +615,23 @@ export const apiRequestWithOptions = async (
   endpoint: string,
   options?: {
     method?: string;
-    body?: string;
+    body?: any;
     requiresAuth?: boolean;
     timeoutMs?: number;
+    headers?: Record<string, string>;
   }
 ) => {
-  const method = options?.method || 'GET';
-  const data = options?.body ? JSON.parse(options.body) : null;
-  const requiresAuth = options?.requiresAuth !== false;
-  const timeoutMs = options?.timeoutMs || 15000;
-  return apiRequest(endpoint, method, data, requiresAuth, timeoutMs);
+  return apiRequest(endpoint, {
+    method: options?.method,
+    body: options?.body,
+    requiresAuth: options?.requiresAuth,
+    timeoutMs: options?.timeoutMs,
+    headers: options?.headers,
+  });
 };
 
 // Internal alias for calling the base function from within this module
 const internalApiRequest = apiRequest;
-
-// Export shorthand for backward compat
-export { apiRequestWithOptions as apiRequest };
 
 // Group Journey API
 export const groupJourneyAPI = {
@@ -757,11 +675,10 @@ export default {
   leaderboard: leaderboardAPI,
   gallery: galleryAPI,
   places: placesAPI,
+  apiRequest,
+  apiRequestWithOptions,
   getAuthToken,
   setAuthToken,
   removeAuthToken,
   getCurrentApiUrl,
-  getApiOverride,
-  setApiOverride,
-  clearApiOverride,
 };

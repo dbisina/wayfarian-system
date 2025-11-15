@@ -40,11 +40,11 @@ export default function MapScreen(): React.JSX.Element {
     { key: 'shopping_mall', serverType: 'shopping_mall', label: 'Shopping' },
   ], []);
 
-  const getMockPlaces = useCallback((): Place[] => {
+  const getMockPlaces = useCallback((filter?: string): Place[] => {
     if (!location) return [];
-    return [
+    const samples: Place[] = [
       {
-        id: '1',
+        id: 'mock-gas-1',
         name: 'Shell Gas Station',
         latitude: location.coords.latitude + 0.01,
         longitude: location.coords.longitude + 0.01,
@@ -52,7 +52,7 @@ export default function MapScreen(): React.JSX.Element {
         rating: 4.2,
       },
       {
-        id: '2',
+        id: 'mock-food-1',
         name: "McDonald's",
         latitude: location.coords.latitude - 0.005,
         longitude: location.coords.longitude + 0.008,
@@ -60,7 +60,7 @@ export default function MapScreen(): React.JSX.Element {
         rating: 4.0,
       },
       {
-        id: '3',
+        id: 'mock-hotel-1',
         name: 'Holiday Inn',
         latitude: location.coords.latitude + 0.008,
         longitude: location.coords.longitude - 0.012,
@@ -68,6 +68,15 @@ export default function MapScreen(): React.JSX.Element {
         rating: 4.5,
       },
     ];
+
+    if (filter) {
+      const filtered = samples.filter(place => place.type === filter);
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+
+    return samples;
   }, [location]);
 
   useEffect(() => {
@@ -100,34 +109,63 @@ export default function MapScreen(): React.JSX.Element {
     }
   };
 
-  const fetchNearbyPlaces = useCallback(async () => {
+  const fetchNearbyPlaces = useCallback(async (filterKey?: string) => {
     if (!location) return;
 
+    const activeFilter = filterKey ?? selectedFilter;
     try {
       setLoading(true);
-      const serverType = filterTypes.find(f => f.key === selectedFilter)?.serverType || 'point_of_interest';
+      const serverType = filterTypes.find(f => f.key === activeFilter)?.serverType || 'point_of_interest';
       const response = await placesAPI.searchNearby({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         type: serverType,
-        radius: 5000, // 5km radius
+        radius: 5000,
       });
 
-      if (response?.places) {
-        const formattedPlaces = response.places.map((p: any) => ({
-          id: p.id || p.place_id || String(Math.random()),
-          name: p.name || 'Unknown',
-          latitude: p.latitude || p.geometry?.location?.lat || 0,
-          longitude: p.longitude || p.geometry?.location?.lng || 0,
-          type: selectedFilter,
-          rating: p.rating || undefined,
-        }));
-        setPlaces(formattedPlaces);
+      if (!response?.places || response.places.length === 0) {
+        setPlaces(getMockPlaces(activeFilter));
+        return;
       }
+
+      const formattedPlaces = response.places
+        .map((place: any) => {
+          const latitudeCandidate =
+            typeof place.latitude === 'number'
+              ? place.latitude
+              : typeof place?.location?.latitude === 'number'
+                ? place.location.latitude
+                : typeof place?.geometry?.location?.lat === 'number'
+                  ? place.geometry.location.lat
+                  : null;
+          const longitudeCandidate =
+            typeof place.longitude === 'number'
+              ? place.longitude
+              : typeof place?.location?.longitude === 'number'
+                ? place.location.longitude
+                : typeof place?.geometry?.location?.lng === 'number'
+                  ? place.geometry.location.lng
+                  : null;
+
+          if (typeof latitudeCandidate !== 'number' || typeof longitudeCandidate !== 'number') {
+            return null;
+          }
+
+          return {
+            id: place.id || place.place_id || String(Math.random()),
+            name: place.name || 'Unknown',
+            latitude: latitudeCandidate,
+            longitude: longitudeCandidate,
+            type: activeFilter,
+            rating: typeof place.rating === 'number' ? place.rating : undefined,
+          } as Place;
+        })
+        .filter(Boolean) as Place[];
+
+      setPlaces(formattedPlaces);
     } catch (error: any) {
       console.error('Places fetch error:', error);
-      // Fallback to mock data if API fails
-      setPlaces(getMockPlaces());
+      setPlaces(getMockPlaces(activeFilter));
     } finally {
       setLoading(false);
     }
@@ -135,7 +173,7 @@ export default function MapScreen(): React.JSX.Element {
 
   useEffect(() => {
     if (location && isAuthenticated) {
-      fetchNearbyPlaces();
+      fetchNearbyPlaces(selectedFilter);
     }
   }, [location, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
 
@@ -313,7 +351,7 @@ export default function MapScreen(): React.JSX.Element {
       )}
 
       {/* Search Bar */}
-      <View style={styles.searchBar}>
+  <View style={styles.searchBar}>
         <TextInput
           value={query}
           onChangeText={onChangeQuery}
@@ -453,6 +491,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
+    zIndex: 30,
   },
   searchInput: {
     flex: 1,
@@ -506,8 +545,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 4,
+    elevation: 12,
     overflow: "hidden",
+    zIndex: 40,
   },
   suggestionItem: {
     paddingHorizontal: 12,
@@ -526,6 +566,7 @@ const styles = StyleSheet.create({
     left: 15,
     right: 15,
     height: 40,
+    zIndex: 20,
   },
   filterContent: {
     flexDirection: "row",

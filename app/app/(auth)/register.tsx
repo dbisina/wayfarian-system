@@ -1,4 +1,6 @@
 import React, {useState} from 'react';
+import TermsAndConditionsModal from '../../components/TermsAndConditionsModal';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import {
   View,
   Text,
@@ -11,21 +13,28 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
-export default function RegisterScreen() {
+const RegisterScreen = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { register, loginWithGoogle, loginWithApple } = useAuth();
+  const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
 
   const handleSignUp = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -46,7 +55,6 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       await register(email, password, name);
-      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Registration Failed', error.message || 'An error occurred during registration');
     } finally {
@@ -58,7 +66,6 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       await loginWithGoogle();
-      router.replace('/(tabs)');
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
         Alert.alert('Google Sign-In Failed', error.message);
@@ -72,7 +79,6 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       await loginWithApple();
-      router.replace('/(tabs)');
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
         Alert.alert('Apple Sign-In Failed', error.message);
@@ -85,6 +91,8 @@ export default function RegisterScreen() {
   const handleSignIn = () => {
     router.push('/(auth)/login');
   };
+  const handleShowTerms = () => setShowTerms(true);
+  const handleHideTerms = () => setShowTerms(false);
 
   const GoogleIcon = () => (
     <Svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -117,7 +125,11 @@ export default function RegisterScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={keyboardVerticalOffset ?? 0}
+    >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ImageBackground
         source={{uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/rfzYAAc8iR.png'}}
@@ -127,12 +139,13 @@ export default function RegisterScreen() {
         <View style={styles.overlay}>
           <ScrollView 
             contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.formContainer}>
-              <View style={styles.profileCircle} />
+              <AnimatedLogoButton containerStyle={styles.logoButton} />
               
-              <Text style={styles.title}>Sign into your account</Text>
+              <Text style={styles.title}>Create your account</Text>
               
               {/* Google Sign In Button */}
               <TouchableOpacity 
@@ -164,53 +177,91 @@ export default function RegisterScreen() {
               {/* Name Field */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter your Name"
-                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                  value={name}
-                  onChangeText={setName}
-                />
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your Name"
+                    placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                    value={name}
+                    onChangeText={setName}
+                    returnKeyType="next"
+                  />
+                </View>
               </View>
               
               {/* Email Field */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter Your email address"
-                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your email address"
+                    placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    returnKeyType="next"
+                  />
+                </View>
               </View>
               
               {/* Password Field */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter your password"
-                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your password"
+                    placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    returnKeyType="next"
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowPassword(prev => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={18}
+                      color="rgba(0, 0, 0, 0.6)"
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
               
               {/* Confirm Password Field */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Confirm Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Re-enter password"
-                  placeholderTextColor="rgba(0, 0, 0, 0.5)"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                />
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Re-enter password"
+                    placeholderTextColor="rgba(0, 0, 0, 0.5)"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowConfirmPassword(prev => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                  >
+                    <Ionicons
+                      name={showConfirmPassword ? 'eye-off' : 'eye'}
+                      size={18}
+                      color="rgba(0, 0, 0, 0.6)"
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
               
               {/* Terms and Conditions */}
@@ -218,9 +269,16 @@ export default function RegisterScreen() {
                 <TouchableOpacity
                   style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
                   onPress={() => setAgreeToTerms(!agreeToTerms)}
-                />
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: agreeToTerms }}
+                >
+                  {agreeToTerms && <Ionicons name="checkmark" size={16} color="#0F172A" />}
+                </TouchableOpacity>
                 <Text style={styles.termsText}>
-                  By Clicking, I agree with WayfarianS terms of service and Privacy Policy.
+                  By clicking, I agree to the{' '}
+                  <Text style={{color: '#2196F3', textDecorationLine: 'underline'}} onPress={handleShowTerms}>
+                    Terms and Conditions
+                  </Text>.
                 </Text>
               </View>
               
@@ -239,18 +297,21 @@ export default function RegisterScreen() {
               
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
+                <Text style={styles.signUpText}>Already Have an account? </Text>
                 <TouchableOpacity onPress={handleSignIn}>
-                  <Text style={styles.signUpLink}>SignUp</Text>
+                  <Text style={styles.signUpLink}>Sign In</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
         </View>
+        <TermsAndConditionsModal visible={showTerms} onClose={handleHideTerms} />
       </ImageBackground>
-    </View>
+    </KeyboardAvoidingView>
   );
-}
+};
+
+export default RegisterScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -278,11 +339,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minHeight: 713,
   },
-  profileCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#D9D9D9',
+  logoButton: {
     alignSelf: 'center',
     marginBottom: 43,
   },
@@ -342,41 +399,53 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   textInput: {
-    backgroundColor: '#EEEEEE',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    flex: 1,
+    paddingVertical: 12,
     fontSize: 12,
     fontWeight: '300',
     color: '#000000',
     fontFamily: 'Poppins',
     lineHeight: 18,
   },
+  inputWrapper: {
+    backgroundColor: '#EEEEEE',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+  },
+  passwordToggle: {
+    paddingLeft: 8,
+  },
   termsContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginVertical: 20,
     paddingHorizontal: 8,
   },
   checkbox: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
     backgroundColor: '#FFFFFF',
-    marginRight: 5,
-    marginTop: 3,
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.25)',
   },
   checkboxChecked: {
     backgroundColor: '#F9A825',
+    borderColor: '#F9A825',
   },
   termsText: {
     flex: 1,
-    fontSize: 10,
-    fontWeight: '300',
-    color: 'rgba(238, 238, 238, 0.6)',
+    fontSize: 12,
+    fontWeight: '400',
+    color: 'rgba(238, 238, 238, 0.8)',
     fontFamily: 'Poppins',
-    lineHeight: 15,
-    textAlign: 'center',
+    lineHeight: 18,
   },
   signInButton: {
     backgroundColor: '#F9A825',

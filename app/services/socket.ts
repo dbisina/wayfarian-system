@@ -2,22 +2,17 @@
 // Socket.io client for real-time group location sharing
 
 import { io, Socket } from 'socket.io-client';
-import { getAuthToken } from './api';
+import { getAuthToken, getCurrentApiUrl } from './api';
 
 let socket: Socket | null = null;
-let baseUrl: string | null = null;
-
 function computeBaseUrl(): string {
-  if (baseUrl) return baseUrl;
-  // Prefer explicit socket URL, else derive from API_URL by stripping trailing /api
+  // Prefer explicit socket URL, else derive from the same runtime API host
   const envSocket = process.env.EXPO_PUBLIC_SOCKET_URL;
   if (envSocket) {
-    baseUrl = envSocket.replace(/\/$/, '');
-    return baseUrl;
+    return envSocket.replace(/\/$/, '');
   }
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api';
-  baseUrl = apiUrl.replace(/\/?api\/?$/, '');
-  return baseUrl;
+  const apiUrl = getCurrentApiUrl();
+  return apiUrl.replace(/\/?api\/?$/, '');
 }
 
 export async function connectSocket(): Promise<Socket> {

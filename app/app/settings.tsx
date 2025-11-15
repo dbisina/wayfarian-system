@@ -158,21 +158,7 @@ export default function SettingsScreen() {
             onPress={() => router.push('/edit-profile')}
           />
 
-          <View style={styles.settingItem}>
-            <View style={styles.profilePictureContainer}>
-              <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face' }}
-                style={styles.profilePicture}
-              />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingTitle}>Profile Picture</Text>
-                <Text style={styles.settingSubtitle}>Update your profile image</Text>
-              </View>
-            </View>
-            <View style={styles.editButton}>
-              <Text style={styles.editButtonText}>Edit</Text>
-            </View>
-          </View>
+
 
           <SettingItem
             title="Vehicle Type"
@@ -244,12 +230,6 @@ export default function SettingsScreen() {
             showArrow={true}
           />
 
-          <SettingItem
-            title="OAuth Debug & API Override"
-            subtitle="Set tunnel URL and test /health"
-            onPress={() => router.push('/oauth-debug')}
-            showArrow={true}
-          />
 
           <View style={styles.settingItem}>
             <View style={styles.settingContent}>

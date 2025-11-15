@@ -11,7 +11,6 @@ import {
   Image,
   Modal,
   FlatList,
-  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -131,7 +130,7 @@ export default function EditProfileScreen() {
 
         if (!uploadResponse.ok) {
           const errorText = await uploadResponse.text();
-          throw new Error(`Upload failed: ${uploadResponse.status}`);
+          throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
         }
 
         const response = await uploadResponse.json();

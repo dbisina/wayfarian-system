@@ -67,42 +67,48 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions) {
 
   // Subscribe to live events
   useEffect(() => {
-    if (!groupJourneyId) return;
+    if (!groupJourneyId) {
+      return;
+    }
 
-    let mounted = true;
+    let isActive = true;
+    let hasJoined = false;
+    let unsubscribe: (() => void) | null = null;
 
-    (async () => {
+    const setup = async () => {
       try {
         await connectSocket();
         await joinGroupJourneyRoom(groupJourneyId);
+        hasJoined = true;
 
         const onEvent = (evt: any) => {
-          if (!mounted || !evt) return;
-          // Prepend new event (most recent first)
-          setEvents((prev) => [evt, ...prev]);
+          if (!isActive || !evt) return;
+          setEvents(prev => [evt, ...prev]);
         };
 
         socketOn('group-journey:event', onEvent);
+        unsubscribe = () => socketOff('group-journey:event', onEvent);
 
-        // Load initial events if autoLoad
-        if (autoLoad && mounted) {
+        if (autoLoad && isActive) {
           await loadEvents();
         }
-
-        return () => {
-          mounted = false;
-          try {
-            socketOff('group-journey:event', onEvent);
-            leaveGroupJourneyRoom(groupJourneyId);
-          } catch {}
-        };
       } catch (err) {
         console.error('useRealtimeEvents socket setup error:', err);
       }
-    })();
+    };
+
+    setup();
 
     return () => {
-      mounted = false;
+      isActive = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      if (hasJoined) {
+        try {
+          leaveGroupJourneyRoom(groupJourneyId);
+        } catch {}
+      }
     };
   }, [groupJourneyId, autoLoad, loadEvents]);
 

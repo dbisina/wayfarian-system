@@ -3,22 +3,24 @@ import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
   TouchableOpacity,
   ImageBackground,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-
-const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
+import { useAuth } from '../../contexts/AuthContext';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 export default function OnboardingScreen2() {
+  const { completeOnboarding } = useAuth();
+
   const handleNext = () => {
     router.push('/(onboarding)/step3');
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
+    await completeOnboarding();
     router.replace('/(auth)/login');
   };
 
@@ -38,7 +40,7 @@ export default function OnboardingScreen2() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logo}>LOGO</Text>
+            <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
             <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
               <Text style={styles.skipText}>Skip</Text>
             </TouchableOpacity>
@@ -92,17 +94,15 @@ const styles = StyleSheet.create({
     paddingTop: 27,
     marginBottom: 58,
   },
-  logo: {
-    fontFamily: 'Inter',
-    fontSize: 18,
-    fontWeight: '400',
-    color: '#FFFFFF',
-    lineHeight: 22,
+  logoButton: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   skipButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
     borderRadius: 5,
     width: 40,
     height: 18,
@@ -112,7 +112,6 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 10,
     color: '#FFFFFF',
-    lineHeight: 15,
     textAlign: 'center',
   },
   content: {

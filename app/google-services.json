@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "65260446195",
+    "project_id": "wayfarian-e49b4",
+    "storage_bucket": "wayfarian-e49b4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65260446195:android:ecf9201a35c87a79a83286",
+        "android_client_info": {
+          "package_name": "com.wayfarian.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "65260446195-56j3p8292vf5u0s9j63fs4l8ne0nlkki.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wayfarian.com",
+            "certificate_hash": "2536f0966076bc0e4e695ebf2775fb03d9d4615f"
+          }
+        },
+        {
+          "client_id": "65260446195-hfqsbvj2pmbr6gj6uelrbf1hp06ink9m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKxvyW3u1ohrGkZ8EiwQyJI61HMDAGYYc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "65260446195-hfqsbvj2pmbr6gj6uelrbf1hp06ink9m.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "65260446195-7n1mq16bpltm67hmbdqimqi31id9d2gt.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.wayfarian.wayfairanadventures"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

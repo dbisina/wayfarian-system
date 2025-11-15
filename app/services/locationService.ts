@@ -23,6 +23,7 @@ export interface LocationPoint {
 export interface JourneyStats {
   totalDistance: number; // in kilometers
   totalTime: number; // in seconds
+  movingTime: number; // in seconds (only when actually moving)
   avgSpeed: number; // km/h
   topSpeed: number; // km/h
   currentSpeed: number; // km/h
@@ -37,12 +38,15 @@ class LocationService {
   private stats: JourneyStats = {
     totalDistance: 0,
     totalTime: 0,
+    movingTime: 0,
     avgSpeed: 0,
     topSpeed: 0,
     currentSpeed: 0,
   };
   private startTime: number = 0;
   private lastUpdateTime: number = 0;
+  private lastMovementTime: number = 0; // Track last time we were moving
+  private isCurrentlyMoving: boolean = false;
   private updateInterval: number = 5000; // Update backend every 5 seconds
   private currentGroupId: string | null = null;
 
@@ -160,12 +164,15 @@ class LocationService {
       this.isTracking = true;
       this.startTime = Date.now();
       this.lastUpdateTime = Date.now();
+      this.lastMovementTime = Date.now();
+      this.isCurrentlyMoving = false;
       this.routePoints = [startLocation];
       
       // Reset stats
       this.stats = {
         totalDistance: 0,
         totalTime: 0,
+        movingTime: 0,
         avgSpeed: 0,
         topSpeed: 0,
         currentSpeed: 0,
@@ -238,21 +245,42 @@ class LocationService {
       acceptPoint = true;
     }
 
-    // Update speed stats
+    // Update speed stats and track movement
     const speedMps = newPoint.speed || 0;
     const moving = speedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
     const speedKmh = speedMps * 3.6; // Convert m/s to km/h
     this.stats.currentSpeed = moving ? speedKmh : 0;
-    if (moving && speedKmh > this.stats.topSpeed) {
-      this.stats.topSpeed = speedKmh;
+    
+    // Track moving time only when actually moving
+    const now = Date.now();
+    if (moving) {
+      if (!this.isCurrentlyMoving) {
+        // Just started moving again
+        this.lastMovementTime = now;
+        this.isCurrentlyMoving = true;
+      } else {
+        // Continue moving - add elapsed time
+        const elapsedMs = now - this.lastMovementTime;
+        this.stats.movingTime += Math.floor(elapsedMs / 1000);
+        this.lastMovementTime = now;
+      }
+      
+      // Update top speed only when moving
+      if (speedKmh > this.stats.topSpeed) {
+        this.stats.topSpeed = speedKmh;
+      }
+    } else {
+      this.isCurrentlyMoving = false;
     }
 
-    // Update time
-    this.stats.totalTime = Math.floor((Date.now() - this.startTime) / 1000);
+    // Update total time (includes stationary time)
+    this.stats.totalTime = Math.floor((now - this.startTime) / 1000);
 
-    // Calculate average speed
-    if (this.stats.totalTime > 0) {
-      this.stats.avgSpeed = (this.stats.totalDistance / this.stats.totalTime) * 3600; // km/h
+    // Calculate average speed based on moving time only
+    if (this.stats.movingTime > 0) {
+      this.stats.avgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600; // km/h
+    } else {
+      this.stats.avgSpeed = 0;
     }
 
     // Add point to route only if accepted (filters out jitter when stationary)
@@ -261,10 +289,10 @@ class LocationService {
     }
 
     // Update backend periodically
-    const now = Date.now();
-    if (now - this.lastUpdateTime >= this.updateInterval) {
+    const updateTimestamp = Date.now();
+    if (updateTimestamp - this.lastUpdateTime >= this.updateInterval) {
       await this.updateBackend();
-      this.lastUpdateTime = now;
+      this.lastUpdateTime = updateTimestamp;
     }
 
     // Also share live location with group via socket when in a group journey
@@ -368,9 +396,12 @@ class LocationService {
       this.currentJourneyId = null;
       this.currentGroupId = null;
       this.routePoints = [];
+      this.isCurrentlyMoving = false;
+      this.lastMovementTime = 0;
       this.stats = {
         totalDistance: 0,
         totalTime: 0,
+        movingTime: 0,
         avgSpeed: 0,
         topSpeed: 0,
         currentSpeed: 0,
@@ -382,11 +413,23 @@ class LocationService {
 
   // Get current stats
   getStats(): JourneyStats {
-    // Ensure time keeps ticking even if device doesn't deliver location updates while stationary
+    // Ensure time keeps ticking, but only count moving time when actually moving
     if (this.isTracking && this.startTime > 0) {
-      this.stats.totalTime = Math.floor((Date.now() - this.startTime) / 1000);
-      if (this.stats.totalTime > 0) {
-        this.stats.avgSpeed = (this.stats.totalDistance / this.stats.totalTime) * 3600;
+      const now = Date.now();
+      this.stats.totalTime = Math.floor((now - this.startTime) / 1000);
+      
+      // If currently moving, add the elapsed time since last movement update
+      if (this.isCurrentlyMoving && this.lastMovementTime > 0) {
+        const additionalMovingMs = now - this.lastMovementTime;
+        const currentMovingTime = this.stats.movingTime + Math.floor(additionalMovingMs / 1000);
+        
+        // Calculate avg speed based on moving time
+        if (currentMovingTime > 0) {
+          this.stats.avgSpeed = (this.stats.totalDistance / currentMovingTime) * 3600;
+        }
+      } else if (this.stats.movingTime > 0) {
+        // Not currently moving, use stored moving time
+        this.stats.avgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600;
       }
     }
     return { ...this.stats };

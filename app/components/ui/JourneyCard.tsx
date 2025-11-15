@@ -4,17 +4,25 @@ import {
   Text,
   StyleSheet,
   Image,
+  TouchableOpacity,
 } from 'react-native';
 
 interface JourneyCardProps {
+  id?: string;
   title: string;
   stats: string;
   imageUrl: string;
+  onPress?: () => void;
 }
 
-const JourneyCard = ({ title, stats, imageUrl }: JourneyCardProps): React.JSX.Element => {
+const JourneyCard = ({ id, title, stats, imageUrl, onPress }: JourneyCardProps): React.JSX.Element => {
   return (
-    <View style={styles.container}>
+    <TouchableOpacity 
+      style={styles.container}
+      onPress={onPress}
+      activeOpacity={0.7}
+      disabled={!onPress}
+    >
       <Image 
         source={{ uri: imageUrl }} 
         style={styles.image}
@@ -22,10 +30,10 @@ const JourneyCard = ({ title, stats, imageUrl }: JourneyCardProps): React.JSX.El
         defaultSource={require('../../assets/placeholder-journey.jpg')}
       />
       <View style={styles.content}>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <Text style={styles.stats}>{stats}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
