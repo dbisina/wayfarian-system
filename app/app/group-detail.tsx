@@ -788,31 +788,41 @@ export default function GroupDetailScreen() {
 
       {/* Start Journey Modal - V2: Only destination needed */}
       <Modal visible={showStartModal} animationType="slide" transparent onRequestClose={() => setShowStartModal(false)}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Set Destination</Text>
-            <Text style={styles.modalSubtitle}>Choose where the group should ride to. Each member will start from their own location.</Text>
-            <View style={styles.modalField}>
-              <Text style={styles.modalLabel}>Destination</Text>
-              <LocationPicker
-                placeholder="Choose destination"
-                value={endLocation?.address || ''}
-                onLocationSelect={(loc) => setEndLocation({ latitude: loc.latitude, longitude: loc.longitude, address: loc.address })}
-                currentLocation={currentLocation || undefined}
-              />
+              <ScrollView 
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ flexGrow: 1 }}
+              >
+                <Text style={styles.modalTitle}>Set Destination</Text>
+                <Text style={styles.modalSubtitle}>Choose where the group should ride to. Each member will start from their own location.</Text>
+                <View style={styles.modalField}>
+                  <Text style={styles.modalLabel}>Destination</Text>
+                  <LocationPicker
+                    placeholder="Choose destination"
+                    value={endLocation?.address || ''}
+                    onLocationSelect={(loc) => setEndLocation({ latitude: loc.latitude, longitude: loc.longitude, address: loc.address })}
+                    currentLocation={currentLocation || undefined}
+                  />
+                </View>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.modalCancel} onPress={() => setShowStartModal(false)}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalConfirm, !endLocation && { opacity: 0.6 }]} onPress={confirmStartGroupJourney}>
+                    <Text style={styles.modalConfirmText}>Create Journey</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowStartModal(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalConfirm, !endLocation && { opacity: 0.6 }]} onPress={confirmStartGroupJourney}>
-                <Text style={styles.modalConfirmText}>Create Journey</Text>
-              </TouchableOpacity>
-            </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1235,6 +1245,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 16,
     paddingBottom: 28,
+    maxHeight: '80%',
   },
   modalTitle: {
     fontSize: 18,

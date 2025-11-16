@@ -24,7 +24,7 @@ export default function MapScreen(): React.JSX.Element {
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<string>('gas');
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -124,7 +124,7 @@ export default function MapScreen(): React.JSX.Element {
       });
 
       if (!response?.places || response.places.length === 0) {
-        setPlaces(getMockPlaces(activeFilter));
+        setPlaces(getMockPlaces(activeFilter ?? undefined));
         return;
       }
 
@@ -165,14 +165,14 @@ export default function MapScreen(): React.JSX.Element {
       setPlaces(formattedPlaces);
     } catch (error: any) {
       console.error('Places fetch error:', error);
-      setPlaces(getMockPlaces(activeFilter));
+      setPlaces(getMockPlaces(activeFilter ?? undefined));
     } finally {
       setLoading(false);
     }
   }, [location, selectedFilter, filterTypes, getMockPlaces]);
 
   useEffect(() => {
-    if (location && isAuthenticated) {
+    if (location && isAuthenticated && selectedFilter) {
       fetchNearbyPlaces(selectedFilter);
     }
   }, [location, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
