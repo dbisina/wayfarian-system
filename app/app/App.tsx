@@ -11,7 +11,6 @@ export default function App() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="group-detail" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="new-group" options={{ presentation: 'modal', headerShown: false }} />

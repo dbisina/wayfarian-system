@@ -4,7 +4,7 @@
     "slug": "wayfarian",
     "version": "1.0.0",
     "orientation": "portrait",
-  "icon": "./assets/icons/adaptive-icon.png",
+    "icon": "./assets/icons/adaptive-icon.png",
     "description": "Wayfarian is your group journey companion. Track, share, and relive your adventures with friends.",
     "scheme": "app",
     "userInterfaceStyle": "automatic",
@@ -80,8 +80,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f262c881-b605-470b-b962-f4186f0aa0b2"
+        "projectId": "c6a1b25c-4d30-4dd6-bbe2-49f26b36d16b"
       }
-    }
+    },
+    "owner": "lyon98.dbios"
   }
 }

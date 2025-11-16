@@ -1,30 +1,31 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect, Stack } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function AuthLayout() {
-  const { isAuthenticated, loading } = useAuth();
-  const router = useRouter();
-  const segments = useSegments();
+  const { isAuthenticated, hasCompletedOnboarding, loading } = useAuth();
 
-  useEffect(() => {
-    if (loading) return;
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
-    const inAuthGroup = segments[0] === '(auth)';
+  if (isAuthenticated) {
+    return <Redirect href="/(tabs)" />;
+  }
 
-    if (isAuthenticated && inAuthGroup) {
-      // User is authenticated but still in auth screens, redirect to tabs
-      router.replace('/(tabs)');
-    }
-    // Don't redirect non-authenticated users away from auth screens
-    // The main layout will handle showing auth screens for non-authenticated users
-  }, [isAuthenticated, loading, segments, router]);
+  const initialRouteName = hasCompletedOnboarding ? 'login' : 'index';
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="step2" />
+      <Stack.Screen name="step3" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
     </Stack>
   );
 }
-

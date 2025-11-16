@@ -925,10 +925,16 @@ const getActiveForGroup = async (req, res) => {
       }
     }
 
-    res.json({ journey });
+    res.json({ 
+      success: true,
+      groupJourney: journey 
+    });
   } catch (error) {
     logger.error('[GroupJourney] Error getting active journey:', error);
-    res.status(500).json({ error: 'Failed to get active journey' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get active journey' 
+    });
   }
 };
 

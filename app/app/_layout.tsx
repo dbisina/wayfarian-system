@@ -35,7 +35,7 @@ export const unstable_settings = {
 
 function RootLayoutContent() {
   const colorScheme = useColorScheme();
-  const { isAuthenticated, hasCompletedOnboarding, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
@@ -61,10 +61,8 @@ function RootLayoutContent() {
       <Stack screenOptions={stackScreenOptions}>
         {isAuthenticated ? (
           <Stack.Screen name="(tabs)" />
-        ) : hasCompletedOnboarding ? (
-          <Stack.Screen name="(auth)" />
         ) : (
-          <Stack.Screen name="(onboarding)" />
+          <Stack.Screen name="(auth)" />
         )}
         <Stack.Screen name="group-detail" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="new-group" options={{ presentation: 'modal', headerShown: false }} />

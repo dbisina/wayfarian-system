@@ -16,7 +16,7 @@ export default function OnboardingScreen2() {
   const { completeOnboarding } = useAuth();
 
   const handleNext = () => {
-    router.push('/(onboarding)/step3');
+    router.push('/(auth)/step3');
   };
 
   const handleSkip = async () => {
