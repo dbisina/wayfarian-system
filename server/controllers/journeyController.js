@@ -3,28 +3,35 @@
 
 const prisma = require('../prisma/client');
 const { calculateDistance, calculateAverageSpeed } = require('../utils/helpers');
+const { hydratePhotos, getCoverPhotoUrl } = require('../utils/photoFormatter');
 
 /**
  * Create a new journey (Active or Planned)
  */
 const createJourney = async (req, res) => {
   try {
-    const { 
-      latitude, 
-      longitude, 
-      title, 
-      vehicle, 
+    const {
+      latitude,
+      longitude,
+      title,
+      vehicle,
       groupId,
       status: rawStatus = 'ACTIVE',
       startTime,
       endLatitude,
       endLongitude,
-      notes
+      notes,
     } = req.body;
+
     const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toUpperCase() : 'ACTIVE';
     const requiresCoordinates = normalizedStatus === 'ACTIVE';
-    const hasCoordinates = latitude !== undefined && latitude !== null &&
-      longitude !== undefined && longitude !== null && latitude !== '' && longitude !== '';
+    const hasCoordinates =
+      latitude !== undefined &&
+      latitude !== null &&
+      latitude !== '' &&
+      longitude !== undefined &&
+      longitude !== null &&
+      longitude !== '';
 
     if (requiresCoordinates && !hasCoordinates) {
       return res.status(400).json({
@@ -35,10 +42,17 @@ const createJourney = async (req, res) => {
 
     const resolvedLatitude = hasCoordinates ? Number(latitude) : null;
     const resolvedLongitude = hasCoordinates ? Number(longitude) : null;
-    
+    const resolvedEndLatitude =
+      endLatitude !== undefined && endLatitude !== null && endLatitude !== ''
+        ? Number(endLatitude)
+        : null;
+    const resolvedEndLongitude =
+      endLongitude !== undefined && endLongitude !== null && endLongitude !== ''
+        ? Number(endLongitude)
+        : null;
+
     const userId = req.user.id;
-    
-    // If starting active, check for existing active journey
+
     if (normalizedStatus === 'ACTIVE') {
       const activeJourney = await prisma.journey.findFirst({
         where: {
@@ -46,7 +60,7 @@ const createJourney = async (req, res) => {
           status: 'ACTIVE',
         },
       });
-      
+
       if (activeJourney) {
         return res.status(400).json({
           error: 'Active journey exists',
@@ -55,8 +69,7 @@ const createJourney = async (req, res) => {
         });
       }
     }
-    
-    // Create new journey
+
     const journey = await prisma.journey.create({
       data: {
         userId,
@@ -64,21 +77,24 @@ const createJourney = async (req, res) => {
         startTime: startTime ? new Date(startTime) : new Date(),
         startLatitude: resolvedLatitude,
         startLongitude: resolvedLongitude,
-        endLatitude,
-        endLongitude,
+        endLatitude: resolvedEndLatitude,
+        endLongitude: resolvedEndLongitude,
         vehicle: vehicle || 'car',
         groupId,
         status: normalizedStatus,
         customTitle: null,
         isHidden: false,
-        // Only add initial route point if active
-        routePoints: normalizedStatus === 'ACTIVE' ? [{ 
-          lat: resolvedLatitude, 
-          lng: resolvedLongitude, 
-          timestamp: new Date().toISOString(),
-          speed: 0 
-        }] : [],
-        // Store notes in weatherData for now since schema doesn't have notes
+        routePoints:
+          normalizedStatus === 'ACTIVE'
+            ? [
+                {
+                  lat: resolvedLatitude,
+                  lng: resolvedLongitude,
+                  timestamp: new Date().toISOString(),
+                  speed: 0,
+                },
+              ]
+            : [],
         weatherData: notes ? { notes } : undefined,
       },
       include: {
@@ -97,13 +113,12 @@ const createJourney = async (req, res) => {
         },
       },
     });
-    
+
     res.status(201).json({
       success: true,
-      message: status === 'PLANNED' ? 'Journey saved for later' : 'Journey started successfully',
+      message: normalizedStatus === 'PLANNED' ? 'Journey saved for later' : 'Journey started successfully',
       journey,
     });
-    
   } catch (error) {
     console.error('Create journey error:', error);
     res.status(500).json({
@@ -382,11 +397,12 @@ const getJourneyHistory = async (req, res) => {
               id: true,
               filename: true,
               firebasePath: true,
+              thumbnailPath: true,
               latitude: true,
               longitude: true,
               takenAt: true,
             },
-            orderBy: { takenAt: 'desc' },
+            orderBy: { takenAt: 'asc' },
             take: 10, // Include up to 10 photos for preview
           },
         },
@@ -394,9 +410,18 @@ const getJourneyHistory = async (req, res) => {
       prisma.journey.count({ where: whereClause }),
     ]);
     
+    const formattedJourneys = journeys.map((journey) => {
+      const hydratedPhotos = hydratePhotos(journey.photos);
+      return {
+        ...journey,
+        photos: hydratedPhotos,
+        coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
+      };
+    });
+
     res.json({
       success: true,
-      journeys,
+      journeys: formattedJourneys,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
