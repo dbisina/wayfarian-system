@@ -110,15 +110,18 @@ export default function MapScreen(): React.JSX.Element {
   };
 
   const fetchNearbyPlaces = useCallback(async (filterKey?: string) => {
-    if (!location) return;
+    const targetLat = destination?.latitude ?? location?.coords.latitude;
+    const targetLng = destination?.longitude ?? location?.coords.longitude;
+
+    if (!targetLat || !targetLng) return;
 
     const activeFilter = filterKey ?? selectedFilter;
     try {
       setLoading(true);
       const serverType = filterTypes.find(f => f.key === activeFilter)?.serverType || 'point_of_interest';
       const response = await placesAPI.searchNearby({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: targetLat,
+        longitude: targetLng,
         type: serverType,
         radius: 5000,
       });
@@ -169,13 +172,13 @@ export default function MapScreen(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [location, selectedFilter, filterTypes, getMockPlaces]);
+  }, [location, destination, selectedFilter, filterTypes, getMockPlaces]);
 
   useEffect(() => {
-    if (location && isAuthenticated && selectedFilter) {
+    if ((location || destination) && isAuthenticated && selectedFilter) {
       fetchNearbyPlaces(selectedFilter);
     }
-  }, [location, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
+  }, [location, destination, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
 
 
 

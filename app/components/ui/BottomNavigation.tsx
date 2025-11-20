@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
 
 type Props = {
   activeTab: 'home' | 'map' | 'journey' | 'log';
@@ -25,7 +25,7 @@ const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => {
     setIsMenuExpanded(false);
     if (action === 'join-group') {
       // Navigate to groups via secondary nav
-      router.push('/(tabs)/groups');
+      router.push('/groups');
     }
     // Add more actions here as needed
   };

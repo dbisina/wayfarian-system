@@ -23,10 +23,28 @@ export default function GroupsScreen(): React.JSX.Element {
     try {
       const res = await groupAPI.getUserGroups('active');
       if (res && Array.isArray(res.groups)) {
+        const resolveMemberCount = (group: any) => {
+          const directCount = group?.memberCount ?? group?.membersCount;
+          if (typeof directCount === 'number' && !Number.isNaN(directCount)) {
+            return directCount;
+          }
+
+          const countFromAggregate = group?._count?.members;
+          if (typeof countFromAggregate === 'number' && !Number.isNaN(countFromAggregate)) {
+            return countFromAggregate;
+          }
+
+          if (Array.isArray(group?.members)) {
+            return group.members.length;
+          }
+
+          return 1;
+        };
+
         setGroups(res.groups.map((g: any) => ({ 
           id: g.id, 
           name: g.name, 
-          memberCount: g.memberCount ?? (g.members?.length || 1),
+          memberCount: resolveMemberCount(g),
           coverPhotoURL: g.coverPhotoURL
         })));
       } else {

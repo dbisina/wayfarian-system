@@ -124,14 +124,6 @@ const groupSlice = createSlice({
       state.error = null;
     },
     
-    // Check if cache is stale
-    isCacheStale: (state) => {
-      if (!state.cache.lastFetch) return true;
-      const now = new Date().getTime();
-      const lastFetch = new Date(state.cache.lastFetch).getTime();
-      return (now - lastFetch) > state.cache.ttl;
-    },
-    
     // Clear cache
     clearCache: (state) => {
       state.cache.lastFetch = null;
@@ -150,8 +142,14 @@ export const {
   setLoading,
   setError,
   clearError,
-  isCacheStale,
   clearCache,
 } = groupSlice.actions;
+
+export const isCacheStale = (state: GroupState) => {
+  if (!state.cache.lastFetch) return true;
+  const now = new Date().getTime();
+  const lastFetch = new Date(state.cache.lastFetch).getTime();
+  return (now - lastFetch) > state.cache.ttl;
+};
 
 export default groupSlice.reducer;

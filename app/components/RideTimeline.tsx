@@ -62,29 +62,44 @@ export default function RideTimeline({ events, onClose }: RideTimelineProps) {
         {events.length === 0 && (
           <Text style={styles.emptyText}>No events yet. Start the ride to see updates!</Text>
         )}
-        {events.map((evt) => (
-          <View key={evt.id} style={styles.eventRow}>
-            <Image
-              source={
-                evt.user.photoURL
-                  ? { uri: evt.user.photoURL }
-                  : require('../assets/images/2025-09-26/byc45z4XPi.png')
-              }
-              style={styles.avatar}
-            />
-            <View style={styles.eventContent}>
+        {events.map((evt, index) => (
+          <View key={evt.id} style={styles.timelineItem}>
+            {/* Vertical Line connecting items */}
+            {index !== events.length - 1 && <View style={styles.verticalLine} />}
+            
+            <View style={styles.avatarContainer}>
+              <Image
+                source={
+                  evt.user.photoURL
+                    ? { uri: evt.user.photoURL }
+                    : require('../assets/images/2025-09-26/byc45z4XPi.png')
+                }
+                style={styles.avatar}
+              />
+            </View>
+            
+            <View style={styles.eventCard}>
               <View style={styles.eventHeader}>
                 <Text style={styles.userName}>{evt.user.displayName}</Text>
                 <Text style={styles.timestamp}>{formatRelativeTime(evt.createdAt)}</Text>
               </View>
+              
               <View style={styles.eventBody}>
-                <MaterialIcons name={getEventIcon(evt.type)} size={16} color="#666" style={styles.icon} />
+                {evt.type !== 'PHOTO' && (
+                  <MaterialIcons name={getEventIcon(evt.type)} size={16} color="#666" style={styles.icon} />
+                )}
                 <Text style={styles.message}>
                   {evt.message || `${evt.type.toLowerCase()} event`}
                 </Text>
               </View>
+              
               {evt.mediaUrl && (
-                <Image source={{ uri: evt.mediaUrl }} style={styles.media} resizeMode="cover" />
+                <View style={styles.mediaContainer}>
+                  <Image source={{ uri: evt.mediaUrl }} style={styles.media} resizeMode="cover" />
+                  <View style={styles.captionOverlay}>
+                    <Text style={styles.captionText}>Photo by {evt.user.displayName}</Text>
+                  </View>
+                </View>
               )}
             </View>
           </View>
@@ -104,75 +119,124 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    backgroundColor: '#fff',
+    zIndex: 10,
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '700',
+    color: '#111827',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingVertical: 8,
+    paddingVertical: 16,
   },
   emptyText: {
     textAlign: 'center',
-    color: '#999',
+    color: '#9CA3AF',
     fontSize: 14,
-    marginTop: 24,
+    marginTop: 32,
     paddingHorizontal: 16,
   },
-  eventRow: {
+  timelineItem: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    position: 'relative',
+  },
+  verticalLine: {
+    position: 'absolute',
+    left: 36, // 16 (padding) + 20 (half avatar width)
+    top: 40,
+    bottom: -20, // Extend to next item
+    width: 2,
+    backgroundColor: '#E5E7EB',
+    zIndex: 0,
+  },
+  avatarContainer: {
+    marginRight: 12,
+    zIndex: 1,
+    backgroundColor: '#FFF', // Hide line behind avatar
+    borderRadius: 20,
+    padding: 2, // Small border effect
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  eventContent: {
+  eventCard: {
     flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   eventHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   userName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#111827',
   },
   timestamp: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 11,
+    color: '#6B7280',
   },
   eventBody: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   icon: {
-    marginRight: 6,
+    marginRight: 8,
   },
   message: {
     fontSize: 14,
-    color: '#555',
+    color: '#374151',
     flex: 1,
+    lineHeight: 20,
+  },
+  mediaContainer: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#E5E7EB',
   },
   media: {
     width: '100%',
-    height: 120,
-    borderRadius: 8,
-    marginTop: 8,
+    height: 180,
+  },
+  captionOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  captionText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Poppins',
   },
 });

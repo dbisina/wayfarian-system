@@ -24,42 +24,42 @@ const securityConfig = {
     // Global limits
     global: {
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: process.env.NODE_ENV === 'production' ? 200 : 500
+      max: process.env.NODE_ENV === 'production' ? 20000 : 50000
     },
     
     // Endpoint-specific limits
     endpoints: {
       auth: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 30 : 100
+        max: process.env.NODE_ENV === 'production' ? 3000 : 10000
       },
       maps: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 500 : 1000
+        max: process.env.NODE_ENV === 'production' ? 50000 : 100000
       },
       gallery: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 100 : 200
+        max: process.env.NODE_ENV === 'production' ? 10000 : 20000
       },
       journey: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 3000 : 5000
+        max: process.env.NODE_ENV === 'production' ? 300000 : 500000
       },
       groupJourney: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 1500 : 3000
+        max: process.env.NODE_ENV === 'production' ? 150000 : 300000
       },
       group: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 500 : 1000
+        max: process.env.NODE_ENV === 'production' ? 50000 : 100000
       },
       user: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 200 : 500
+        max: process.env.NODE_ENV === 'production' ? 20000 : 50000
       },
       leaderboard: {
         windowMs: 15 * 60 * 1000,
-        max: process.env.NODE_ENV === 'production' ? 150 : 300
+        max: process.env.NODE_ENV === 'production' ? 15000 : 30000
       }
     }
   },

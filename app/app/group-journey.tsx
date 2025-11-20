@@ -1,7 +1,7 @@
 // app/app/group-journey.tsx
-// Group Journey Screen - Real-time journey with all member locations
+// Dedicated group journey screen with resilient socket syncing
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,20 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import type { Region } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+
 import { useAuth } from '../contexts/AuthContext';
 import { useGroupJourney } from '../hooks/useGroupJourney';
+import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import { getSocket } from '../services/socket';
-import { apiRequest } from '../services/api';
+import { apiRequest, galleryAPI } from '../services/api';
 import { getGoogleMapsApiKey } from '../services/directions';
+import JourneyCamera from '../components/JourneyCamera';
 
 interface GroupJourneyData {
   id: string;
@@ -34,212 +39,452 @@ interface GroupJourneyData {
   endLatitude?: number;
   endLongitude?: number;
   instances: any[];
-  members: any[];
 }
 
 export default function GroupJourneyScreen() {
+  const params = useLocalSearchParams<{ groupJourneyId?: string }>();
+  const groupJourneyId =
+    typeof params.groupJourneyId === "string"
+      ? params.groupJourneyId
+      : undefined;
   const router = useRouter();
-  const params = useLocalSearchParams();
   const { user } = useAuth();
   const socket = getSocket();
-  
-  const groupJourneyId = params.groupJourneyId as string;
-  const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
+  const googleKey = getGoogleMapsApiKey();
 
   const [journeyData, setJourneyData] = useState<GroupJourneyData | null>(null);
+  const [manualRouteCoords, setManualRouteCoords] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
   const [loading, setLoading] = useState(true);
-  const [myInstanceId, setMyInstanceId] = useState<string | null>(null);
-  
+  const [initialRegionSet, setInitialRegionSet] = useState(false);
+
   const mapRef = useRef<MapView>(null);
+  const hasCenteredOnUser = useRef(false);
 
   const {
-    isJoined,
     memberLocations,
     myInstance,
     isTracking,
     startLocationTracking,
     stopLocationTracking,
     setMyInstance,
-    setGroupJourney,
-  } = useGroupJourney({
-    socket,
-    groupJourneyId,
-    autoStart: true,
-  });
+  } = useGroupJourney({ socket, groupJourneyId, autoStart: true });
 
-  /**
-   * Fetch journey details
-   */
-  const fetchJourneyDetails = useCallback(async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      const response = await apiRequest(`/group-journey/${groupJourneyId}`, {
-        method: 'GET',
-      });
+  useRealtimeEvents({ groupJourneyId });
 
-      if (response.success) {
-        setJourneyData(response.groupJourney);
-        setGroupJourney(response.groupJourney);
+  const [showCamera, setShowCamera] = useState(false);
 
-        // Find my instance
-        const mine = response.groupJourney.instances.find(
-          (inst: any) => inst.userId === user?.id
-        );
-        if (mine) {
-          setMyInstanceId(mine.id);
-          setMyInstance(mine);
+  const handlePhotoTaken = useCallback(
+    async (photoData: { uri: string; latitude: number; longitude: number }) => {
+      if (!groupJourneyId) return;
+      try {
+        const formData = new FormData();
+        
+        // Correct file field name and structure
+        formData.append('photo', {
+          uri: photoData.uri,
+          type: 'image/jpeg',
+          name: `journey_photo_${Date.now()}.jpg`,
+        } as any);
+        
+        formData.append('latitude', String(photoData.latitude));
+        formData.append('longitude', String(photoData.longitude));
+        formData.append('journeyId', groupJourneyId);
+        
+        // Use the dedicated gallery API function
+        const uploadResponse = await galleryAPI.uploadPhoto(formData);
+
+        if (!uploadResponse?.success) {
+          throw new Error('Upload failed');
         }
+
+        const mediaUrl =
+          uploadResponse?.photo?.imageUrl ||
+          uploadResponse?.photo?.firebasePath ||
+          photoData.uri;
+
+        // Create ride event for the photo
+        await apiRequest(`/group-journey/${groupJourneyId}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'PHOTO',
+            message: 'Shared a photo',
+            latitude: photoData.latitude,
+            longitude: photoData.longitude,
+            mediaUrl,
+          }),
+        });
+
+        Alert.alert('Success', 'Photo shared with group!');
+      } catch (error) {
+        console.warn('Failed to upload group photo', error);
+        Alert.alert('Error', 'Failed to upload photo');
+      } finally {
+        setShowCamera(false);
       }
-    } catch (error) {
-      if (!silent) {
-        console.error('Failed to fetch journey:', error);
-        Alert.alert('Error', 'Failed to load group journey');
-      }
-    } finally {
-      if (!silent) setLoading(false);
+    },
+    [groupJourneyId]
+  );
+
+  const initialMapRegion = useMemo<Region | null>(() => {
+    if (!journeyData) return null;
+    return {
+      latitude: journeyData.startLatitude,
+      longitude: journeyData.startLongitude,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    };
+  }, [journeyData]);
+
+  const [region, setRegion] = useState<Region | null>(initialMapRegion);
+
+  useEffect(() => {
+    if (initialMapRegion) {
+      setRegion(initialMapRegion);
     }
-  }, [groupJourneyId, user, setGroupJourney, setMyInstance]);
+  }, [initialMapRegion]);
 
-  /**
-   * Complete my journey
-   */
-  const handleCompleteJourney = useCallback(async () => {
-    if (!myInstanceId) return;
 
-    Alert.alert(
-      'Complete Journey',
-      'Are you sure you want to complete your journey?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+  const animateRegion = useCallback(
+    (
+      coords?: { latitude?: number; longitude?: number },
+      delta: number = 0.04
+    ) => {
+      if (!coords?.latitude || !coords?.longitude) return;
+      const nextRegion = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        latitudeDelta: delta,
+        longitudeDelta: delta,
+      };
+      setRegion(nextRegion);
+      mapRef.current?.animateToRegion(nextRegion, 800);
+    },
+    []
+  );
+
+  const fetchJourney = useCallback(async () => {
+    if (!groupJourneyId) return;
+    try {
+      setLoading(true);
+      const response = await apiRequest(`/group-journey/${groupJourneyId}`, {
+        method: "GET",
+      });
+      if (!response?.groupJourney) {
+        throw new Error("Journey not found");
+      }
+      setJourneyData(response.groupJourney);
+      const mine = response.groupJourney.instances?.find(
+        (inst: any) => inst.userId === user?.id
+      );
+      if (mine) {
+        setMyInstance(mine);
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to load group journey");
+    } finally {
+      setLoading(false);
+    }
+  }, [groupJourneyId, setMyInstance, user?.id]);
+
+  useEffect(() => {
+    fetchJourney();
+  }, [fetchJourney]);
+
+  const destination = useMemo(() => {
+    if (journeyData?.endLatitude && journeyData?.endLongitude) {
+      return {
+        latitude: journeyData.endLatitude,
+        longitude: journeyData.endLongitude,
+      };
+    }
+    return undefined;
+  }, [journeyData?.endLatitude, journeyData?.endLongitude]);
+
+  const myLocation = useMemo(
+    () =>
+      memberLocations.find(
+        (m) =>
+          m.userId === user?.id &&
+          typeof m.latitude === "number" &&
+          typeof m.longitude === "number"
+      ),
+    [memberLocations, user?.id]
+  );
+
+  const directionOrigin = useMemo(() => {
+    if (myLocation?.latitude && myLocation?.longitude) {
+      return { latitude: myLocation.latitude, longitude: myLocation.longitude };
+    }
+    if (journeyData?.startLatitude && journeyData?.startLongitude) {
+      return {
+        latitude: journeyData.startLatitude,
+        longitude: journeyData.startLongitude,
+      };
+    }
+    return undefined;
+  }, [
+    journeyData?.startLatitude,
+    journeyData?.startLongitude,
+    myLocation?.latitude,
+    myLocation?.longitude,
+  ]);
+
+  useEffect(() => {
+    if (!destination || !directionOrigin) return;
+
+    const coordinates = [directionOrigin, destination];
+    const latitudes = coordinates.map((coord) => coord.latitude);
+    const longitudes = coordinates.map((coord) => coord.longitude);
+
+    const minLat = Math.min(...latitudes);
+    const maxLat = Math.max(...latitudes);
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+
+    const latitudeDelta = (maxLat - minLat) * 1.5;
+    const longitudeDelta = (maxLng - minLng) * 1.5;
+
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+
+    const routeRegion = {
+      latitude: centerLat,
+      longitude: centerLng,
+      latitudeDelta: Math.max(latitudeDelta, 0.02),
+      longitudeDelta: Math.max(longitudeDelta, 0.02),
+    };
+
+    setRegion(routeRegion);
+    mapRef.current?.animateToRegion(routeRegion, 1000);
+  }, [destination, directionOrigin]);
+
+  // Replace the manual route calculation useEffect
+  useEffect(() => {
+    if (!destination || !directionOrigin) {
+      setManualRouteCoords([]);
+      return;
+    }
+
+    // Always use manual route for consistent display
+    const calculateManualRoute = () => {
+      // Create a smooth route with intermediate points
+      const start = directionOrigin;
+      const end = destination;
+
+      // Calculate intermediate points for a curved route
+      const midLat = (start.latitude + end.latitude) / 2;
+      const midLng = (start.longitude + end.longitude) / 2;
+
+      // Add slight curve to make it look more natural
+      const curveFactor = 0.1;
+      const curveLat =
+        midLat + curveFactor * Math.abs(end.latitude - start.latitude);
+      const curveLng =
+        midLng + curveFactor * Math.abs(end.longitude - start.longitude);
+
+      const route = [start, { latitude: curveLat, longitude: curveLng }, end];
+
+      setManualRouteCoords(route);
+
+      // Fit map to show the entire route
+      mapRef.current?.fitToCoordinates([start, end], {
+        edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
+        animated: true,
+      });
+    };
+
+    calculateManualRoute();
+  }, [destination, directionOrigin]);
+
+  useEffect(() => {
+    if (initialRegionSet) return;
+
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setInitialRegionSet(true);
+        return;
+      }
+
+      // Only center on user if we don't have a route yet
+      if (!destination || !directionOrigin) {
+        const current = await Location.getCurrentPositionAsync({});
+        animateRegion(
+          {
+            latitude: current.coords.latitude,
+            longitude: current.coords.longitude,
+          },
+          0.03
+        );
+        hasCenteredOnUser.current = true;
+      }
+      setInitialRegionSet(true);
+    })();
+  }, [animateRegion, initialRegionSet, destination, directionOrigin]);
+
+  useEffect(() => {
+    if (journeyData?.startLatitude && journeyData?.startLongitude) {
+      animateRegion(
         {
-          text: 'Complete',
-          style: 'default',
+          latitude: journeyData.startLatitude,
+          longitude: journeyData.startLongitude,
+        },
+        0.05
+      );
+    }
+  }, [journeyData?.startLatitude, journeyData?.startLongitude, animateRegion]);
+
+  useEffect(() => {
+    if (
+      myLocation?.latitude &&
+      myLocation?.longitude &&
+      !hasCenteredOnUser.current
+    ) {
+      animateRegion(
+        { latitude: myLocation.latitude, longitude: myLocation.longitude },
+        0.03
+      );
+      hasCenteredOnUser.current = true;
+    }
+  }, [myLocation?.latitude, myLocation?.longitude, animateRegion]);
+
+  useEffect(() => {
+    if (!myLocation) {
+      hasCenteredOnUser.current = false;
+    }
+  }, [myLocation, journeyData?.id]);
+
+  useEffect(() => {
+    if (myInstance?.status === "ACTIVE" && !isTracking && myInstance.id) {
+      startLocationTracking(myInstance.id);
+    }
+  }, [isTracking, myInstance, startLocationTracking]);
+
+  const fitMapToMembers = useCallback(() => {
+    if (!mapRef.current) return;
+    const coords = memberLocations
+      .filter(
+        (m) => typeof m.latitude === "number" && typeof m.longitude === "number"
+      )
+      .map((m) => ({
+        latitude: m.latitude as number,
+        longitude: m.longitude as number,
+      }));
+    if (!coords.length) return;
+    mapRef.current.fitToCoordinates(coords, {
+      edgePadding: { top: 120, right: 60, bottom: 260, left: 60 },
+      animated: true,
+    });
+  }, [memberLocations]);
+
+  useEffect(() => {
+    if (memberLocations.length) {
+      fitMapToMembers();
+    }
+  }, [memberLocations.length, fitMapToMembers]);
+
+  const handleStartInstance = async () => {
+    if (!groupJourneyId) return;
+    try {
+      const { coords } = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation,
+      });
+      const response = await apiRequest(
+        `/group-journey/${groupJourneyId}/start-my-instance`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            startLatitude: coords.latitude,
+            startLongitude: coords.longitude,
+          }),
+        }
+      );
+      if (!response?.instance) throw new Error("Unable to start instance");
+      setMyInstance(response.instance);
+      startLocationTracking(response.instance.id);
+    } catch (error: any) {
+      Alert.alert(
+        "Unable to start",
+        error?.message || "Try again in a moment."
+      );
+    }
+  };
+
+  const handleTogglePause = async () => {
+    if (!myInstance) return;
+    const endpoint = myInstance.status === "PAUSED" ? "resume" : "pause";
+    try {
+      await apiRequest(`/group-journey/instance/${myInstance.id}/${endpoint}`, {
+        method: "POST",
+      });
+      if (endpoint === "resume") {
+        startLocationTracking(myInstance.id);
+        setMyInstance((prev) => (prev ? { ...prev, status: "ACTIVE" } : prev));
+      } else {
+        stopLocationTracking();
+        setMyInstance((prev) => (prev ? { ...prev, status: "PAUSED" } : prev));
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || `Unable to ${endpoint} instance.`);
+    }
+  };
+
+  const handleComplete = () => {
+    if (!myInstance) return;
+    Alert.alert(
+      "Complete Ride",
+      "Stop sharing your location and mark this group journey complete?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Complete",
+          style: "destructive",
           onPress: async () => {
             try {
               stopLocationTracking();
-              
-              const response = await apiRequest(
-                `/group-journey/instance/${myInstanceId}/complete`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    endLatitude: myInstance?.currentLatitude,
-                    endLongitude: myInstance?.currentLongitude,
-                  }),
-                }
+              await apiRequest(
+                `/group-journey/instance/${myInstance.id}/complete`,
+                { method: "POST" }
               );
-
-              if (response.success) {
-                Alert.alert(
-                  'Journey Complete!',
-                  `Distance: ${(response.instance.totalDistance / 1000).toFixed(2)} km\nTime: ${Math.floor(response.instance.totalTime / 60)} min`,
-                  [
-                    {
-                      text: 'View Results',
-                      onPress: () => router.back(),
-                    },
-                  ]
-                );
-              }
-            } catch (error) {
-              console.error('Complete journey error:', error);
-              Alert.alert('Error', 'Failed to complete journey');
+              setMyInstance((prev) =>
+                prev ? { ...prev, status: "COMPLETED" } : prev
+              );
+              Alert.alert("Journey complete", "Great ride!");
+              router.back();
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error?.message || "Unable to complete journey."
+              );
             }
           },
         },
       ]
     );
-  }, [myInstanceId, myInstance, stopLocationTracking, router]);
+  };
 
-  /**
-   * Pause/Resume journey
-   */
-  const togglePause = useCallback(async () => {
-    if (!myInstanceId) return;
-
-    const isPaused = myInstance?.status === 'PAUSED';
-    const endpoint = isPaused ? 'resume' : 'pause';
-
-    try {
-      if (isPaused) {
-        await apiRequest(`/group-journey/instance/${myInstanceId}/${endpoint}`, {
-          method: 'POST',
-        });
-        startLocationTracking(myInstanceId);
-      } else {
-        stopLocationTracking();
-        await apiRequest(`/group-journey/instance/${myInstanceId}/${endpoint}`, {
-          method: 'POST',
-        });
-      }
-    } catch (error) {
-      console.error('Toggle pause error:', error);
-      Alert.alert('Error', `Failed to ${endpoint} journey`);
-    }
-  }, [myInstanceId, myInstance, startLocationTracking, stopLocationTracking]);
-
-  /**
-   * Fit map to show all members
-   */
-  const fitMapToMembers = useCallback(() => {
-    if (!mapRef.current || memberLocations.length === 0) return;
-
-    const coordinates = memberLocations
-      .filter(m => m.latitude && m.longitude)
-      .map(m => ({
-        latitude: m.latitude,
-        longitude: m.longitude,
-      }));
-
-    if (coordinates.length > 0) {
-      mapRef.current.fitToCoordinates(coordinates, {
-        edgePadding: { top: 100, right: 50, bottom: 100, left: 50 },
-        animated: true,
-      });
-    }
-  }, [memberLocations]);
-
-  /**
-   * Initialize
-   */
-  useEffect(() => {
-    fetchJourneyDetails();
-  }, [fetchJourneyDetails]);
-
-  /**
-   * Auto-refresh journey data every 5 seconds (silent background updates)
-   */
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchJourneyDetails(true); // Silent refresh - no loading spinner
-    }, 30000); // Throttle to every 30 seconds to reduce API pressure
-    
-    return () => clearInterval(interval);
-  }, [fetchJourneyDetails]);
-
-  /**
-   * Start tracking when joined
-   */
-  useEffect(() => {
-    if (isJoined && myInstanceId && myInstance?.status === 'ACTIVE' && !isTracking) {
-      startLocationTracking(myInstanceId);
-    }
-  }, [isJoined, myInstanceId, myInstance, isTracking, startLocationTracking]);
-
-  /**
-   * Fit map when members update
-   */
-  useEffect(() => {
-    if (memberLocations.length > 0) {
-      fitMapToMembers();
-    }
-  }, [memberLocations.length, fitMapToMembers]);
+  if (!groupJourneyId) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Missing group journey ID.</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Loading journey...</Text>
+        <Text style={styles.loadingText}>Loading journey…</Text>
       </View>
     );
   }
@@ -247,73 +492,56 @@ export default function GroupJourneyScreen() {
   if (!journeyData) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={64} color="#ef4444" />
-        <Text style={styles.errorText}>Journey not found</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+        <Ionicons name="alert-circle" size={48} color="#ef4444" />
+        <Text style={styles.errorText}>Journey not found.</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const myLocation = memberLocations.find(m => m.userId === user?.id);
-  const completedCount = memberLocations.filter(m => m.status === 'COMPLETED').length;
-  const totalMembers = memberLocations.length;
+  const completedCount = memberLocations.filter(
+    (m) => m.status === "COMPLETED"
+  ).length;
+  const totalMembers =
+    memberLocations.length || journeyData.instances?.length || 0;
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: journeyData.title,
-          headerShown: true,
-        }}
-      />
-
-      {/* Map showing all members */}
+      <Stack.Screen options={{ title: journeyData.title, headerShown: true }} />
       <MapView
         ref={mapRef}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         style={styles.map}
-        initialRegion={{
-          latitude: journeyData.startLatitude,
-          longitude: journeyData.startLongitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
+        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+        region={(region ?? initialMapRegion ?? undefined) as Region | undefined}
+        initialRegion={(initialMapRegion ?? undefined) as Region | undefined}
+        onRegionChangeComplete={(nextRegion) => setRegion(nextRegion)}
+        showsUserLocation
         showsCompass
-        showsScale
       >
-        {/* Directions from start to destination */}
-        {Platform.OS === 'android' && journeyData.endLatitude && journeyData.endLongitude && GOOGLE_MAPS_API_KEY && (
+        {Platform.OS === "android" &&
+        destination &&
+        directionOrigin &&
+        googleKey ? (
           <MapViewDirections
-            origin={{
-              latitude: journeyData.startLatitude,
-              longitude: journeyData.startLongitude,
-            }}
-            destination={{
-              latitude: journeyData.endLatitude,
-              longitude: journeyData.endLongitude,
-            }}
-            apikey={GOOGLE_MAPS_API_KEY}
-            mode="DRIVING"
-            strokeWidth={5}
+            origin={directionOrigin}
+            destination={destination}
+            apikey={googleKey}
+            strokeWidth={4}
             strokeColor="#6366f1"
-            optimizeWaypoints
-            onReady={(result) => {
-              try {
-                mapRef.current?.fitToCoordinates(result.coordinates, {
-                  edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
-                  animated: true,
-                });
-              } catch {}
-            }}
-            onError={(err) => console.warn('Directions error:', err)}
           />
-        )}
+        ) : destination && manualRouteCoords.length > 1 ? (
+          <Polyline
+            coordinates={manualRouteCoords}
+            strokeWidth={4}
+            strokeColor="#6366f1"
+          />
+        ) : null}
 
-        {/* Start marker */}
         <Marker
           coordinate={{
             latitude: journeyData.startLatitude,
@@ -323,7 +551,6 @@ export default function GroupJourneyScreen() {
           pinColor="green"
         />
 
-        {/* End marker */}
         {journeyData.endLatitude && journeyData.endLongitude && (
           <Marker
             coordinate={{
@@ -335,10 +562,12 @@ export default function GroupJourneyScreen() {
           />
         )}
 
-        {/* Member markers with profile pictures */}
         {memberLocations.map((member) => {
-          if (!member.latitude || !member.longitude) return null;
-
+          if (
+            typeof member.latitude !== "number" ||
+            typeof member.longitude !== "number"
+          )
+            return null;
           return (
             <Marker
               key={member.userId}
@@ -347,22 +576,26 @@ export default function GroupJourneyScreen() {
                 longitude: member.longitude,
               }}
               title={member.displayName}
-              description={`${(member.totalDistance / 1000).toFixed(2)} km • ${member.status}`}
+              description={`${((member.totalDistance || 0) / 1000).toFixed(
+                1
+              )} km • ${member.status}`}
             >
               <View style={styles.memberMarker}>
-                {member.photoURL ? (
-                  <Image source={{ uri: member.photoURL }} style={styles.memberImage} />
-                ) : (
-                  <View style={styles.memberPlaceholder}>
-                    <Text style={styles.memberInitial}>
-                      {member.displayName?.[0]?.toUpperCase() || '?'}
-                    </Text>
-                  </View>
-                )}
-                {member.status === 'COMPLETED' && (
-                  <View style={styles.completedBadge}>
-                    <Ionicons name="checkmark" size={12} color="white" />
-                  </View>
+                <Image
+                  source={
+                    member.photoURL
+                      ? { uri: member.photoURL }
+                      : require("../assets/images/2025-09-26/byc45z4XPi.png")
+                  }
+                  style={styles.memberImage}
+                />
+                {member.status === "COMPLETED" && (
+                  <MaterialIcons
+                    name="check-circle"
+                    size={18}
+                    color="#10b981"
+                    style={styles.statusBadge}
+                  />
                 )}
               </View>
             </Marker>
@@ -370,7 +603,6 @@ export default function GroupJourneyScreen() {
         })}
       </MapView>
 
-      {/* Top info panel */}
       <View style={styles.topPanel}>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
@@ -380,41 +612,42 @@ export default function GroupJourneyScreen() {
             </Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Your Distance</Text>
+            <Text style={styles.statLabel}>Your distance</Text>
             <Text style={styles.statValue}>
-              {myLocation ? (myLocation.totalDistance / 1000).toFixed(2) : '0.00'} km
+              {myLocation
+                ? ((myLocation.totalDistance || 0) / 1000).toFixed(1)
+                : "0.0"}{" "}
+              km
             </Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Status</Text>
-            <Text style={[styles.statValue, styles.statusText]}>
-              {myInstance?.status || 'UNKNOWN'}
+            <Text style={[styles.statValue, styles.statusValue]}>
+              {myInstance?.status || "NOT STARTED"}
             </Text>
           </View>
         </View>
       </View>
 
-      {/* Member list */}
       <View style={styles.memberPanel}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {memberLocations.map((member) => (
             <View key={member.userId} style={styles.memberCard}>
-              {member.photoURL ? (
-                <Image source={{ uri: member.photoURL }} style={styles.memberAvatar} />
-              ) : (
-                <View style={[styles.memberAvatar, styles.avatarPlaceholder]}>
-                  <Text style={styles.avatarText}>
-                    {member.displayName?.[0]?.toUpperCase()}
-                  </Text>
-                </View>
-              )}
+              <Image
+                source={
+                  member.photoURL
+                    ? { uri: member.photoURL }
+                    : require("../assets/images/2025-09-26/byc45z4XPi.png")
+                }
+                style={styles.memberAvatar}
+              />
               <Text style={styles.memberName} numberOfLines={1}>
                 {member.displayName}
               </Text>
               <Text style={styles.memberDistance}>
-                {(member.totalDistance / 1000).toFixed(1)} km
+                {((member.totalDistance || 0) / 1000).toFixed(1)} km
               </Text>
-              {member.status === 'COMPLETED' && (
+              {member.status === "COMPLETED" && (
                 <Ionicons name="checkmark-circle" size={16} color="#10b981" />
               )}
             </View>
@@ -422,49 +655,55 @@ export default function GroupJourneyScreen() {
         </ScrollView>
       </View>
 
-      {/* Control buttons */}
-      <View style={styles.controls}>
-        {myInstance?.status !== 'COMPLETED' && (
-          <>
-            <TouchableOpacity
-              style={[styles.controlButton, styles.pauseButton]}
-              onPress={togglePause}
-            >
-              <Ionicons
-                name={myInstance?.status === 'PAUSED' ? 'play' : 'pause'}
-                size={24}
-                color="white"
-              />
-              <Text style={styles.controlButtonText}>
-                {myInstance?.status === 'PAUSED' ? 'Resume' : 'Pause'}
-              </Text>
-            </TouchableOpacity>
+      {!myInstance && (
+        <TouchableOpacity
+          style={styles.startButton}
+          onPress={handleStartInstance}
+        >
+          <Text style={styles.startButtonText}>Start your ride</Text>
+        </TouchableOpacity>
+      )}
 
-            <TouchableOpacity
-              style={[styles.controlButton, styles.completeButton]}
-              onPress={handleCompleteJourney}
-            >
-              <Ionicons name="checkmark" size={24} color="white" />
-              <Text style={styles.controlButtonText}>Complete</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {myInstance?.status === 'COMPLETED' && (
+      {myInstance && myInstance.status !== "COMPLETED" && (
+        <View style={styles.controls}>
           <TouchableOpacity
-            style={[styles.controlButton, styles.backButton]}
-            onPress={() => router.back()}
+            style={[styles.controlButton, styles.cameraButton]}
+            onPress={() => setShowCamera(true)}
           >
-            <Text style={styles.controlButtonText}>Back to Group</Text>
+            <Ionicons name="camera" size={22} color="#fff" />
+            <Text style={styles.controlButtonText}>Camera</Text>
           </TouchableOpacity>
-        )}
-      </View>
+          <TouchableOpacity
+            style={[styles.controlButton, styles.pauseButton]}
+            onPress={handleTogglePause}
+          >
+            <Ionicons
+              name={myInstance.status === "PAUSED" ? "play" : "pause"}
+              size={22}
+              color="#fff"
+            />
+            <Text style={styles.controlButtonText}>
+              {myInstance.status === "PAUSED" ? "Resume" : "Pause"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.controlButton, styles.completeButton]}
+            onPress={handleComplete}
+          >
+            <Ionicons name="checkmark" size={22} color="#fff" />
+            <Text style={styles.controlButtonText}>Complete</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-      {/* Tracking indicator */}
-      {isTracking && (
-        <View style={styles.trackingIndicator}>
-          <View style={styles.trackingDot} />
-          <Text style={styles.trackingText}>Tracking Location</Text>
+      {showCamera && groupJourneyId && (
+        <View style={styles.cameraOverlay}>
+          <JourneyCamera
+            journeyId={groupJourneyId}
+            journeyType="group"
+            onPhotoTaken={handlePhotoTaken}
+            onClose={() => setShowCamera(false)}
+          />
         </View>
       )}
     </View>
@@ -476,6 +715,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  map: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -483,7 +725,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 12,
     fontSize: 16,
     color: '#6b7280',
   },
@@ -491,26 +733,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
+    padding: 24,
   },
   errorText: {
-    marginTop: 16,
+    marginVertical: 12,
     fontSize: 18,
-    color: '#374151',
     fontWeight: '600',
+    color: '#111827',
+    textAlign: 'center',
   },
-  map: {
-    flex: 1,
+  backButton: {
+    marginTop: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#6366f1',
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
   topPanel: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: Platform.OS === 'android' ? '#fff' : 'rgba(255,255,255,0.95)',
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
     shadowColor: '#000',
@@ -536,17 +786,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
-  statusText: {
+  statusValue: {
     color: '#6366f1',
   },
   memberPanel: {
     position: 'absolute',
-    bottom: 160,
+    bottom: 170,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingVertical: 12,
     paddingHorizontal: 8,
+    backgroundColor: Platform.OS === 'android' ? '#fff' : 'rgba(255,255,255,0.95)',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     shadowColor: '#000',
@@ -568,66 +818,45 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#6366f1',
   },
-  avatarPlaceholder: {
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: '700',
-  },
   memberName: {
     fontSize: 12,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 2,
   },
   memberDistance: {
     fontSize: 11,
     color: '#6b7280',
   },
   memberMarker: {
-    width: 50,
-    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
   memberImage: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 3,
-    borderColor: '#6366f1',
+    borderColor: '#fff',
   },
-  memberPlaceholder: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
-  },
-  memberInitial: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  completedBadge: {
+  statusBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#10b981',
-    justifyContent: 'center',
+    right: -4,
+    bottom: -4,
+  },
+  startButton: {
+    position: 'absolute',
+    bottom: 90,
+    left: 20,
+    right: 20,
+    paddingVertical: 16,
+    borderRadius: 14,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
+    backgroundColor: '#2563eb',
+  },
+  startButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   controls: {
     position: 'absolute',
@@ -646,46 +875,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
+  cameraButton: {
+    backgroundColor: '#8b5cf6',
+  },
   pauseButton: {
     backgroundColor: '#f59e0b',
   },
   completeButton: {
-    backgroundColor: '#10b981',
-  },
-  backButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#16a34a',
   },
   controlButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  backButtonText: {
-    color: 'white',
-    fontSize: 16,
+    color: '#fff',
     fontWeight: '600',
   },
-  trackingIndicator: {
+  cameraOverlay: {
     position: 'absolute',
-    top: 120,
-    left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  trackingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'white',
-    marginRight: 8,
-  },
-  trackingText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#000',
+    zIndex: 10,
   },
 });

@@ -11,18 +11,37 @@ import journeyReducer from './slices/journeySlice';
 import groupReducer from './slices/groupSlice';
 import uiReducer from './slices/uiSlice';
 
+const journeyPersistConfig = {
+  key: 'journey',
+  storage: AsyncStorage,
+  whitelist: [
+    'groupJourney',
+    'currentJourney',
+    'myInstance',
+    'memberInstances',
+    'memberLocations',
+    'groupMembers',
+    'stats',
+    'hydrated',
+    'isTracking',
+    'isMinimized',
+    'routePoints',
+    'uploadQueue',
+  ],
+};
+
 // Persist configuration
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,
-  whitelist: ['auth', 'ui'], // Only persist auth and UI state
-  blacklist: ['journey', 'group'], // Don't persist real-time data
+  whitelist: ['auth', 'ui'],
+  blacklist: ['group'],
 };
 
 // Root reducer
 const rootReducer = combineReducers({
   auth: authReducer,
-  journey: journeyReducer,
+  journey: persistReducer(journeyPersistConfig, journeyReducer),
   group: groupReducer,
   ui: uiReducer,
 });

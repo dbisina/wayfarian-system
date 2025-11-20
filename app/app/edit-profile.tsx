@@ -63,8 +63,8 @@ export default function EditProfileScreen() {
         Alert.alert('Success', 'Profile updated successfully!', [
           {
             text: 'OK',
-            onPress: () => {
-              refreshUser?.();
+            onPress: async () => {
+              await refreshUser?.(response.user);
               router.back();
             },
           },
@@ -137,7 +137,7 @@ export default function EditProfileScreen() {
 
         if (response.success) {
           Alert.alert('Success', 'Profile photo updated successfully!');
-          await refreshUser?.();
+          await refreshUser?.(response.user);
         } else {
           throw new Error(response.message || response.error || 'Upload failed');
         }

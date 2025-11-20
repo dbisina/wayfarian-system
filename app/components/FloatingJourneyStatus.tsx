@@ -7,13 +7,19 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useJourney } from '../contexts/JourneyContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { router } from 'expo-router';
+import { useJourneyState, useJourneyStats } from '../hooks/useJourneyState';
 
 export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?: boolean }) {
-  const { isTracking, isMinimized, stats, maximizeJourney, currentJourney, hydrated } = useJourney();
+  const { maximizeJourney } = useJourney();
+  const { isTracking, isMinimized, currentJourney, hydrated } = useJourneyState();
+  const stats = useJourneyStats();
+  const { convertDistance, convertSpeed } = useSettings();
 
   // Home-only mode: show whenever there's a current journey (active or paused), after hydration.
   // Global/default mode: preserve minimized-only behavior to avoid appearing on other screens.
@@ -58,13 +64,13 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
         {/* Speed */}
         <View style={styles.statItem}>
           <MaterialIcons name="speed" size={14} color="#FFFFFF" />
-          <Text style={styles.statText}>{stats.currentSpeed.toFixed(0)} km/h</Text>
+          <Text style={styles.statText}>{convertSpeed(stats.currentSpeed)}</Text>
         </View>
 
         {/* Distance */}
         <View style={styles.statItem}>
           <MaterialIcons name="straighten" size={14} color="#FFFFFF" />
-          <Text style={styles.statText}>{stats.totalDistance.toFixed(1)} km</Text>
+          <Text style={styles.statText}>{convertDistance(stats.totalDistance)}</Text>
         </View>
 
         {/* If paused, show an indicator */}
@@ -86,7 +92,7 @@ const styles = StyleSheet.create({
     top: 60,
     right: 16,
     zIndex: 1000,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: Platform.OS === 'android' ? '#000000' : 'rgba(0, 0, 0, 0.8)',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,

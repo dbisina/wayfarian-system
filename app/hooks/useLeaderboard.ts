@@ -1,7 +1,7 @@
 // app/hooks/useLeaderboard.ts
 // Custom hook for fetching leaderboard data from backend
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { leaderboardAPI } from '../services/api';
 
@@ -32,7 +32,7 @@ export const useLeaderboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchFriendsLeaderboard = async (sortBy: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' = 'totalDistance') => {
+  const fetchFriendsLeaderboard = useCallback(async (sortBy: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' = 'totalDistance') => {
     if (!isAuthenticated) return;
 
     try {
@@ -53,7 +53,7 @@ export const useLeaderboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
   const fetchGlobalLeaderboard = async (
     sortBy: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' = 'totalDistance',
@@ -112,7 +112,7 @@ export const useLeaderboard = () => {
       setGlobalData(null);
       setError(null);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchFriendsLeaderboard]);
 
   return {
     friendsData,

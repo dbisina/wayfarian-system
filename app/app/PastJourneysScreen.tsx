@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,15 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  Modal,
+  TextInput,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { userAPI } from '../services/api';
+import { userAPI, journeyAPI } from '../services/api';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface Journey {
   id: string;
@@ -20,6 +26,9 @@ interface Journey {
   totalDistance: number;
   totalTime: number;
   vehicle?: string;
+  customTitle?: string | null;
+  isHidden?: boolean;
+  hiddenAt?: string | null;
   photos?: {
     id: string;
     firebasePath: string;
@@ -37,10 +46,18 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionsJourney, setActionsJourney] = useState<Journey | null>(null);
+  const [renameJourney, setRenameJourney] = useState<Journey | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const { convertDistance } = useSettings();
 
-  const formatDistance = (meters: number) => {
-    if (meters < 1000) return `${Math.round(meters)}m`;
-    return `${(meters / 1000).toFixed(2)}km`;
+  const normalizeDistance = (value: number) => {
+    if (!value) return 0;
+    return value > 500 ? value / 1000 : value;
+  };
+
+  const formatDistance = (distance: number) => {
+    return convertDistance(normalizeDistance(distance || 0));
   };
 
   const formatTime = (seconds: number) => {
@@ -66,7 +83,8 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
         status: 'COMPLETED',
         sortBy: 'startTime',
         sortOrder: 'desc',
-        limit: 50 
+        limit: 50,
+        includeHidden: true,
       });
       setJourneys(response.journeys || []);
     } catch (err: any) {
@@ -93,6 +111,119 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       pathname: '/journey-detail',
       params: { journeyId: journey.id }
     });
+  };
+
+  const visibleJourneys = useMemo(() => {
+    return journeys
+      .filter((journey) => !journey.isHidden)
+      .map((journey) => ({
+        ...journey,
+        title: journey.customTitle || journey.title,
+      }));
+  }, [journeys]);
+
+  const updateJourneyState = (journeyId: string, updates: Partial<Journey>) => {
+    setJourneys((prev) => prev.map((journey) => (journey.id === journeyId ? { ...journey, ...updates } : journey)));
+  };
+
+  const handleHideJourney = async (journeyId: string) => {
+    try {
+      await journeyAPI.updateJourneyPreferences(journeyId, { isHidden: true });
+      updateJourneyState(journeyId, { isHidden: true, hiddenAt: new Date().toISOString() });
+      Alert.alert('Removed', 'This journey was hidden from your list.');
+    } catch (hideError: any) {
+      console.error('Hide journey error:', hideError);
+      Alert.alert('Failed to hide', hideError?.message || 'Could not update this journey.');
+    }
+  };
+
+  const confirmHideJourney = (journey: Journey) => {
+    Alert.alert(
+      'Hide this journey?',
+      'It will disappear from this list but remain safely stored.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Hide',
+          style: 'destructive',
+          onPress: () => handleHideJourney(journey.id),
+        },
+      ]
+    );
+    setActionsJourney(null);
+  };
+
+  const openJourneyActions = (journey: Journey) => {
+    setActionsJourney(journey);
+  };
+
+  const beginRenameJourney = (journey: Journey) => {
+    setActionsJourney(null);
+    setRenameJourney(journey);
+    setRenameValue(journey.customTitle || journey.title || '');
+  };
+
+  const cancelRename = () => {
+    setRenameJourney(null);
+    setRenameValue('');
+  };
+
+  const saveRenamedJourney = async () => {
+    if (!renameJourney) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      Alert.alert('Name required', 'Give this journey a short title.');
+      return;
+    }
+    try {
+      await journeyAPI.updateJourneyPreferences(renameJourney.id, { customTitle: trimmed });
+      updateJourneyState(renameJourney.id, { customTitle: trimmed });
+      cancelRename();
+    } catch (renameError: any) {
+      console.error('Rename journey error:', renameError);
+      Alert.alert('Rename failed', renameError?.message || 'Could not rename this journey.');
+    }
+  };
+
+  const restoreHiddenJourneys = async () => {
+    try {
+      const result = await journeyAPI.restoreHiddenJourneys();
+      if (result?.restored) {
+        setJourneys((prev) => prev.map((journey) => ({ ...journey, isHidden: false, hiddenAt: null })));
+      }
+      Alert.alert('Done', result?.message || 'Hidden journeys are visible again.');
+    } catch (restoreError: any) {
+      console.error('Restore hidden journeys error:', restoreError);
+      Alert.alert('Restore failed', restoreError?.message || 'Could not restore hidden journeys.');
+    }
+  };
+
+  const clearCustomTitles = async () => {
+    try {
+      const result = await journeyAPI.clearCustomJourneyTitles();
+      if (result?.cleared) {
+        setJourneys((prev) => prev.map((journey) => ({ ...journey, customTitle: null })));
+      }
+      Alert.alert('Done', result?.message || 'Custom names removed.');
+    } catch (clearError: any) {
+      console.error('Clear custom titles error:', clearError);
+      Alert.alert('Clear failed', clearError?.message || 'Could not clear custom names.');
+    }
+  };
+
+  const hasHiddenJourneys = useMemo(() => journeys.some((journey) => journey.isHidden), [journeys]);
+  const hasCustomTitles = useMemo(() => journeys.some((journey) => journey.customTitle), [journeys]);
+
+  const handleHeaderOptions = () => {
+    const options: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }[] = [];
+    if (hasHiddenJourneys) {
+      options.push({ text: 'Restore hidden journeys', onPress: restoreHiddenJourneys });
+    }
+    if (hasCustomTitles) {
+      options.push({ text: 'Clear custom names', onPress: clearCustomTitles });
+    }
+    options.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('History options', 'Manage how your rides appear.', options);
   };
 
   const BackIcon = () => (
@@ -146,7 +277,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
           <BackIcon />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Your Journeys</Text>
-        <TouchableOpacity style={styles.moreButton} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.moreButton} activeOpacity={0.7} onPress={handleHeaderOptions}>
           <MoreIcon />
         </TouchableOpacity>
       </View>
@@ -158,7 +289,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {journeys.length === 0 ? (
+        {visibleJourneys.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateEmoji}>🚗</Text>
             <Text style={styles.emptyStateTitle}>No Journeys Yet</Text>
@@ -167,7 +298,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
             </Text>
           </View>
         ) : (
-          journeys.map((journey, index) => {
+          visibleJourneys.map((journey, index) => {
             const photoCount = journey.photos?.length || 0;
             const thumbnail = journey.photos?.[0];
             
@@ -208,7 +339,14 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                     </Text>
                   </View>
                 </View>
-                <View style={styles.chevronContainer}>
+                <View style={styles.trailingActions}>
+                  <TouchableOpacity
+                    style={styles.itemMenuButton}
+                    onPress={() => openJourneyActions(journey)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialIcons name="more-vert" size={20} color="#9E9E9E" />
+                  </TouchableOpacity>
                   <ChevronIcon />
                 </View>
               </TouchableOpacity>
@@ -216,6 +354,59 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
           })
         )}
       </ScrollView>
+
+      <Modal visible={!!actionsJourney} transparent animationType="fade" onRequestClose={() => setActionsJourney(null)}>
+        <TouchableWithoutFeedback onPress={() => setActionsJourney(null)}>
+          <View style={styles.modalBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.actionSheet}>
+          <Text style={styles.actionSheetTitle}>{actionsJourney?.title || 'Journey options'}</Text>
+          <TouchableOpacity
+            style={styles.actionSheetButton}
+            onPress={() => actionsJourney && beginRenameJourney(actionsJourney)}
+          >
+            <MaterialIcons name="edit" size={18} color="#111827" />
+            <Text style={styles.actionSheetButtonText}>Rename journey</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionSheetButton}
+            onPress={() => actionsJourney && confirmHideJourney(actionsJourney)}
+          >
+            <MaterialIcons name="archive" size={18} color="#DC2626" />
+            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Remove from list</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionSheetButton, styles.actionSheetCancel]}
+            onPress={() => setActionsJourney(null)}
+          >
+            <Text style={styles.actionSheetCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <Modal visible={!!renameJourney} transparent animationType="fade" onRequestClose={cancelRename}>
+        <View style={styles.renameModalBackdrop}>
+          <View style={styles.renameModalCard}>
+            <Text style={styles.renameModalTitle}>Rename journey</Text>
+            <TextInput
+              style={styles.renameInput}
+              value={renameValue}
+              onChangeText={setRenameValue}
+              placeholder="Morning ride"
+              placeholderTextColor="#9CA3AF"
+              autoFocus
+            />
+            <View style={styles.renameActions}>
+              <TouchableOpacity style={styles.renameCancelButton} onPress={cancelRename}>
+                <Text style={styles.renameCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.renameSaveButton} onPress={saveRenamedJourney}>
+                <Text style={styles.renameSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -394,15 +585,118 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     marginTop: 2,
   },
-  chevronContainer: {
+  trailingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  itemMenuButton: {
     width: 28,
     height: 28,
-    justifyContent: 'center',
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
   },
   chevronIconText: {
     fontSize: 24,
     color: '#BDBDBD',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  actionSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    gap: 12,
+  },
+  actionSheetTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+  },
+  actionSheetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  actionSheetButtonText: {
+    fontSize: 15,
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+  },
+  actionSheetCancel: {
+    justifyContent: 'center',
+  },
+  actionSheetCancelText: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontFamily: 'Space Grotesk',
+  },
+  renameModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  renameModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  renameModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 12,
+  },
+  renameInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 16,
+  },
+  renameActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  renameCancelButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  renameCancelText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontFamily: 'Space Grotesk',
+    fontWeight: '600',
+  },
+  renameSaveButton: {
+    backgroundColor: '#111827',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  renameSaveText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Space Grotesk',
   },
 });
 

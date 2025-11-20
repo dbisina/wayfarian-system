@@ -1,7 +1,7 @@
 // app/hooks/useGroups.ts
 // Custom hook for fetching groups data from backend
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { groupAPI } from '../services/api';
 
@@ -20,7 +20,7 @@ interface Group {
   _count: {
     members: number;
   };
-  members: Array<{
+  members: {
     id: string;
     role: string;
     joinedAt: string;
@@ -29,7 +29,7 @@ interface Group {
       displayName: string;
       photoURL: string;
     };
-  }>;
+  }[];
 }
 
 export const useGroups = () => {
@@ -38,7 +38,7 @@ export const useGroups = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUserGroups = async (status: 'active' | 'all' = 'active') => {
+  const fetchUserGroups = useCallback(async (status: 'active' | 'all' = 'active') => {
     if (!isAuthenticated) return;
 
     try {
@@ -54,7 +54,7 @@ export const useGroups = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
   const createGroup = async (groupData: {
     name: string;
@@ -144,7 +144,7 @@ export const useGroups = () => {
       setUserGroups([]);
       setError(null);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchUserGroups]);
 
   return {
     userGroups,

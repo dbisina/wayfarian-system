@@ -112,6 +112,7 @@ interface AuthContextType {
   user: User | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
+  isInitializing: boolean;
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -119,7 +120,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: (updatedUser?: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
@@ -845,8 +846,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Refresh user data
-  const refreshUser = async () => {
+  const refreshUser = async (updatedUser?: Partial<User>) => {
     try {
+      if (updatedUser && user) {
+        const newUser = { ...user, ...updatedUser };
+        setUser(newUser);
+        setUserContext(newUser);
+
+        if (firebaseUser) {
+          const desiredDisplayName = updatedUser.displayName ?? user.displayName;
+          const desiredPhotoURL = updatedUser.photoURL ?? user.photoURL;
+          const needsDisplayNameSync = Boolean(
+            desiredDisplayName && desiredDisplayName !== firebaseUser.displayName
+          );
+          const needsPhotoSync = Boolean(
+            desiredPhotoURL && desiredPhotoURL !== firebaseUser.photoURL
+          );
+
+          if (needsDisplayNameSync || needsPhotoSync) {
+            try {
+              await updateProfile(firebaseUser, {
+                ...(needsDisplayNameSync ? { displayName: desiredDisplayName ?? undefined } : {}),
+                ...(needsPhotoSync ? { photoURL: desiredPhotoURL ?? undefined } : {}),
+              });
+            } catch (profileSyncError) {
+              console.warn('Failed to sync Firebase profile after update:', profileSyncError);
+            }
+          }
+        }
+        return;
+      }
+
       if (firebaseUser) {
         await syncUserData(firebaseUser);
       }
@@ -904,7 +934,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     firebaseUser,
-    loading: loading || initializing || !onboardingStatusChecked,
+    loading,
+    isInitializing: initializing || !onboardingStatusChecked,
     isAuthenticated,
     hasCompletedOnboarding,
     login,

@@ -71,8 +71,8 @@ export default function RideLogScreen(): React.JSX.Element {
 
         // Split journeys into solo vs group
         const journeys: JourneyItem[] = historyRes?.journeys || [];
-        const solo = journeys.filter(j => !j.group).slice(0, 5);
-        const group = journeys.filter(j => !!j.group).slice(0, 5);
+        const solo = journeys.filter(j => !j.group);
+        const group = journeys.filter(j => !!j.group);
         setSoloJourneys(solo);
         setGroupJourneys(group);
 
@@ -98,6 +98,29 @@ export default function RideLogScreen(): React.JSX.Element {
     if (hrs > 0) return `${hrs}h ${mins}m`;
     return `${mins}m`;
   };
+  const formatDate = (iso?: string) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const groupedGroupJourneys = useMemo(() => {
+    const sections = new Map<string, { groupName: string; journeys: JourneyItem[] }>();
+    groupJourneys.forEach(journey => {
+      const key = journey.group?.id || journey.id;
+      const name = journey.group?.name || 'Group ride';
+      if (!sections.has(key)) {
+        sections.set(key, { groupName: name, journeys: [] });
+      }
+      sections.get(key)!.journeys.push(journey);
+    });
+    return Array.from(sections.entries()).map(([groupId, data]) => ({
+      groupId,
+      ...data,
+    }));
+  }, [groupJourneys]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -190,21 +213,37 @@ export default function RideLogScreen(): React.JSX.Element {
         )}
 
         {activeTab === 'group' && (
-          <View style={styles.challengesSection}>
-            {groupJourneys.length === 0 ? (
+          <View style={styles.groupJourneySection}>
+            {groupedGroupJourneys.length === 0 ? (
               <Text style={styles.badgeTitle}>No group rides yet</Text>
             ) : (
-              groupJourneys.map((j) => (
-                <View key={j.id} style={styles.challengeCard}>
-                  <Image source={require('../../assets/images/2025-10-15/2B62N8nM0F.png')} style={styles.challengeImage} />
-                  <View style={styles.challengeContent}>
-                    <Text style={styles.challengeTitle}>{j.title || j.group?.name || 'Group Ride'}</Text>
-                    <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
-                    <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
-                    <View style={styles.challengeProgressContainer}>
-                      <Text style={styles.challengeStatus}>{j.group?.name || ''}</Text>
-                    </View>
+              groupedGroupJourneys.map(section => (
+                <View key={section.groupId} style={styles.groupRideCard}>
+                  <View style={styles.groupHeaderRow}>
+                    <Text style={styles.groupRideTitle}>{section.groupName}</Text>
+                    <Text style={styles.groupRideCount}>
+                      {section.journeys.length === 1 ? '1 ride' : `${section.journeys.length} rides`}
+                    </Text>
                   </View>
+                  {section.journeys.map((journey, index) => (
+                    <View key={journey.id}>
+                      <View style={styles.groupRideRow}>
+                        <Image
+                          source={require('../../assets/images/2025-10-15/2B62N8nM0F.png')}
+                          style={styles.groupRideImage}
+                        />
+                        <View style={styles.groupRideContent}>
+                          <Text style={styles.groupRideName} numberOfLines={1}>
+                            {journey.title || 'Group ride'}
+                          </Text>
+                          <Text style={styles.groupRideMeta}>
+                            {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
+                          </Text>
+                        </View>
+                      </View>
+                      {index < section.journeys.length - 1 && <View style={styles.groupRideDivider} />}
+                    </View>
+                  ))}
                 </View>
               ))
             )}
@@ -338,6 +377,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
   },
+  groupJourneySection: {
+    paddingHorizontal: 16,
+    gap: 16,
+    marginBottom: 20,
+  },
   challengeCard: {
     flexDirection: 'row',
     backgroundColor: 'transparent',
@@ -396,6 +440,61 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#000000',
     fontFamily: 'Poppins',
+  },
+  groupRideCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  groupHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  groupRideTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    fontFamily: 'Space Grotesk',
+  },
+  groupRideCount: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#424242',
+    fontFamily: 'Poppins',
+  },
+  groupRideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 4,
+  },
+  groupRideImage: {
+    width: 80,
+    height: 60,
+    borderRadius: 8,
+  },
+  groupRideContent: {
+    flex: 1,
+  },
+  groupRideName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    fontFamily: 'Space Grotesk',
+  },
+  groupRideMeta: {
+    fontSize: 12,
+    color: '#616161',
+    fontFamily: 'Poppins',
+    marginTop: 2,
+  },
+  groupRideDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: 6,
   },
   viewAllButton: {
     marginHorizontal: 142,

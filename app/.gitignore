@@ -43,3 +43,8 @@ app-example
 /android
 
 .npm-cache/
+
+# Google service files
+GoogleService-Info.plist
+google-services.json
+

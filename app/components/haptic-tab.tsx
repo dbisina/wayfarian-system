@@ -3,9 +3,10 @@ import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 export function HapticTab(props: BottomTabBarButtonProps) {
+  const { ref, ...otherProps } = props;
   return (
     <Pressable
-      {...props}
+      {...otherProps}
       onPressIn={(ev) => {
         if (props.onPressIn) {
           props.onPressIn(ev);

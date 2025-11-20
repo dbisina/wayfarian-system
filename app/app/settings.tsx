@@ -1,77 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   Switch,
   Platform,
   Alert,
   ActionSheetIOS,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
-
-const STORE_KEYS = {
-  notifications: 'settings.notificationsEnabled',
-  units: 'settings.units',
-  mapType: 'settings.mapType',
-  vehicle: 'settings.vehicle',
-} as const;
-
-type Units = 'km' | 'mi';
-type MapType = 'standard' | 'satellite' | 'terrain';
-type Vehicle = 'car' | 'bike' | 'scooter';
+import { useSettings, MapType, Vehicle, Units } from '../contexts/SettingsContext';
 
 export default function SettingsScreen() {
   const { logout } = useAuth();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [units, setUnits] = useState<Units>('km');
-  const [mapType, setMapType] = useState<MapType>('standard');
-  const [vehicle, setVehicle] = useState<Vehicle>('car');
-
-  // Load persisted settings
-  useEffect(() => {
-    (async () => {
-      try {
-        const [n, u, m, v] = await Promise.all([
-          AsyncStorage.getItem(STORE_KEYS.notifications),
-          AsyncStorage.getItem(STORE_KEYS.units),
-          AsyncStorage.getItem(STORE_KEYS.mapType),
-          AsyncStorage.getItem(STORE_KEYS.vehicle),
-        ]);
-        if (n !== null) setNotificationsEnabled(n === '1');
-        if (u === 'km' || u === 'mi') setUnits(u);
-        if (m === 'standard' || m === 'satellite' || m === 'terrain') setMapType(m as MapType);
-        if (v === 'car' || v === 'bike' || v === 'scooter') setVehicle(v as Vehicle);
-      } catch (e) {
-        console.warn('Failed to load settings', e);
-      }
-    })();
-  }, []);
-
-  // Persist helpers
-  const saveNotifications = async (val: boolean) => {
-    try { await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0'); } catch {}
-    setNotificationsEnabled(val);
-  };
-  const saveUnits = async (val: Units) => {
-    try { await AsyncStorage.setItem(STORE_KEYS.units, val); } catch {}
-    setUnits(val);
-  };
-  const saveMapType = async (val: MapType) => {
-    try { await AsyncStorage.setItem(STORE_KEYS.mapType, val); } catch {}
-    setMapType(val);
-  };
-  const saveVehicle = async (val: Vehicle) => {
-    try { await AsyncStorage.setItem(STORE_KEYS.vehicle, val); } catch {}
-    setVehicle(val);
-  };
+  const {
+    notificationsEnabled,
+    units,
+    mapType,
+    vehicle,
+    setNotificationsEnabled,
+    setUnits,
+    setMapType,
+    setVehicle,
+  } = useSettings();
+  const [showUnitsModal, setShowUnitsModal] = React.useState(false);
 
   // Cross-platform option pickers
   const pickOption = (
@@ -164,7 +122,7 @@ export default function SettingsScreen() {
             title="Vehicle Type"
             subtitle={`Current: ${vehicle}`}
             onPress={() =>
-              pickOption('Select vehicle', ['car', 'bike', 'scooter'], ['car','bike','scooter'].indexOf(vehicle), (i) => saveVehicle(['car','bike','scooter'][i] as Vehicle))
+              pickOption('Select vehicle', ['car', 'bike', 'scooter'], ['car','bike','scooter'].indexOf(vehicle), (i) => setVehicle(['car','bike','scooter'][i] as Vehicle))
             }
           />
         </View>
@@ -180,7 +138,7 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={saveNotifications}
+              onValueChange={setNotificationsEnabled}
               trackColor={{ false: '#D1D5DB', true: '#000000' }}
               thumbColor={notificationsEnabled ? '#FFFFFF' : '#FFFFFF'}
               ios_backgroundColor="#D1D5DB"
@@ -190,13 +148,13 @@ export default function SettingsScreen() {
           <SettingItem
             title="Units"
             subtitle={`Current: ${units === 'km' ? 'Kilometers' : 'Miles'}`}
-            onPress={() => pickOption('Select units', ['Kilometers', 'Miles'], units === 'km' ? 0 : 1, (i) => saveUnits(i === 0 ? 'km' : 'mi'))}
+            onPress={() => setShowUnitsModal(true)}
           />
 
           <SettingItem
             title="Map Type"
             subtitle={`Current: ${mapType}`}
-            onPress={() => pickOption('Select map type', ['standard', 'satellite', 'terrain'], ['standard','satellite','terrain'].indexOf(mapType), (i) => saveMapType(['standard','satellite','terrain'][i] as MapType))}
+            onPress={() => pickOption('Select map type', ['standard', 'satellite', 'terrain'], ['standard','satellite','terrain'].indexOf(mapType), (i) => setMapType(['standard','satellite','terrain'][i] as MapType))}
           />
         </View>
 
@@ -256,6 +214,46 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <Modal
+        visible={showUnitsModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowUnitsModal(false)}
+      >
+        <View style={styles.unitsModalBackdrop}>
+          <View style={styles.unitsModalCard}>
+            <Text style={styles.unitsModalTitle}>Measurement units</Text>
+            <Text style={styles.unitsModalSubtitle}>Choose how we display distance and speed.</Text>
+            {[
+              { label: 'Metric (km + km/h)', value: 'km', description: 'Best for most of the world.' },
+              { label: 'Imperial (mi + mph)', value: 'mi', description: 'Popular in the US & UK.' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.unitsOption, units === option.value && styles.unitsOptionActive]}
+                onPress={() => {
+                  setUnits(option.value as Units);
+                  setShowUnitsModal(false);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.unitsOptionHeader}>
+                  <Text style={styles.unitsOptionLabel}>{option.label}</Text>
+                  <MaterialIcons
+                    name={units === option.value ? 'radio-button-checked' : 'radio-button-unchecked'}
+                    size={20}
+                    color={units === option.value ? '#111827' : '#9CA3AF'}
+                  />
+                </View>
+                <Text style={styles.unitsOptionDescription}>{option.description}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.unitsModalClose} onPress={() => setShowUnitsModal(false)}>
+              <Text style={styles.unitsModalCloseText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -369,6 +367,74 @@ const styles = StyleSheet.create({
   logoutText: {
     color: '#FFF',
     fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Inter',
+  },
+  unitsModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  unitsModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 32,
+    gap: 12,
+  },
+  unitsModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    fontFamily: 'Inter',
+  },
+  unitsModalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontFamily: 'Inter',
+    marginBottom: 8,
+  },
+  unitsOption: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 8,
+  },
+  unitsOptionActive: {
+    borderColor: '#111827',
+    backgroundColor: '#F8FAFC',
+  },
+  unitsOptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  unitsOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    fontFamily: 'Inter',
+  },
+  unitsOptionDescription: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontFamily: 'Inter',
+  },
+  unitsModalClose: {
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#111827',
+  },
+  unitsModalCloseText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '600',
     fontFamily: 'Inter',
   },

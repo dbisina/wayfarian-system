@@ -6,12 +6,9 @@ import {
   ImageBackground,
   Image,
   TouchableOpacity,
-  Dimensions,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-
-const { width, height } = Dimensions.get('window');
 
 export default function OnboardingScreen() {
   return (

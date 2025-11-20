@@ -406,7 +406,8 @@ const getJourneyHistory = async (req, res) => {
       startDate, 
       endDate,
       sortBy = 'startTime',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      includeHidden = false
     } = req.query;
     
     const skip = (page - 1) * limit;
@@ -422,6 +423,7 @@ const getJourneyHistory = async (req, res) => {
           ...(endDate && { lte: new Date(endDate) }),
         },
       }),
+      ...(!includeHidden && { isHidden: false }),
     };
     
     // Build order by clause
@@ -467,6 +469,7 @@ const getJourneyHistory = async (req, res) => {
         endDate,
         sortBy,
         sortOrder,
+        includeHidden,
       },
     });
     

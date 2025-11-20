@@ -1,56 +1,40 @@
 // app/hooks/useGroupJourney.ts
-// Custom hook for group journey real-time coordination
+// Resilient group journey hook with socket lifecycle + location tracking tied into Redux
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'expo-router';
-import { Socket } from 'socket.io-client';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import type { Socket } from 'socket.io-client';
+import { useAppDispatch } from '../store/hooks';
+import {
+  hydrateMembersFromSnapshot,
+  mergeMemberLocation,
+  setGroupJourney as setGroupJourneyState,
+  setGroupTracking,
+  setMyInstance as setMyInstanceState,
+} from '../store/slices/journeySlice';
+import type { JourneyInstance } from '../store/slices/journeySlice';
+import {
+  useGroupTracking,
+  useJourneyMembers,
+  useJourneyState,
+  useJourneyLocations,
+} from './useJourneyState';
 
 export interface MemberLocation {
   instanceId: string;
   userId: string;
   displayName: string;
   photoURL?: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
-  totalDistance: number;
-  totalTime: number;
+  totalDistance?: number;
+  totalTime?: number;
   speed?: number;
   heading?: number;
   lastUpdate?: string;
-}
-
-export interface GroupJourney {
-  id: string;
-  groupId: string;
-  title: string;
-  description?: string;
-  status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
-  startedAt: string;
-  completedAt?: string;
-  startLatitude: number;
-  startLongitude: number;
-  endLatitude?: number;
-  endLongitude?: number;
-  instances: any[];
-  members: any[];
-}
-
-export interface JourneyInstance {
-  id: string;
-  userId: string;
-  status: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
-  startTime: string;
-  endTime?: string;
-  totalDistance: number;
-  totalTime: number;
-  avgSpeed: number;
-  topSpeed: number;
-  currentLatitude?: number;
-  currentLongitude?: number;
-  lastLocationUpdate?: string;
 }
 
 interface UseGroupJourneyProps {
@@ -59,291 +43,279 @@ interface UseGroupJourneyProps {
   autoStart?: boolean;
 }
 
-export const useGroupJourney = ({ socket, groupJourneyId, autoStart = false }: UseGroupJourneyProps) => {
+const LOCATION_INTERVAL_MS = 2000;
+const LOCATION_DISTANCE_METERS = 5;
+
+export const useGroupJourney = ({
+  socket,
+  groupJourneyId,
+  autoStart = false,
+}: UseGroupJourneyProps) => {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [isJoined, setIsJoined] = useState(false);
-  const [memberLocations, setMemberLocations] = useState<MemberLocation[]>([]);
-  const [myInstance, setMyInstance] = useState<JourneyInstance | null>(null);
-  const [groupJourney, setGroupJourney] = useState<GroupJourney | null>(null);
-  const [isTracking, setIsTracking] = useState(false);
-  
+  const journeyState = useJourneyState();
+  const members = useJourneyMembers();
+  const memberLocationsMap = useJourneyLocations();
+  const groupTracking = useGroupTracking();
+  const myInstance = journeyState.myInstance;
+  const groupJourney = journeyState.groupJourney;
+
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
-  const lastUpdateRef = useRef<number>(0);
-  const UPDATE_THROTTLE = 3000; // Send location updates every 3 seconds
+  const lastEmitRef = useRef(0);
+  const myInstanceRef = useRef<JourneyInstance | null>(null);
 
-  /**
-   * Join group journey room for real-time updates
-   */
-  const joinGroupJourney = useCallback((journeyId: string) => {
-    if (!socket || !socket.connected) {
-      console.error('Socket not connected');
-      return;
-    }
+  useEffect(() => {
+    myInstanceRef.current = myInstance;
+  }, [myInstance]);
 
-    socket.emit('group-journey:join', { groupJourneyId: journeyId });
-  }, [socket]);
+  const setMyInstance = useCallback((nextValue: JourneyInstance | null | ((prev: JourneyInstance | null) => JourneyInstance | null)) => {
+    const resolved = typeof nextValue === 'function' ? nextValue(myInstanceRef.current) : nextValue;
+    dispatch(setMyInstanceState(resolved ?? null));
+  }, [dispatch]);
 
-  /**
-   * Leave group journey room
-   */
+  const memberLocations = useMemo(() => {
+    const memberMap = members.reduce<Record<string, typeof members[number]>>((acc, member) => {
+      acc[member.id] = member;
+      return acc;
+    }, {});
+
+    const ids = new Set<string>();
+    members.forEach(member => ids.add(member.id));
+    Object.keys(journeyState.memberInstances).forEach(id => ids.add(id));
+    Object.keys(memberLocationsMap).forEach(id => ids.add(id));
+
+    return Array.from(ids)
+      .filter(Boolean)
+      .map(userId => {
+        const instance = journeyState.memberInstances[userId];
+        const location = memberLocationsMap[userId];
+        const member = memberMap[userId];
+
+        return {
+          instanceId: instance?.id || `member-${userId}`,
+          userId,
+          displayName: member?.displayName || instance?.displayName || 'Member',
+          photoURL: member?.photoURL || instance?.photoURL,
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+          status: instance?.status || 'ACTIVE',
+          totalDistance: instance?.totalDistance,
+          totalTime: instance?.totalTime,
+          speed: location?.speed,
+          heading: location?.heading,
+          lastUpdate: instance?.lastUpdate || (location?.timestamp ? location.timestamp.toISOString() : undefined),
+        } as MemberLocation;
+      })
+      .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  }, [members, journeyState.memberInstances, memberLocationsMap]);
+
+  const joinGroupJourney = useCallback(
+    (journeyId?: string) => {
+      if (!socket || !socket.connected) return;
+      const targetId = journeyId || groupJourneyId;
+      if (!targetId) return;
+      socket.emit('group-journey:join', { groupJourneyId: targetId });
+    },
+    [socket, groupJourneyId],
+  );
+
   const leaveGroupJourney = useCallback(() => {
     if (!socket || !groupJourneyId) return;
-    
     socket.emit('group-journey:leave', { groupJourneyId });
     setIsJoined(false);
-  }, [socket, groupJourneyId]);
+    locationSubscriptionRef.current?.remove();
+    locationSubscriptionRef.current = null;
+    dispatch(hydrateMembersFromSnapshot([]));
+    dispatch(setGroupTracking({ isTracking: false, instanceId: null }));
+  }, [socket, groupJourneyId, dispatch]);
 
-  /**
-   * Start location tracking for this instance
-   */
-  const startLocationTracking = useCallback(async (instanceId: string) => {
-    if (!socket || isTracking) return;
-
-    try {
-      // Request location permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required for group journeys');
-        return;
-      }
-
-      setIsTracking(true);
-
-      // Start watching location
-      const subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 2000,
-          distanceInterval: 10, // Update every 10 meters
-        },
-        (location) => {
-          const now = Date.now();
-          
-          // Throttle updates to avoid overwhelming the server
-          if (now - lastUpdateRef.current < UPDATE_THROTTLE) {
-            return;
-          }
-
-          lastUpdateRef.current = now;
-
-          const { latitude, longitude, speed, heading } = location.coords;
-
-          // Emit location update via socket
-          socket.emit('instance:location-update', {
-            instanceId,
-            latitude,
-            longitude,
-            speed: speed || 0,
-            heading: heading || 0,
-            timestamp: new Date().toISOString(),
-          });
-
-          // Update local state
-          setMyInstance(prev => prev ? {
-            ...prev,
-            currentLatitude: latitude,
-            currentLongitude: longitude,
-          } : null);
-        }
-      );
-
-      locationSubscriptionRef.current = subscription;
-    } catch (error) {
-      console.error('Location tracking error:', error);
-      Alert.alert('Error', 'Failed to start location tracking');
-      setIsTracking(false);
-    }
-  }, [socket, isTracking]);
-
-  /**
-   * Stop location tracking
-   */
-  const stopLocationTracking = useCallback(() => {
-    if (locationSubscriptionRef.current) {
-      locationSubscriptionRef.current.remove();
-      locationSubscriptionRef.current = null;
-    }
-    setIsTracking(false);
-  }, []);
-
-  /**
-   * Request current state of all participants
-   */
   const requestState = useCallback(() => {
     if (!socket || !groupJourneyId) return;
     socket.emit('group-journey:request-state', { groupJourneyId });
   }, [socket, groupJourneyId]);
 
-  /**
-   * Socket event listeners
-   */
+  const startLocationTracking = useCallback(
+    async (instanceId: string) => {
+      if (!socket || groupTracking.isTracking) return;
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Location permission required', 'Enable location sharing to join the group journey.');
+        return;
+      }
+
+      dispatch(setGroupTracking({ isTracking: true, instanceId }));
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: LOCATION_INTERVAL_MS,
+          distanceInterval: LOCATION_DISTANCE_METERS,
+        },
+        location => {
+          const now = Date.now();
+          if (now - lastEmitRef.current < LOCATION_INTERVAL_MS) return;
+          lastEmitRef.current = now;
+
+          const { latitude, longitude, speed, heading } = location.coords;
+          const userId = myInstanceRef.current?.userId;
+          socket.emit('instance:location-update', {
+            instanceId,
+            latitude,
+            longitude,
+            speed: speed ?? 0,
+            heading: heading ?? 0,
+            timestamp: new Date().toISOString(),
+          });
+
+          setMyInstance(prev =>
+            prev
+              ? {
+                  ...prev,
+                  currentLatitude: latitude,
+                  currentLongitude: longitude,
+                }
+              : prev,
+          );
+          if (userId) {
+            dispatch(mergeMemberLocation({
+              userId,
+              instanceId,
+              latitude,
+              longitude,
+              speed: speed ?? undefined,
+              heading: heading ?? undefined,
+              lastUpdate: new Date().toISOString(),
+            }));
+          }
+        },
+      );
+
+      locationSubscriptionRef.current = subscription;
+    },
+    [socket, groupTracking.isTracking, dispatch, setMyInstance],
+  );
+
+  const stopLocationTracking = useCallback(() => {
+    locationSubscriptionRef.current?.remove();
+    locationSubscriptionRef.current = null;
+    dispatch(setGroupTracking({ isTracking: false, instanceId: null }));
+  }, [dispatch]);
+
   useEffect(() => {
     if (!socket) return;
 
-    // Auto-navigate when journey starts
     const handleJourneyStarted = (data: any) => {
-      console.log('🚀 Group journey started:', data);
-      
-      Alert.alert(
-        'Journey Started!',
-        `${data.title} has begun. Get ready to ride!`,
-        [
-          {
-            text: 'Join Journey',
-            onPress: () => {
-              router.push({ pathname: '/journey', params: { groupId: data.groupId, groupJourneyId: data.groupJourneyId } });
-            },
-          },
-          {
-            text: 'Later',
-            style: 'cancel',
-          },
-        ]
-      );
+      Alert.alert('Journey started', `${data.title} is live`, [
+        {
+          text: 'Open journey',
+          onPress: () =>
+            router.push({
+              pathname: '/group-journey',
+              params: { groupJourneyId: data.groupJourneyId },
+            }),
+        },
+        { text: 'Later', style: 'cancel' },
+      ]);
     };
 
-    // Successfully joined journey room
-    const handleJourneyJoined = (data: any) => {
-      console.log('✅ Joined group journey:', data);
+    const handleJoined = (data: any) => {
       setIsJoined(true);
-      setMemberLocations(data.memberLocations || []);
-    };
-
-    // Member location updated
-    const handleLocationUpdated = (data: MemberLocation) => {
-      setMemberLocations(prev => {
-        const existing = prev.find(m => m.userId === data.userId);
-        if (existing) {
-          return prev.map(m => m.userId === data.userId ? { ...m, ...data } : m);
-        } else {
-          return [...prev, data];
-        }
-      });
-    };
-
-    // Member completed their journey
-    const handleMemberCompleted = (data: any) => {
-      console.log('🏁 Member completed:', data.user.displayName);
-      
-      // Update member status
-      setMemberLocations(prev =>
-        prev.map(m =>
-          m.userId === data.userId
-            ? { ...m, status: 'COMPLETED' as const }
-            : m
-        )
-      );
-
-      // Show notification
-      Alert.alert(
-        '🏁 Member Finished!',
-        `${data.user.displayName} completed the journey!\n\nDistance: ${(data.stats.totalDistance / 1000).toFixed(2)} km\nTime: ${Math.floor(data.stats.totalTime / 60)} min`,
-        [{ text: 'Nice!', style: 'default' }]
-      );
-
-      if (data.allCompleted) {
-        Alert.alert(
-          '🎉 Journey Complete!',
-          'All members have finished the journey!',
-          [{ text: 'Awesome!', style: 'default' }]
-        );
+      if (Array.isArray(data?.memberLocations)) {
+        dispatch(hydrateMembersFromSnapshot(data.memberLocations));
+      }
+      if (data?.groupJourney) {
+        dispatch(setGroupJourneyState(data.groupJourney));
       }
     };
 
-    // Member paused
-    const handleMemberPaused = (data: any) => {
-      setMemberLocations(prev =>
-        prev.map(m =>
-          m.userId === data.userId
-            ? { ...m, status: 'PAUSED' as const }
-            : m
-        )
-      );
-    };
-
-    // Member resumed
-    const handleMemberResumed = (data: any) => {
-      setMemberLocations(prev =>
-        prev.map(m =>
-          m.userId === data.userId
-            ? { ...m, status: 'ACTIVE' as const }
-            : m
-        )
-      );
-    };
-
-    // Member connected
-    const handleMemberConnected = (data: any) => {
-      console.log('👋 Member connected:', data.displayName);
-    };
-
-    // Member disconnected
-    const handleMemberDisconnected = (data: any) => {
-      console.log('👋 Member disconnected:', data.userId);
-    };
-
-    // Full state update
     const handleState = (data: any) => {
-      setMemberLocations(data.members || []);
+      if (Array.isArray(data?.members)) {
+        dispatch(hydrateMembersFromSnapshot(data.members));
+      }
     };
 
-    // Register listeners
+    const handleMemberLocation = (payload: Partial<MemberLocation>) => {
+      if (!payload.userId) return;
+      dispatch(mergeMemberLocation({
+        userId: payload.userId,
+        instanceId: payload.instanceId,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        totalDistance: payload.totalDistance,
+        totalTime: payload.totalTime,
+        speed: payload.speed,
+        heading: payload.heading,
+        status: payload.status,
+        displayName: payload.displayName,
+        photoURL: payload.photoURL,
+        lastUpdate: payload.lastUpdate,
+      }));
+    };
+
+    const handleMemberStatus = (payload: Partial<MemberLocation> & { userId: string; status: MemberLocation['status'] }) => {
+      dispatch(mergeMemberLocation({
+        userId: payload.userId,
+        instanceId: payload.instanceId,
+        status: payload.status,
+        totalDistance: payload.totalDistance,
+        totalTime: payload.totalTime,
+        displayName: payload.displayName,
+        photoURL: payload.photoURL,
+        lastUpdate: payload.lastUpdate,
+      }));
+    };
+
+    const handleReconnect = () => {
+      joinGroupJourney();
+      requestState();
+    };
+
     socket.on('group-journey:started', handleJourneyStarted);
-    socket.on('group-journey:joined', handleJourneyJoined);
-    socket.on('member:location-updated', handleLocationUpdated);
-    socket.on('member:journey-completed', handleMemberCompleted);
-    socket.on('member:journey-paused', handleMemberPaused);
-    socket.on('member:journey-resumed', handleMemberResumed);
-    socket.on('member:connected', handleMemberConnected);
-    socket.on('member:disconnected', handleMemberDisconnected);
+    socket.on('group-journey:joined', handleJoined);
     socket.on('group-journey:state', handleState);
+    socket.on('member:location-updated', handleMemberLocation);
+    socket.on('member:journey-paused', handleMemberStatus);
+    socket.on('member:journey-resumed', handleMemberStatus);
+    socket.on('member:journey-completed', handleMemberStatus);
+    socket.io?.on('reconnect', handleReconnect);
 
     return () => {
       socket.off('group-journey:started', handleJourneyStarted);
-      socket.off('group-journey:joined', handleJourneyJoined);
-      socket.off('member:location-updated', handleLocationUpdated);
-      socket.off('member:journey-completed', handleMemberCompleted);
-      socket.off('member:journey-paused', handleMemberPaused);
-      socket.off('member:journey-resumed', handleMemberResumed);
-      socket.off('member:connected', handleMemberConnected);
-      socket.off('member:disconnected', handleMemberDisconnected);
+      socket.off('group-journey:joined', handleJoined);
       socket.off('group-journey:state', handleState);
+      socket.off('member:location-updated', handleMemberLocation);
+      socket.off('member:journey-paused', handleMemberStatus);
+      socket.off('member:journey-resumed', handleMemberStatus);
+      socket.off('member:journey-completed', handleMemberStatus);
+      socket.io?.off('reconnect', handleReconnect);
     };
-  }, [socket, router]);
+  }, [socket, joinGroupJourney, requestState, router, dispatch]);
 
-  /**
-   * Auto-join on mount if groupJourneyId provided
-   */
   useEffect(() => {
-    if (autoStart && groupJourneyId && socket && socket.connected && !isJoined) {
-      joinGroupJourney(groupJourneyId);
+    if (autoStart) {
+      joinGroupJourney();
+      requestState();
     }
-  }, [autoStart, groupJourneyId, socket, isJoined, joinGroupJourney]);
+  }, [autoStart, joinGroupJourney, requestState]);
 
-  /**
-   * Cleanup on unmount
-   */
-  useEffect(() => {
-    return () => {
-      stopLocationTracking();
-      if (isJoined) {
-        leaveGroupJourney();
-      }
-    };
-  }, [isJoined, leaveGroupJourney, stopLocationTracking]);
+  useEffect(() => () => {
+    stopLocationTracking();
+    leaveGroupJourney();
+  }, [leaveGroupJourney, stopLocationTracking]);
 
   return {
     isJoined,
     memberLocations,
     myInstance,
     groupJourney,
-    isTracking,
+    isTracking: groupTracking.isTracking,
     joinGroupJourney,
     leaveGroupJourney,
     startLocationTracking,
     stopLocationTracking,
     requestState,
     setMyInstance,
-    setGroupJourney,
   };
 };

@@ -9,7 +9,7 @@ import {
   Dimensions,
 } from 'react-native';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 const MapScreen = () => {
   return (
@@ -82,7 +82,7 @@ const MapScreen = () => {
 
         {/* Floating Center Button */}
         <View style={styles.floatingButtonContainer}>
-          <TouchableOpacity style={styles.floatingButton}>
+          <TouchableOpacity style={styles.centerFloatingButton}>
             <Image
               source={require('../assets/images/2025-10-15/O3x1a5Ka2Y.png')}
               style={styles.floatingIcon}
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     marginLeft: -17.5,
     top: -7.5,
   },
-  floatingButton: {
+  centerFloatingButton: {
     width: 35,
     height: 35,
     backgroundColor: '#E4fAmovyMS',

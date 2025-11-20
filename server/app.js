@@ -135,19 +135,20 @@ const createRateLimit = (windowMs, max, message) => rateLimit({
 // Different rate limits for different endpoints
 // Development mode: very generous limits; Production: stricter but still reasonable
 const isDev = process.env.NODE_ENV !== 'production';
-const window15min = 15 * 60 * 1000;
+// User requested to decrease limit wait time to 10 secs and increase limits significantly
+const window10s = 10 * 1000;
 
-app.use('/api/auth', createRateLimit(window15min, isDev ? 100 : 30, 'Too many authentication attempts'));
-app.use('/api/maps', createRateLimit(window15min, isDev ? 1000 : 500, 'Too many map requests'));
-app.use('/api/gallery', createRateLimit(window15min, isDev ? 200 : 100, 'Too many gallery requests'));
+app.use('/api/auth', createRateLimit(window10s, isDev ? 50 : 20, 'Too many authentication attempts'));
+app.use('/api/maps', createRateLimit(window10s, isDev ? 200 : 100, 'Too many map requests'));
+app.use('/api/gallery', createRateLimit(window10s, isDev ? 100 : 50, 'Too many gallery requests'));
 // Allow very high throughput for real-time tracking endpoints
-app.use('/api/journey', createRateLimit(window15min, isDev ? 5000 : 3000, 'Too many journey updates'));
-app.use('/api/group-journey', createRateLimit(window15min, isDev ? 3000 : 1500, 'Too many group journey requests'));
-app.use('/api/group', createRateLimit(window15min, isDev ? 1000 : 500, 'Too many group requests'));
-app.use('/api/user', createRateLimit(window15min, isDev ? 500 : 200, 'Too many user requests'));
-app.use('/api/leaderboard', createRateLimit(window15min, isDev ? 300 : 150, 'Too many leaderboard requests'));
+app.use('/api/journey', createRateLimit(window10s, isDev ? 500 : 300, 'Too many journey updates'));
+app.use('/api/group-journey', createRateLimit(window10s, isDev ? 500 : 300, 'Too many group journey requests'));
+app.use('/api/group', createRateLimit(window10s, isDev ? 200 : 100, 'Too many group requests'));
+app.use('/api/user', createRateLimit(window10s, isDev ? 100 : 50, 'Too many user requests'));
+app.use('/api/leaderboard', createRateLimit(window10s, isDev ? 100 : 50, 'Too many leaderboard requests'));
 // Default catch-all
-app.use('/api', createRateLimit(window15min, isDev ? 500 : 200, 'Too many requests'));
+app.use('/api', createRateLimit(window10s, isDev ? 100 : 50, 'Too many requests'));
 
 // Body parsing middleware with enhanced validation
 app.use(express.json({ 
@@ -286,14 +287,10 @@ app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRo
 app.use('/api/group', authMiddleware, groupRoutes);
 app.use('/api/user', authMiddleware, userRoutes);
 
-// In development, allow maps endpoints without database-backed auth so the app works offline/while DB is unavailable.
-if ((process.env.NODE_ENV || 'development') !== 'production') {
-  app.use('/api/maps', cacheMaps(1800), mapsRoutes);
-  app.use('/api/places', cacheMaps(1800), mapsRoutes);
-} else {
-  app.use('/api/maps', authMiddleware, cacheMaps(1800), mapsRoutes);
-  app.use('/api/places', authMiddleware, cacheMaps(1800), mapsRoutes);
-}
+// Allow maps endpoints without database-backed auth so the app works offline/while DB is unavailable.
+// Also allows unauthenticated users (e.g. during registration) to use location search.
+app.use('/api/maps', cacheMaps(1800), mapsRoutes);
+app.use('/api/places', cacheMaps(1800), mapsRoutes);
 
 // System and admin endpoints
 app.get('/api/system/status', authMiddleware, requireOperator, (req, res) => {

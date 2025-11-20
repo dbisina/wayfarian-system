@@ -7,10 +7,7 @@ import {
   Image,
   TouchableOpacity,
   StatusBar,
-  Dimensions,
 } from 'react-native';
-
-const { width: screenWidth } = Dimensions.get('window');
 
 const LeaderboardScreen = () => {
   const leaderboardData = [

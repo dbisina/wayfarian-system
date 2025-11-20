@@ -16,12 +16,12 @@ export default function OnboardingScreen2() {
   const { completeOnboarding } = useAuth();
 
   const handleNext = () => {
-    router.push('/(auth)/step3');
+    router.push('/step3');
   };
 
   const handleSkip = async () => {
     await completeOnboarding();
-    router.replace('/(auth)/login');
+    router.replace('/login');
   };
 
   return (

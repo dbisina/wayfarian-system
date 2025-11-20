@@ -6,7 +6,7 @@ export async function testApiConnection() {
   const apiUrl = getCurrentApiUrl();
   const results = {
     apiUrl,
-    tests: [] as Array<{ name: string; status: 'pass' | 'fail'; message: string; duration: number }>,
+    tests: [] as { name: string; status: 'pass' | 'fail'; message: string; duration: number }[],
   };
 
   console.log('[Diagnostics] Testing API connection to:', apiUrl);

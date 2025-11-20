@@ -11,7 +11,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
@@ -26,7 +26,7 @@ interface LocationData {
 }
 
 export default function NewJourneyScreen() {
-  const { startJourney } = useJourney();
+  const { startJourney, saveJourney } = useJourney();
   const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
@@ -100,46 +100,99 @@ export default function NewJourneyScreen() {
     }
   };
 
-  const handleSaveForLater = () => {
+  const handleSaveForLater = async () => {
     if (!journeyName.trim()) {
       Alert.alert('Missing Information', 'Please enter a journey name to save.');
       return;
     }
     
-    // Here you would typically save the journey data for later
-    console.log('Saving journey for later:', {
-      journeyName,
-      startLocation: startLocation ? {
-        address: startLocation.address,
-        coordinates: {
+    setIsStarting(true);
+
+    try {
+      const success = await saveJourney({
+        title: journeyName,
+        startLocation: startLocation ? {
           latitude: startLocation.latitude,
           longitude: startLocation.longitude,
-        },
-      } : null,
-      endLocation: endLocation ? {
-        address: endLocation.address,
-        coordinates: {
+          address: startLocation.address,
+        } : undefined,
+        endLocation: endLocation ? {
           latitude: endLocation.latitude,
           longitude: endLocation.longitude,
-        },
-      } : null,
-      startDateTime: startDateTime.toISOString(),
-      notes,
+          address: endLocation.address,
+        } : undefined,
+        vehicle: 'car',
+        ...(groupId ? { groupId: String(groupId) } : {}),
+        startTime: startDateTime.toISOString(),
+        notes,
+      });
+
+      if (success) {
+        Alert.alert('Journey Saved', 'Your journey has been saved for later.', [
+          {text: 'OK', onPress: () => router.back()}
+        ]);
+      } else {
+        Alert.alert('Error', 'Failed to save journey. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error saving journey:', error);
+      Alert.alert('Error', 'Failed to save journey. Please try again.');
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const ensureFutureDate = (candidate: Date) => {
+    const now = new Date();
+    if (candidate.getTime() < now.getTime()) {
+      return now;
+    }
+    return candidate;
+  };
+
+  const openAndroidTimePicker = (baseDate: Date) => {
+    DateTimePickerAndroid.open({
+      value: baseDate,
+      mode: 'time',
+      is24Hour: true,
+      onChange: (_event, timeValue) => {
+        if (!timeValue) {
+          return;
+        }
+        const updated = new Date(baseDate);
+        updated.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
+        setStartDateTime(ensureFutureDate(updated));
+      },
     });
-    
-    Alert.alert('Journey Saved', 'Your journey has been saved for later.', [
-      {text: 'OK', onPress: () => router.back()}
-    ]);
   };
 
   const openDateTimePicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: startDateTime,
+        mode: 'date',
+        minimumDate: new Date(),
+        onChange: (event, dateValue) => {
+          if (event.type !== 'set' || !dateValue) {
+            return;
+          }
+          const updated = new Date(startDateTime);
+          updated.setFullYear(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate());
+          openAndroidTimePicker(ensureFutureDate(updated));
+        },
+      });
+      return;
+    }
     setShowDatePicker(true);
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios'); // Keep open on iOS
+  const onDateChange = (_event: any, selectedDate?: Date) => {
+    if (Platform.OS !== 'ios') {
+      setShowDatePicker(false);
+      return;
+    }
     if (selectedDate) {
-      setStartDateTime(selectedDate);
+      setStartDateTime(ensureFutureDate(selectedDate));
     }
   };
 
@@ -238,11 +291,11 @@ export default function NewJourneyScreen() {
           </View>
         </TouchableOpacity>
 
-        {showDatePicker && (
+        {Platform.OS === 'ios' && showDatePicker && (
           <DateTimePicker
             value={startDateTime}
             mode="datetime"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display="spinner"
             onChange={onDateChange}
             minimumDate={new Date()}
           />

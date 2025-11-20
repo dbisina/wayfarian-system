@@ -120,6 +120,11 @@ router.get(
       .optional()
       .isIn(['asc', 'desc'])
       .withMessage('Sort order must be asc or desc'),
+    query('includeHidden')
+      .optional()
+      .isBoolean()
+      .withMessage('includeHidden must be boolean')
+      .toBoolean(),
   ],
   handleValidationErrors,
   getJourneyHistory

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Alert,
   Platform,
   Modal,
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
@@ -25,18 +27,36 @@ import MessageComposer from '../components/MessageComposer';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import { useGroupJourney } from '../hooks/useGroupJourney';
 import { getSocket } from '../services/socket';
+import { useJourneyState, useJourneyMembers, useJourneyStats } from '../hooks/useJourneyState';
+import { useSettings } from '../contexts/SettingsContext';
+
+type MeasurementParts = { value: string; unit: string };
+
+const splitMeasurement = (formatted: string): MeasurementParts => {
+  if (!formatted) {
+    return { value: '0', unit: '' };
+  }
+  const match = formatted.match(/^\s*([-+]?\d*[.,]?\d*)\s*(.*)$/);
+  if (!match) {
+    return { value: formatted, unit: '' };
+  }
+  return {
+    value: match[1] || formatted,
+    unit: (match[2] || '').toUpperCase().trim(),
+  };
+};
+
+const normalizeDistanceValue = (value?: number | null): number => {
+  if (!value) return 0;
+  return value > 500 ? value / 1000 : value;
+};
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function JourneyScreen(): React.JSX.Element {
   const { groupId: paramGroupId, groupJourneyId } = useLocalSearchParams<{ groupId?: string; groupJourneyId?: string }>();
   const {
-    currentJourney,
-    isTracking,
-    isMinimized,
-    stats,
     routePoints,
-    groupMembers,
     startJourney,
     resumeJourney,
     endJourney,
@@ -45,6 +65,10 @@ export default function JourneyScreen(): React.JSX.Element {
     minimizeJourney,
     loadGroupMembers,
   } = useJourney();
+  const { currentJourney, isTracking, isMinimized } = useJourneyState();
+  const stats = useJourneyStats();
+  const groupMembers = useJourneyMembers();
+  const { convertDistance, convertSpeed } = useSettings();
 
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState({
@@ -57,6 +81,8 @@ export default function JourneyScreen(): React.JSX.Element {
   const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const [groupView, setGroupView] = useState<{ start?: { latitude: number; longitude: number }; end?: { latitude: number; longitude: number } } | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [isStartBusy, setIsStartBusy] = useState(false);
+  const startIconAnimation = useRef(new Animated.Value(0)).current;
 
   // Real-time events for group journeys
   const gJourneyId = typeof groupJourneyId === 'string' ? groupJourneyId : undefined;
@@ -87,6 +113,27 @@ export default function JourneyScreen(): React.JSX.Element {
 
   // Resolve Google Maps API key (single source of truth)
   const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(startIconAnimation, {
+          toValue: 1,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(startIconAnimation, {
+          toValue: 0,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => {
+      animation.stop();
+    };
+  }, [startIconAnimation]);
 
   // If navigated with a groupId param, load group members overlay
   useEffect(() => {
@@ -136,6 +183,36 @@ export default function JourneyScreen(): React.JSX.Element {
 
   const handleSendMessage = (message: string) => {
     postEvent({ type: 'MESSAGE', message });
+  };
+
+  const needsDestinationPrompt = useMemo(() => {
+    const isGroupRide = Boolean(gJourneyId || currentJourney?.groupId);
+    const hasDestination = Boolean(currentJourney?.endLocation || groupView?.end);
+    return isGroupRide && !hasDestination;
+  }, [gJourneyId, currentJourney?.endLocation, currentJourney?.groupId, groupView]);
+
+  const speedMeasurement = useMemo(() => {
+    const value = isTracking && stats ? stats.currentSpeed : 0;
+    return splitMeasurement(convertSpeed(value));
+  }, [convertSpeed, isTracking, stats]);
+
+  const distanceMeasurement = useMemo(() => {
+    const value = isTracking && stats ? stats.totalDistance : 0;
+    return splitMeasurement(convertDistance(value));
+  }, [convertDistance, isTracking, stats]);
+
+  const bikeTranslation = startIconAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-6, 6],
+  });
+
+  const handleDestinationPrompt = () => {
+    const targetGroupId = typeof paramGroupId === 'string' ? paramGroupId : currentJourney?.groupId;
+    if (targetGroupId) {
+      router.push(`/group-detail?groupId=${targetGroupId}`);
+      return;
+    }
+    Alert.alert('Set a destination', 'Pick a destination from your group screen before starting this ride.');
   };
 
   // Update map region when journey starts or route changes
@@ -214,7 +291,39 @@ export default function JourneyScreen(): React.JSX.Element {
   }, [routePoints, currentJourney?.endLocation, GOOGLE_MAPS_API_KEY]);
 
   const handleStartJourney = async () => {
-    if (!isTracking) {
+    if (isStartBusy) {
+      return;
+    }
+
+    if (isTracking) {
+      await handleStopJourney();
+      return;
+    }
+
+    if (needsDestinationPrompt) {
+      Alert.alert(
+        'Destination needed',
+        'Pick a destination before starting this group ride.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Set destination', onPress: handleDestinationPrompt },
+        ]
+      );
+      return;
+    }
+
+    if (currentJourney?.status === 'paused' || myInstance?.status === 'PAUSED') {
+      setIsStartBusy(true);
+      try {
+        await handleResumeIfPaused();
+      } finally {
+        setIsStartBusy(false);
+      }
+      return;
+    }
+
+    setIsStartBusy(true);
+    try {
       const success = await startJourney({
         title: 'My Journey',
         vehicle: 'car',
@@ -223,15 +332,8 @@ export default function JourneyScreen(): React.JSX.Element {
       if (!success) {
         Alert.alert('Error', 'Failed to start journey tracking');
       }
-    } else {
-      Alert.alert(
-        'Stop Journey',
-        'Are you sure you want to stop this journey?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Stop', style: 'destructive', onPress: async () => { await endJourney(); } },
-        ]
-      );
+    } finally {
+      setIsStartBusy(false);
     }
   };
 
@@ -262,8 +364,8 @@ export default function JourneyScreen(): React.JSX.Element {
       if (!result.canceled && result.assets[0]) {
         await addPhoto(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Error taking photo:', error);
+    } catch (err) {
+      console.error('Error taking photo:', err);
       Alert.alert('Error', 'Failed to take photo');
     }
   };
@@ -277,9 +379,6 @@ export default function JourneyScreen(): React.JSX.Element {
     }
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
-
-  const formatSpeed = (speed: number): string => speed.toFixed(1);
-  const formatDistance = (distance: number): string => distance.toFixed(1);
 
   const handleResumeIfPaused = async () => {
     try {
@@ -360,7 +459,7 @@ export default function JourneyScreen(): React.JSX.Element {
               await clearStuckJourney();
               Alert.alert('Success', 'Journey cleared. You can now start a new journey.');
               router.back();
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to clear journey. Please restart the app.');
             }
           },
@@ -389,7 +488,6 @@ export default function JourneyScreen(): React.JSX.Element {
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
-            mapType="standard"
           >
             {Platform.OS === "android" &&
             (currentJourney?.endLocation || groupView?.end) &&
@@ -462,7 +560,6 @@ export default function JourneyScreen(): React.JSX.Element {
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
-            mapType="standard"
           >
             {Platform.OS === "android" &&
             currentJourney?.endLocation &&
@@ -563,37 +660,39 @@ export default function JourneyScreen(): React.JSX.Element {
                         longitude: member.longitude,
                       }}
                       title={member.displayName}
-                      description={`${member.status} • ${(
-                        member.totalDistance / 1000
-                      ).toFixed(1)} km • ${member.speed?.toFixed(1) || 0} km/h`}
+                      description={`${member.status} • ${convertDistance(normalizeDistanceValue(member.totalDistance))} • ${convertSpeed(member.speed ?? 0)}`}
+                      anchor={{ x: 0.5, y: 1 }}
                     >
                       <View style={styles.memberMarker}>
-                        <Image
-                          source={
-                            member.photoURL
-                              ? { uri: member.photoURL }
-                              : require("../assets/images/2025-09-26/byc45z4XPi.png")
-                          }
-                          style={styles.friendMarkerImage}
-                        />
-                        {member.status === "COMPLETED" && (
-                          <View style={styles.completedBadge}>
-                            <MaterialIcons
-                              name="check-circle"
-                              size={16}
-                              color="#4CAF50"
-                            />
-                          </View>
-                        )}
-                        {member.status === "PAUSED" && (
-                          <View style={styles.pausedBadge}>
-                            <MaterialIcons
-                              name="pause-circle"
-                              size={16}
-                              color="#FFA726"
-                            />
-                          </View>
-                        )}
+                        <View style={styles.memberPinHead}>
+                          <Image
+                            source={
+                              member.photoURL
+                                ? { uri: member.photoURL }
+                                : require("../assets/images/2025-09-26/byc45z4XPi.png")
+                            }
+                            style={styles.friendMarkerImage}
+                          />
+                          {member.status === "COMPLETED" && (
+                            <View style={styles.completedBadge}>
+                              <MaterialIcons
+                                name="check-circle"
+                                size={16}
+                                color="#4CAF50"
+                              />
+                            </View>
+                          )}
+                          {member.status === "PAUSED" && (
+                            <View style={styles.pausedBadge}>
+                              <MaterialIcons
+                                name="pause-circle"
+                                size={16}
+                                color="#FFA726"
+                              />
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.memberPinTail} />
                       </View>
                     </Marker>
                   )
@@ -686,6 +785,23 @@ export default function JourneyScreen(): React.JSX.Element {
               </View>
             </View>
 
+            {needsDestinationPrompt && (
+              <TouchableOpacity
+                style={styles.destinationPrompt}
+                onPress={handleDestinationPrompt}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="flag" size={20} color="#0F172A" style={{ marginRight: 12 }} />
+                <View style={styles.destinationPromptTextContainer}>
+                  <Text style={styles.destinationPromptTitle}>Destination required</Text>
+                  <Text style={styles.destinationPromptSubtitle} numberOfLines={2}>
+                    Tell everyone where this ride is headed before tracking starts.
+                  </Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color="#0F172A" />
+              </TouchableOpacity>
+            )}
+
             {/* Stats Row */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
@@ -699,22 +815,18 @@ export default function JourneyScreen(): React.JSX.Element {
               <View style={styles.statItem}>
                 <View style={styles.speedContainer}>
                   <Text style={styles.statValue}>
-                    {isTracking && stats
-                      ? formatSpeed(stats.currentSpeed)
-                      : "0.0"}
+                    {speedMeasurement.value || '0.0'}
                   </Text>
-                  <Text style={styles.speedUnit}>KPH</Text>
+                  <Text style={styles.speedUnit}>{speedMeasurement.unit || 'KM/H'}</Text>
                 </View>
                 <Text style={styles.statLabel}>Speed</Text>
               </View>
               <View style={styles.statItem}>
                 <View style={styles.distanceContainer}>
                   <Text style={styles.statValue}>
-                    {isTracking && stats
-                      ? formatDistance(stats.totalDistance)
-                      : "0.0"}
+                    {distanceMeasurement.value || '0.0'}
                   </Text>
-                  <Text style={styles.distanceUnit}>KM</Text>
+                  <Text style={styles.distanceUnit}>{distanceMeasurement.unit || 'KM'}</Text>
                 </View>
                 <Text style={styles.statLabel}>Distance</Text>
               </View>
@@ -723,15 +835,22 @@ export default function JourneyScreen(): React.JSX.Element {
             {/* Action Buttons */}
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity
-                style={styles.startButton}
+                style={[styles.startButton, isStartBusy && styles.startButtonDisabled]}
                 onPress={handleStartJourney}
+                disabled={isStartBusy}
+                accessibilityLabel="Toggle journey recording"
+                accessibilityHint={isTracking ? 'Stop recording your journey' : 'Start recording your journey'}
               >
-                {isTracking ? (
+                {isStartBusy ? (
+                  <ActivityIndicator color="#000" />
+                ) : isTracking ? (
                   <MaterialIcons name="stop" size={24} color="#000" />
+                ) : (currentJourney?.status === 'paused' || myInstance?.status === 'PAUSED') ? (
+                  <MaterialIcons name="play-arrow" size={24} color="#000" />
                 ) : (
-                  <Image
+                  <Animated.Image
                     source={require("../assets/images/2025-09-26/s27abcBOgz.png")}
-                    style={styles.startIcon}
+                    style={[styles.startIcon, { transform: [{ translateX: bikeTranslation }] }]}
                   />
                 )}
               </TouchableOpacity>
@@ -847,34 +966,65 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  memberPinHead: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#0F2424',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 2,
+  },
+  memberPinTail: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 0,
+    borderTopWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#0F2424',
+    marginTop: -2,
+    zIndex: 1,
+  },
   friendMarkerImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 4,
-    borderColor: "#0F2424",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   completedBadge: {
     position: "absolute",
-    bottom: -4,
-    right: -4,
+    bottom: -2,
+    right: -2,
     backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderRadius: 11,
+    width: 22,
+    height: 22,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 3,
   },
   pausedBadge: {
     position: "absolute",
-    bottom: -4,
-    right: -4,
+    bottom: -2,
+    right: -2,
     backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderRadius: 11,
+    width: 22,
+    height: 22,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 3,
   },
   sosButton: {
     position: "absolute",
@@ -902,13 +1052,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(255, 251, 251, 0.9)",
+    backgroundColor: Platform.OS === 'android' ? '#FFFFFF' : 'rgba(255, 251, 251, 0.9)',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     paddingTop: 12,
     paddingBottom: 12,
     paddingHorizontal: 16,
     height: 215,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 10,
   },
   friendsRow: {
     paddingBottom: 12,
@@ -917,6 +1072,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  destinationPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  destinationPromptTextContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
+  destinationPromptTitle: {
+    fontFamily: 'Poppins',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  destinationPromptSubtitle: {
+    fontFamily: 'Poppins',
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 2,
   },
   friendAvatar: {
     width: 40,
@@ -993,6 +1175,9 @@ const styles = StyleSheet.create({
     height: 46,
     alignItems: "center",
     justifyContent: "center",
+  },
+  startButtonDisabled: {
+    opacity: 0.6,
   },
   startIcon: {
     width: 24,

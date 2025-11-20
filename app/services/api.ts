@@ -330,6 +330,7 @@ export const userAPI = {
     vehicle?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    includeHidden?: boolean;
   }) => {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/user/journey-history?${queryString}`, 'GET');
@@ -356,6 +357,39 @@ export const userAPI = {
 
 // Journey API
 export const journeyAPI = {
+  createJourney: async (journeyData: {
+    startLatitude?: number;
+    startLongitude?: number;
+    latitude?: number;
+    longitude?: number;
+    vehicle?: string;
+    title?: string;
+    groupId?: string;
+    status?: 'ACTIVE' | 'PLANNED';
+    startTime?: string;
+    endLatitude?: number;
+    endLongitude?: number;
+    notes?: string;
+  }) => {
+    const lat = (journeyData.latitude ?? journeyData.startLatitude);
+    const lng = (journeyData.longitude ?? journeyData.startLongitude);
+    const payload: any = {
+      latitude: typeof lat === 'string' ? Number(lat) : lat,
+      longitude: typeof lng === 'string' ? Number(lng) : lng,
+      vehicle: journeyData.vehicle,
+      title: journeyData.title,
+      status: journeyData.status,
+      startTime: journeyData.startTime,
+      endLatitude: journeyData.endLatitude,
+      endLongitude: journeyData.endLongitude,
+      notes: journeyData.notes,
+    };
+    if (journeyData.groupId) {
+      payload.groupId = journeyData.groupId;
+    }
+    return apiRequest('/journey/create', 'POST', payload);
+  },
+
   startJourney: async (journeyData: {
     startLatitude?: number;
     startLongitude?: number;
@@ -425,6 +459,18 @@ export const journeyAPI = {
   forceClearJourney: async (journeyId: string) => {
     return apiRequest(`/journey/${journeyId}/force-clear`, 'DELETE');
   },
+
+  updateJourneyPreferences: async (journeyId: string, prefs: { customTitle?: string | null; isHidden?: boolean }) => {
+    return apiRequest(`/journey/${journeyId}/preferences`, 'PATCH', prefs);
+  },
+
+  restoreHiddenJourneys: async () => {
+    return apiRequest('/journey/restore-hidden', 'POST');
+  },
+
+  clearCustomJourneyTitles: async () => {
+    return apiRequest('/journey/clear-custom-titles', 'POST');
+  },
   
   getActiveJourney: async () => {
     return apiRequest('/journey/active', 'GET');
@@ -481,12 +527,17 @@ export const groupAPI = {
     const token = await getAuthToken();
     const url = `${getCurrentApiUrl()}/group/${groupId}/cover`;
     
+    // Determine file type and name
+    const name = filename || fileUri.split('/').pop() || 'cover.jpg';
+    const match = /\.(\w+)$/.exec(name);
+    const type = match ? `image/${match[1] === 'jpg' ? 'jpeg' : match[1]}` : 'image/jpeg';
+
     // Use fetch with FormData for compatibility with latest expo-file-system
     const formData = new FormData();
     formData.append('cover', {
       uri: fileUri,
-      type: 'image/jpeg',
-      name: filename || 'cover.jpg',
+      type,
+      name,
     } as any);
 
     const response = await fetch(url, {
@@ -663,6 +714,19 @@ export const groupJourneyAPI = {
     if (params?.limit) qs.append('limit', String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return internalApiRequest(`/group-journey/${groupJourneyId}/events${suffix}`, 'GET');
+  },
+  postEvent: async (
+    groupJourneyId: string,
+    payload: {
+      type: 'MESSAGE' | 'PHOTO' | 'CHECKPOINT' | 'STATUS' | 'EMERGENCY' | 'CUSTOM';
+      message?: string;
+      latitude?: number;
+      longitude?: number;
+      mediaUrl?: string;
+      data?: any;
+    }
+  ) => {
+    return internalApiRequest(`/group-journey/${groupJourneyId}/events`, 'POST', payload);
   },
 };
 

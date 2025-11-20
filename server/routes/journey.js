@@ -4,6 +4,7 @@
 const express = require("express");
 const prisma = require('../prisma/client');
 const {
+  createJourney,
   startJourney,
   updateJourneyProgress,
   endJourney,
@@ -12,6 +13,9 @@ const {
   pauseJourney,
   resumeJourney,
   forceClearJourney,
+  updateJourneyPreferences,
+  restoreHiddenJourneys,
+  clearCustomJourneyTitles,
 } = require("../controllers/journeyController");
 const { body, param, query, validationResult } = require("express-validator");
 
@@ -29,6 +33,69 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+const coordinateValidator = (field, { allowOptionalForPlanned = false } = {}) => {
+  const limits = field === 'latitude' ? { min: -90, max: 90 } : { min: -180, max: 180 };
+  const friendlyName = field.charAt(0).toUpperCase() + field.slice(1);
+
+  return body(field).custom((value, { req }) => {
+    const rawStatus = req.body.status || 'ACTIVE';
+    const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toUpperCase() : 'ACTIVE';
+    const isPlanned = normalizedStatus === 'PLANNED';
+    const canSkip = allowOptionalForPlanned && isPlanned;
+
+    if (value === undefined || value === null || value === '') {
+      if (canSkip) {
+        return true;
+      }
+      throw new Error(`${friendlyName} is required`);
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue < limits.min || numericValue > limits.max) {
+      throw new Error(
+        field === 'latitude'
+          ? 'Latitude must be between -90 and 90'
+          : 'Longitude must be between -180 and 180'
+      );
+    }
+
+    // Persist the parsed value so downstream logic works with numbers
+    req.body[field] = numericValue;
+    return true;
+  });
+};
+
+/**
+ * @route POST /api/journey/create
+ * @desc Create a new journey (draft or planned)
+ * @access Private
+ */
+router.post(
+  "/create",
+  [
+    coordinateValidator('latitude', { allowOptionalForPlanned: true }),
+    coordinateValidator('longitude', { allowOptionalForPlanned: true }),
+    body("title")
+      .optional()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Title must be between 1 and 100 characters"),
+    body("vehicle")
+      .optional()
+      .isIn(["bike", "car", "truck", "motorcycle", "bus", "other"])
+      .withMessage("Invalid vehicle type"),
+    body("status")
+      .optional()
+      .isIn(["ACTIVE", "PLANNED"])
+      .withMessage("Invalid status"),
+    body("startTime")
+      .optional()
+      .isISO8601()
+      .withMessage("Invalid start time"),
+  ],
+  handleValidationErrors,
+  createJourney
+);
+
 /**
  * @route POST /api/journey/start
  * @desc Start a new journey
@@ -37,12 +104,8 @@ const handleValidationErrors = (req, res, next) => {
 router.post(
   "/start",
   [
-    body("latitude")
-      .isFloat({ min: -90, max: 90 })
-      .withMessage("Latitude must be between -90 and 90"),
-    body("longitude")
-      .isFloat({ min: -180, max: 180 })
-      .withMessage("Longitude must be between -180 and 180"),
+    coordinateValidator('latitude'),
+    coordinateValidator('longitude'),
     body("title")
       .optional()
       .isLength({ min: 1, max: 100 })
@@ -156,6 +219,43 @@ router.delete(
 );
 
 /**
+ * @route PATCH /api/journey/:journeyId/preferences
+ * @desc Update journey visibility and custom title
+ * @access Private
+ */
+router.patch(
+  "/:journeyId/preferences",
+  [
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+    body("customTitle")
+      .optional({ nullable: true })
+      .isLength({ min: 0, max: 60 })
+      .withMessage("Custom title must be 60 characters or fewer"),
+    body("isHidden")
+      .optional()
+      .isBoolean()
+      .withMessage("Hidden flag must be boolean")
+      .toBoolean(),
+  ],
+  handleValidationErrors,
+  updateJourneyPreferences
+);
+
+/**
+ * @route POST /api/journey/restore-hidden
+ * @desc Restore all hidden journeys for current user
+ * @access Private
+ */
+router.post("/restore-hidden", restoreHiddenJourneys);
+
+/**
+ * @route POST /api/journey/clear-custom-titles
+ * @desc Clear custom titles for all journeys
+ * @access Private
+ */
+router.post("/clear-custom-titles", clearCustomJourneyTitles);
+
+/**
  * @route GET /api/journey/history
  * @desc Get user's journey history
  * @access Private
@@ -173,7 +273,7 @@ router.get(
       .withMessage("Limit must be between 1 and 50"),
     query("status")
       .optional()
-      .isIn(["ACTIVE", "PAUSED", "COMPLETED", "CANCELLED"])
+      .isIn(["ACTIVE", "PAUSED", "COMPLETED", "CANCELLED", "PLANNED"])
       .withMessage("Invalid status"),
   ],
   handleValidationErrors,

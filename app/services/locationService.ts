@@ -7,9 +7,10 @@ import Constants from 'expo-constants';
 import { journeyAPI } from './api';
 
 // Movement filtering thresholds to reduce GPS jitter when stationary
-const MIN_ACCURACY_METERS = 25; // ignore low-accuracy updates over this threshold
-const MIN_MOVE_METERS = 8; // minimum movement to count towards distance
-const STATIONARY_SPEED_THRESHOLD_MPS = 0.5; // below this m/s, treat as stationary
+const MIN_ACCURACY_METERS = 20; // ignore low-accuracy updates over this threshold
+const MIN_MOVE_METERS = 10; // minimum movement to count towards distance
+const STATIONARY_SPEED_THRESHOLD_MPS = 1.2; // below this m/s, treat as stationary (increased to ~4.3 km/h to reduce drift)
+const MAX_ACCURACY_THRESHOLD = 100; // Ignore points with accuracy worse than this
 
 export interface LocationPoint {
   latitude: number;
@@ -208,6 +209,11 @@ class LocationService {
   private async handleLocationUpdate(location: Location.LocationObject) {
     if (!this.isTracking || !this.currentJourneyId) return;
 
+    // Ignore points with poor accuracy
+    if (location.coords.accuracy && location.coords.accuracy > MAX_ACCURACY_THRESHOLD) {
+      return;
+    }
+
     const newPoint: LocationPoint = {
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
@@ -234,9 +240,10 @@ class LocationService {
       const distanceMeters = distanceKm * 1000;
   const lastAcc = lastPoint.accuracy || 0;
   const currAcc = newPoint.accuracy || 0;
-  const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
+      const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
       // Accept if moved more than accuracy and threshold, or if reported speed indicates movement
-      if (distanceMeters >= minAcceptable || (newPoint.speed || 0) >= STATIONARY_SPEED_THRESHOLD_MPS) {
+      // Added check: even if speed is high, ensure we actually moved a tiny bit (e.g. > 3m) to avoid adding noise
+      if (distanceMeters >= minAcceptable || ((newPoint.speed || 0) >= STATIONARY_SPEED_THRESHOLD_MPS && distanceMeters > 3)) {
         this.stats.totalDistance += distanceKm;
         acceptPoint = true;
       }

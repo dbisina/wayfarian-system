@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import ActivityModal from './ActivityModal';
 
 const HomeScreen = ({ onNavigate }) => {

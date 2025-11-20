@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -110,7 +110,7 @@ export default function ProfileScreen() {
 
         if (response.success) {
           Alert.alert('Success', 'Profile photo updated successfully!');
-          await refreshUser?.();
+          await refreshUser?.(response.user);
           await refreshData();
         } else {
           throw new Error(response.message || response.error || 'Upload failed');
@@ -275,7 +275,24 @@ const styles = StyleSheet.create({
   editBtn: { backgroundColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
   editBtnText: { fontFamily: 'Inter', color: '#374151', fontWeight: '600' },
   statsRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  statCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 12, padding: 16, shadowColor: '#000', shadowOffset: { width: 1, height: 2 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
+  statCard: {
+    flex: 1,
+    backgroundColor: Platform.OS === 'android' ? '#FFFFFF' : 'rgba(255,255,255,0.9)',
+    borderRadius: 12,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 1, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 4,
+        shadowColor: '#000',
+      },
+    }),
+  },
   statLabel: { fontFamily: 'Space Grotesk', fontSize: 12, color: '#000', marginBottom: 8 },
   statValue: { fontFamily: 'Digital Numbers', fontSize: 20, color: '#000' },
   actionItem: { backgroundColor: '#F6F6F6', borderRadius: 12, padding: 16 },

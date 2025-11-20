@@ -12,6 +12,7 @@ import Constants from 'expo-constants';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { JourneyProvider } from '../contexts/JourneyContext';
+import { SettingsProvider } from '../contexts/SettingsContext';
 import GroupJourneyGlobalListener from '../components/GroupJourneyGlobalListener';
 import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
@@ -35,7 +36,7 @@ export const unstable_settings = {
 
 function RootLayoutContent() {
   const colorScheme = useColorScheme();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
@@ -43,14 +44,14 @@ function RootLayoutContent() {
   });
 
   useEffect(() => {
-    if (fontsLoaded && !authLoading) {
+    if (fontsLoaded && !isInitializing) {
       setNavigationReady(true);
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, authLoading]);
+  }, [fontsLoaded, isInitializing]);
 
   // Show splash while loading fonts or auth state
-  if (!fontsLoaded || authLoading || !navigationReady) {
+  if (!fontsLoaded || isInitializing || !navigationReady) {
     return null;
   }
 
@@ -82,9 +83,11 @@ export default function RootLayout() {
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>
         <AuthProvider>
-          <JourneyProvider>
-            <RootLayoutContent />
-          </JourneyProvider>
+          <SettingsProvider>
+            <JourneyProvider>
+              <RootLayoutContent />
+            </JourneyProvider>
+          </SettingsProvider>
         </AuthProvider>
       </PersistGate>
     </Provider>

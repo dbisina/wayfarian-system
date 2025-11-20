@@ -5,6 +5,115 @@ const prisma = require('../prisma/client');
 const { calculateDistance, calculateAverageSpeed } = require('../utils/helpers');
 
 /**
+ * Create a new journey (Active or Planned)
+ */
+const createJourney = async (req, res) => {
+  try {
+    const { 
+      latitude, 
+      longitude, 
+      title, 
+      vehicle, 
+      groupId,
+      status: rawStatus = 'ACTIVE',
+      startTime,
+      endLatitude,
+      endLongitude,
+      notes
+    } = req.body;
+    const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toUpperCase() : 'ACTIVE';
+    const requiresCoordinates = normalizedStatus === 'ACTIVE';
+    const hasCoordinates = latitude !== undefined && latitude !== null &&
+      longitude !== undefined && longitude !== null && latitude !== '' && longitude !== '';
+
+    if (requiresCoordinates && !hasCoordinates) {
+      return res.status(400).json({
+        error: 'Missing coordinates',
+        message: 'Latitude and longitude are required when starting an active journey',
+      });
+    }
+
+    const resolvedLatitude = hasCoordinates ? Number(latitude) : null;
+    const resolvedLongitude = hasCoordinates ? Number(longitude) : null;
+    
+    const userId = req.user.id;
+    
+    // If starting active, check for existing active journey
+    if (normalizedStatus === 'ACTIVE') {
+      const activeJourney = await prisma.journey.findFirst({
+        where: {
+          userId,
+          status: 'ACTIVE',
+        },
+      });
+      
+      if (activeJourney) {
+        return res.status(400).json({
+          error: 'Active journey exists',
+          message: 'Please end current journey before starting a new one',
+          activeJourney,
+        });
+      }
+    }
+    
+    // Create new journey
+    const journey = await prisma.journey.create({
+      data: {
+        userId,
+        title: title || 'My Journey',
+        startTime: startTime ? new Date(startTime) : new Date(),
+        startLatitude: resolvedLatitude,
+        startLongitude: resolvedLongitude,
+        endLatitude,
+        endLongitude,
+        vehicle: vehicle || 'car',
+        groupId,
+        status: normalizedStatus,
+        customTitle: null,
+        isHidden: false,
+        // Only add initial route point if active
+        routePoints: normalizedStatus === 'ACTIVE' ? [{ 
+          lat: resolvedLatitude, 
+          lng: resolvedLongitude, 
+          timestamp: new Date().toISOString(),
+          speed: 0 
+        }] : [],
+        // Store notes in weatherData for now since schema doesn't have notes
+        weatherData: notes ? { notes } : undefined,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
+        group: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+    
+    res.status(201).json({
+      success: true,
+      message: status === 'PLANNED' ? 'Journey saved for later' : 'Journey started successfully',
+      journey,
+    });
+    
+  } catch (error) {
+    console.error('Create journey error:', error);
+    res.status(500).json({
+      error: 'Failed to create journey',
+      message: error.message,
+    });
+  }
+};
+
+/**
  * Start a new journey
  */
 const startJourney = async (req, res) => {
@@ -51,6 +160,8 @@ const startJourney = async (req, res) => {
           timestamp: new Date().toISOString(),
           speed: 0 
         }],
+        customTitle: null,
+        isHidden: false,
       },
       include: {
         user: {
@@ -349,6 +460,7 @@ const getActiveJourney = async (req, res) => {
 };
 
 module.exports = {
+  createJourney,
   startJourney,
   updateJourneyProgress,
   endJourney,
@@ -448,6 +560,122 @@ module.exports = {
       res.status(500).json({ 
         error: 'Failed to force clear journey', 
         message: error.message 
+      });
+    }
+  },
+
+  /**
+   * Update journey-level preferences such as custom title or hidden state
+   */
+  updateJourneyPreferences: async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const { customTitle, isHidden } = req.body;
+      const userId = req.user.id;
+
+      const journey = await prisma.journey.findFirst({
+        where: { id: journeyId, userId },
+      });
+
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Journey not found for this user',
+        });
+      }
+
+      const data = {};
+
+      if (customTitle !== undefined) {
+        const trimmed = typeof customTitle === 'string' ? customTitle.trim() : '';
+        data.customTitle = trimmed.length ? trimmed : null;
+      }
+
+      if (isHidden !== undefined) {
+        const hiddenFlag = Boolean(isHidden);
+        data.isHidden = hiddenFlag;
+        data.hiddenAt = hiddenFlag ? new Date() : null;
+      }
+
+      if (Object.keys(data).length === 0) {
+        return res.status(400).json({
+          error: 'No changes provided',
+          message: 'Nothing to update for this journey',
+        });
+      }
+
+      const updatedJourney = await prisma.journey.update({
+        where: { id: journeyId },
+        data,
+        select: {
+          id: true,
+          title: true,
+          customTitle: true,
+          isHidden: true,
+          hiddenAt: true,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Journey preferences updated',
+        journey: updatedJourney,
+      });
+    } catch (error) {
+      console.error('Update journey preferences error:', error);
+      res.status(500).json({
+        error: 'Failed to update journey preferences',
+        message: error.message,
+      });
+    }
+  },
+
+  /**
+   * Restore all hidden journeys for the authenticated user
+   */
+  restoreHiddenJourneys: async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const result = await prisma.journey.updateMany({
+        where: { userId, isHidden: true },
+        data: { isHidden: false, hiddenAt: null },
+      });
+
+      res.json({
+        success: true,
+        restored: result.count,
+        message: result.count ? 'Hidden journeys restored' : 'No hidden journeys to restore',
+      });
+    } catch (error) {
+      console.error('Restore hidden journeys error:', error);
+      res.status(500).json({
+        error: 'Failed to restore hidden journeys',
+        message: error.message,
+      });
+    }
+  },
+
+  /**
+   * Clear all custom titles for the authenticated user
+   */
+  clearCustomJourneyTitles: async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const result = await prisma.journey.updateMany({
+        where: { userId, NOT: { customTitle: null } },
+        data: { customTitle: null },
+      });
+
+      res.json({
+        success: true,
+        cleared: result.count,
+        message: result.count ? 'Custom names cleared' : 'No custom journey names to clear',
+      });
+    } catch (error) {
+      console.error('Clear custom journey titles error:', error);
+      res.status(500).json({
+        error: 'Failed to clear custom journey names',
+        message: error.message,
       });
     }
   },

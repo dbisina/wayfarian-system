@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -72,6 +73,9 @@ export default function GroupDetailScreen() {
   const [activeGroupJourneyId, setActiveGroupJourneyId] = useState<string | null>(null);
   const [activeSoloJourney, setActiveSoloJourney] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingCoverUri, setPendingCoverUri] = useState<string | null>(null);
+  const [showCoverPreview, setShowCoverPreview] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const lastManualRefreshRef = useRef<number>(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -536,21 +540,35 @@ export default function GroupDetailScreen() {
 
       const imageUri = result.assets[0].uri;
       console.log('[Group Cover] Selected image:', imageUri);
+      setPendingCoverUri(imageUri);
+      setShowCoverPreview(true);
+    } catch (e: any) {
+      console.error('[Group Cover] Upload failed:', e);
+      Alert.alert('Upload Failed', e?.message || 'Failed to upload cover photo. Please try again.');
+    }
+  };
 
-      // Show loading
-      Alert.alert('Uploading...', 'Please wait while we upload your cover photo.');
+  const cancelCoverPreview = () => {
+    if (uploadingCover) return;
+    setShowCoverPreview(false);
+    setPendingCoverUri(null);
+  };
 
-      // Upload to server
-      const uploadResult = await groupAPI.uploadGroupCover(group.id, imageUri);
+  const confirmCoverUpload = async () => {
+    if (!group || !pendingCoverUri) return;
+    setUploadingCover(true);
+    try {
+      const uploadResult = await groupAPI.uploadGroupCover(group.id, pendingCoverUri);
       console.log('[Group Cover] Upload successful:', uploadResult?.imageUrl);
-
-      // Reload group data to show new cover
       await loadGroupData(true);
-
       Alert.alert('Success', 'Cover photo updated successfully!');
     } catch (e: any) {
       console.error('[Group Cover] Upload failed:', e);
       Alert.alert('Upload Failed', e?.message || 'Failed to upload cover photo. Please try again.');
+    } finally {
+      setUploadingCover(false);
+      setShowCoverPreview(false);
+      setPendingCoverUri(null);
     }
   };
 
@@ -823,6 +841,45 @@ export default function GroupDetailScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={showCoverPreview}
+        animationType="fade"
+        transparent
+        onRequestClose={cancelCoverPreview}
+      >
+        <View style={styles.coverModalBackdrop}>
+          <View style={styles.coverModalCard}>
+            <Text style={styles.coverModalTitle}>Preview cover photo</Text>
+            {pendingCoverUri && (
+              <Image source={{ uri: pendingCoverUri }} style={styles.coverPreviewImage} resizeMode="cover" />
+            )}
+            <Text style={styles.coverModalSubtitle}>
+              Make sure the important parts aren&apos;t cropped out before saving.
+            </Text>
+            <View style={styles.coverModalActions}>
+              <TouchableOpacity
+                style={styles.coverModalButton}
+                onPress={cancelCoverPreview}
+                disabled={uploadingCover}
+              >
+                <Text style={styles.coverModalButtonText}>Choose another</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.coverModalButton, styles.coverModalButtonPrimary, uploadingCover && { opacity: 0.7 }]}
+                onPress={confirmCoverUpload}
+                disabled={uploadingCover}
+              >
+                {uploadingCover ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.coverModalButtonText, { color: '#FFFFFF' }]}>Use photo</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1293,5 +1350,57 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  coverModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  coverModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+  },
+  coverModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 12,
+  },
+  coverModalSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 16,
+  },
+  coverPreviewImage: {
+    width: '100%',
+    height: 190,
+    borderRadius: 14,
+    marginBottom: 12,
+  },
+  coverModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  coverModalButton: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  coverModalButtonPrimary: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  coverModalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Space Grotesk',
+    color: '#0F172A',
   },
 });

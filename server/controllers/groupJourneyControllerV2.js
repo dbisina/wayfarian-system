@@ -343,6 +343,7 @@ const startMyInstance = async (req, res) => {
         status: 'ACTIVE',
         currentLatitude: startLatitude,
         currentLongitude: startLongitude,
+        lastLocationUpdate: new Date(),
         startAddress,
         routePoints: [{ latitude: startLatitude, longitude: startLongitude, timestamp: new Date().toISOString() }]
       }
@@ -388,6 +389,19 @@ const startMyInstance = async (req, res) => {
         startLatitude,
         startLongitude,
         timestamp: new Date().toISOString(),
+      });
+
+      io.to(`group-journey-${groupJourneyId}`).emit('member:location-updated', {
+        instanceId: instance.id,
+        userId,
+        displayName: membership.user.displayName,
+        photoURL: membership.user.photoURL,
+        latitude: startLatitude,
+        longitude: startLongitude,
+        totalDistance: 0,
+        totalTime: 0,
+        status: 'ACTIVE',
+        lastUpdate: instance.lastLocationUpdate?.toISOString?.() || new Date().toISOString(),
       });
 
       // Also emit ride event
@@ -536,6 +550,8 @@ const updateInstanceLocation = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     const { latitude, longitude, distance, speed, routePoint } = req.body;
+    const displayName = req.user?.displayName;
+    const photoURL = req.user?.photoURL;
 
     // Get instance from cache or DB
     let instance = await redisService.get(redisService.key('instance', id));
@@ -602,15 +618,21 @@ const updateInstanceLocation = async (req, res) => {
     // Broadcast location (throttled - socket handles this)
     const io = req.app.get('io');
     if (io) {
-      io.to(`group-${instance.groupJourney.groupId}`).emit('member:location-updated', {
+      io.to(`group-journey-${instance.groupJourney.id || instance.groupJourneyId}`).emit('member:location-updated', {
         instanceId: id,
         userId,
+        displayName,
+        photoURL,
         latitude,
         longitude,
         speed,
         distance: newDistance,
+        totalDistance: newDistance,
+        totalTime: elapsedSeconds,
+        heading: routePoint?.heading,
+        status: updated.status,
         topSpeed: newTopSpeed,
-        timestamp: now.toISOString()
+        lastUpdate: now.toISOString(),
       });
     }
 
@@ -704,7 +726,9 @@ const completeInstance = async (req, res) => {
         displayName: instanceUser?.displayName,
         distance: updatedInstance.totalDistance,
         duration,
-        timestamp: new Date(),
+        status: 'COMPLETED',
+        lastUpdate: updatedInstance.endTime?.toISOString?.() || new Date().toISOString(),
+        timestamp: new Date().toISOString(),
       });
 
       io.to(`group-${instance.groupJourney.groupId}`).emit('group-journey:event', {
@@ -765,9 +789,11 @@ const pauseInstance = async (req, res) => {
     // Emit event
     const io = req.app.get('io');
     if (io) {
-      io.to(`group-journey-${instance.groupJourneyId}`).emit('member:instance-paused', {
+      io.to(`group-journey-${instance.groupJourneyId}`).emit('member:journey-paused', {
         instanceId,
         userId,
+        status: 'PAUSED',
+        lastUpdate: new Date().toISOString(),
       });
     }
 
@@ -815,9 +841,11 @@ const resumeInstance = async (req, res) => {
     // Emit event
     const io = req.app.get('io');
     if (io) {
-      io.to(`group-journey-${instance.groupJourneyId}`).emit('member:instance-resumed', {
+      io.to(`group-journey-${instance.groupJourneyId}`).emit('member:journey-resumed', {
         instanceId,
         userId,
+        status: 'ACTIVE',
+        lastUpdate: new Date().toISOString(),
       });
     }
 

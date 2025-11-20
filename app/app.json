@@ -25,7 +25,26 @@
       ],
       "expo-web-browser",
       "expo-secure-store",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you set your profile picture and share moments."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Wayfarian to use your location to track your journey and show your position on the map."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Wayfarian to access your photos to save and share journey memories.",
+          "savePhotosPermission": "Allow Wayfarian to save photos to your device."
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
@@ -51,7 +70,12 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "CAMERA"
       ],
       "package": "com.wayfarian.com",
       "versionCode": 1,
