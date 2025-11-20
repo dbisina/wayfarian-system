@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Skeleton, SkeletonLine } from '../components/Skeleton';
 import Header from '@/components/ui/Header';
 import GroupCard from '@/components/ui/GroupCard';
@@ -164,6 +165,13 @@ export default function GroupsScreen(): React.JSX.Element {
           </View>
         </ScrollView>
       )}
+      
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/future-rides')}
+      >
+        <Ionicons name="calendar" size={24} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -187,4 +195,20 @@ const styles = StyleSheet.create({
   joinConfirm: { height: 40, paddingHorizontal: 16, backgroundColor: '#F9A825', borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   joinConfirmDisabled: { backgroundColor: '#E0E0E0' },
   joinConfirmText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, fontFamily: 'Space Grotesk' },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+  },
 });

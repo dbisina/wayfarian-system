@@ -67,7 +67,15 @@ export const useGroupJourney = ({
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
-  }, [myInstance]);
+    if (myInstance) {
+      dispatch(setStats({
+        totalDistance: myInstance.totalDistance || 0,
+        totalTime: myInstance.totalTime || 0,
+        activeMembersCount: members.filter(m => m.isOnline).length,
+        completedMembersCount: members.filter(m => m.status === 'COMPLETED').length,
+      }));
+    }
+  }, [myInstance, dispatch, members]);
 
   const setMyInstance = useCallback((nextValue: JourneyInstance | null | ((prev: JourneyInstance | null) => JourneyInstance | null)) => {
     const resolved = typeof nextValue === 'function' ? nextValue(myInstanceRef.current) : nextValue;

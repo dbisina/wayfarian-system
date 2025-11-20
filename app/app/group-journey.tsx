@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useGroupJourney } from '../hooks/useGroupJourney';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import { getSocket } from '../services/socket';
@@ -51,6 +52,7 @@ export default function GroupJourneyScreen() {
       : undefined;
   const router = useRouter();
   const { user } = useAuth();
+  const { convertDistance } = useSettings();
   const socket = getSocket();
   const googleKey = getGoogleMapsApiKey();
 
@@ -75,7 +77,7 @@ export default function GroupJourneyScreen() {
   } = useGroupJourney({ socket, groupJourneyId, autoStart: true });
 
   // Group Map Behavior (Zoom Wars Fix)
-  const { mapViewProps, recenterOnGroup, isUserInteracting } = useGroupMapBehavior({
+  const { mapViewProps } = useGroupMapBehavior({
     mapRef,
     members: memberLocations
       .filter(m => typeof m.latitude === 'number' && typeof m.longitude === 'number')
@@ -143,6 +145,10 @@ export default function GroupJourneyScreen() {
 
   const initialMapRegion = useMemo<Region | null>(() => {
     if (!journeyData) return null;
+    // Ignore placeholder coordinates (0,0)
+    if (Math.abs(journeyData.startLatitude) < 0.0001 && Math.abs(journeyData.startLongitude) < 0.0001) {
+      return null;
+    }
     return {
       latitude: journeyData.startLatitude,
       longitude: journeyData.startLongitude,
@@ -248,11 +254,18 @@ export default function GroupJourneyScreen() {
     if (myLocation?.latitude && myLocation?.longitude) {
       return { latitude: myLocation.latitude, longitude: myLocation.longitude };
     }
+    // Fallback to user's current location if journey start is placeholder
+    if (userStartRegion) {
+      return { latitude: userStartRegion.latitude, longitude: userStartRegion.longitude };
+    }
     if (journeyData?.startLatitude && journeyData?.startLongitude) {
-      return {
-        latitude: journeyData.startLatitude,
-        longitude: journeyData.startLongitude,
-      };
+      // Ignore placeholder
+      if (Math.abs(journeyData.startLatitude) > 0.0001) {
+        return {
+          latitude: journeyData.startLatitude,
+          longitude: journeyData.startLongitude,
+        };
+      }
     }
     return undefined;
   }, [
@@ -260,6 +273,7 @@ export default function GroupJourneyScreen() {
     journeyData?.startLongitude,
     myLocation?.latitude,
     myLocation?.longitude,
+    userStartRegion,
   ]);
 
 
@@ -376,18 +390,6 @@ export default function GroupJourneyScreen() {
       startLocationTracking(myInstance.id);
     }
   }, [isTracking, myInstance, startLocationTracking]);
-
-  const fitMapToMembers = useCallback(() => {
-    // Handled by useGroupMapBehavior now
-  }, []);
-
-  /*
-  useEffect(() => {
-    if (memberLocations.length) {
-      fitMapToMembers();
-    }
-  }, [memberLocations.length, fitMapToMembers]);
-  */
 
   const handleStartInstance = async () => {
     if (!groupJourneyId) return;
@@ -597,9 +599,7 @@ export default function GroupJourneyScreen() {
                 longitude: member.longitude,
               }}
               title={member.displayName}
-              description={`${((member.totalDistance || 0) / 1000).toFixed(
-                1
-              )} km • ${member.status}`}
+              description={`${convertDistance((member.totalDistance || 0) / 1000)} • ${member.status}`}
             >
               <View style={styles.memberMarker}>
                 <Image
@@ -640,10 +640,11 @@ export default function GroupJourneyScreen() {
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Your distance</Text>
             <Text style={styles.statValue}>
-              {myLocation
-                ? ((myLocation.totalDistance || 0) / 1000).toFixed(1)
-                : "0.0"}{" "}
-              km
+              {convertDistance(
+                myLocation
+                  ? (myLocation.totalDistance || 0) / 1000
+                  : 0
+              )}
             </Text>
           </View>
           <View style={styles.stat}>
@@ -671,7 +672,7 @@ export default function GroupJourneyScreen() {
                 {member.displayName}
               </Text>
               <Text style={styles.memberDistance}>
-                {((member.totalDistance || 0) / 1000).toFixed(1)} km
+                {convertDistance((member.totalDistance || 0) / 1000)}
               </Text>
               {member.status === "COMPLETED" && (
                 <Ionicons name="checkmark-circle" size={16} color="#10b981" />

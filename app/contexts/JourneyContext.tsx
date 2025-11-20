@@ -71,9 +71,6 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const routePoints = useJourneyRoutePoints();
   const uploadQueue = useJourneyUploadQueue();
 
-  const routePoints = useJourneyRoutePoints();
-  const uploadQueue = useJourneyUploadQueue();
-
   // Use Smart Tracking Hook
   const { 
     liveRawLocation, 

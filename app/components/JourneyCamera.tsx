@@ -34,6 +34,12 @@ export default function JourneyCamera({
   const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
 
   useEffect(() => {
+    if (!cameraPermission || (cameraPermission.status === 'undetermined' && cameraPermission.canAskAgain)) {
+      requestCameraPermission();
+    }
+  }, [cameraPermission, requestCameraPermission]);
+
+  useEffect(() => {
     if (!mediaPermission) {
       requestMediaPermission();
     }

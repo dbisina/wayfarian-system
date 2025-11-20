@@ -288,6 +288,11 @@ const startMyInstance = async (req, res) => {
     }
 
     // Verify membership
+    if (!groupJourney.groupId) {
+      // Should not happen if data integrity is maintained
+      return res.status(500).json({ error: 'Invalid group journey data' });
+    }
+
     const membership = await prisma.groupMember.findUnique({
       where: {
         userId_groupId: { userId, groupId: groupJourney.groupId }
@@ -728,12 +733,14 @@ const completeInstance = async (req, res) => {
     await redisService.set(instanceKey, updatedInstance, redisService.TTL.SHORT);
 
     // Invalidate group journey cache
-    const journeyKey = redisService.key('group-journey', instance.groupJourneyId, 'full');
-    await redisService.del(journeyKey);
+    if (instance.groupJourneyId) {
+      const journeyKey = redisService.key('group-journey', instance.groupJourneyId, 'full');
+      await redisService.del(journeyKey);
+    }
 
     // Emit socket events
     const io = req.app.get('io');
-    if (io) {
+    if (io && instance.groupJourney && instance.groupJourney.groupId) {
       io.to(`group-journey-${instance.groupJourneyId}`).emit('member:journey-completed', {
         instanceId,
         userId,
@@ -1067,7 +1074,6 @@ const getMyActiveInstance = async (req, res) => {
   }
 };
 
-// Export all functions
 // Cancel endpoint removed per product decision: prefer pause/resume semantics
 
 module.exports = {
