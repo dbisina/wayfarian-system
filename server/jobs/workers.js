@@ -12,6 +12,10 @@ const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
 
+const STALE_INSTANCE_ACTIVE_MINUTES = Number(process.env.STALE_INSTANCE_ACTIVE_MINUTES || 60);
+const STALE_INSTANCE_PAUSED_HOURS = Number(process.env.STALE_INSTANCE_PAUSED_HOURS || 12);
+const MIN_DISTANCE_FOR_AUTO_COMPLETE = Number(process.env.STALE_INSTANCE_MIN_DISTANCE || 200); // meters
+
 // Use shared Prisma client
 
 /**
@@ -436,10 +440,10 @@ async function cleanupOldSessions() {
 }
 
 async function cleanupIncompleteJourneys() {
-  // Clean up journeys that have been active for too long
+  // Clean up solo journeys that have been active for too long
   const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
   
-  const result = await prisma.journey.updateMany({
+  const staleSolo = await prisma.journey.updateMany({
     where: {
       status: 'ACTIVE',
       startTime: {
@@ -451,8 +455,172 @@ async function cleanupIncompleteJourneys() {
       endTime: new Date(),
     },
   });
+
+  const groupCleanup = await cleanupStuckGroupInstances();
   
-  return { cancelledJourneys: result.count };
+  return {
+    cancelledJourneys: staleSolo.count,
+    ...groupCleanup,
+  };
+}
+
+async function cleanupStuckGroupInstances() {
+  const now = new Date();
+  const activeCutoff = new Date(now.getTime() - STALE_INSTANCE_ACTIVE_MINUTES * 60 * 1000);
+  const pausedCutoff = new Date(now.getTime() - STALE_INSTANCE_PAUSED_HOURS * 60 * 60 * 1000);
+
+  let autoCompleted = 0;
+  let autoCancelled = 0;
+  let journeysClosed = 0;
+  const touchedJourneys = new Set();
+
+  const baseSelect = {
+    id: true,
+    groupJourneyId: true,
+    startTime: true,
+    totalDistance: true,
+    totalTime: true,
+    updatedAt: true,
+    lastLocationUpdate: true,
+  };
+
+  const fetchStaleActive = () => prisma.journeyInstance.findMany({
+    where: {
+      status: 'ACTIVE',
+      OR: [
+        { lastLocationUpdate: { lt: activeCutoff } },
+        {
+          lastLocationUpdate: null,
+          updatedAt: { lt: activeCutoff },
+        },
+      ],
+    },
+    select: baseSelect,
+    orderBy: { updatedAt: 'asc' },
+    take: 25,
+  });
+
+  let batch = await fetchStaleActive();
+  while (batch.length) {
+    for (const instance of batch) {
+      const startTime = instance.startTime ? new Date(instance.startTime) : now;
+      const derivedTotalTime = instance.totalTime && instance.totalTime > 0
+        ? instance.totalTime
+        : Math.max(0, Math.floor((now.getTime() - startTime.getTime()) / 1000));
+      const shouldComplete = (instance.totalDistance || 0) >= MIN_DISTANCE_FOR_AUTO_COMPLETE;
+      const finalStatus = shouldComplete ? 'COMPLETED' : 'CANCELLED';
+
+      await prisma.journeyInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: finalStatus,
+          endTime: now,
+          totalTime: derivedTotalTime,
+        },
+      });
+
+      touchedJourneys.add(instance.groupJourneyId);
+      if (finalStatus === 'COMPLETED') {
+        autoCompleted += 1;
+      } else {
+        autoCancelled += 1;
+      }
+    }
+
+    batch = await fetchStaleActive();
+  }
+
+  const fetchStalePaused = () => prisma.journeyInstance.findMany({
+    where: {
+      status: 'PAUSED',
+      updatedAt: { lt: pausedCutoff },
+    },
+    select: {
+      id: true,
+      groupJourneyId: true,
+    },
+    orderBy: { updatedAt: 'asc' },
+    take: 25,
+  });
+
+  batch = await fetchStalePaused();
+  while (batch.length) {
+    for (const instance of batch) {
+      await prisma.journeyInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: 'CANCELLED',
+          endTime: now,
+        },
+      });
+      touchedJourneys.add(instance.groupJourneyId);
+      autoCancelled += 1;
+    }
+
+    batch = await fetchStalePaused();
+  }
+
+  for (const groupJourneyId of touchedJourneys) {
+    if (!groupJourneyId) continue;
+    const closed = await finalizeGroupJourneyIfFinished(groupJourneyId, now);
+    if (closed) {
+      journeysClosed += 1;
+    }
+  }
+
+  if (autoCompleted || autoCancelled) {
+    logger.info('[Cleanup] Auto-resolved stuck group instances', {
+      category: 'database_cleanup',
+      autoCompleted,
+      autoCancelled,
+      journeysClosed,
+    });
+  }
+
+  return {
+    autoCompletedInstances: autoCompleted,
+    autoCancelledInstances: autoCancelled,
+    groupJourneysClosed: journeysClosed,
+  };
+}
+
+async function finalizeGroupJourneyIfFinished(groupJourneyId, timestamp = new Date()) {
+  const remaining = await prisma.journeyInstance.count({
+    where: {
+      groupJourneyId,
+      status: {
+        in: ['ACTIVE', 'PAUSED'],
+      },
+    },
+  });
+
+  if (remaining > 0) {
+    return false;
+  }
+
+  const journey = await prisma.groupJourney.findUnique({
+    where: { id: groupJourneyId },
+    select: { status: true },
+  });
+
+  if (!journey || journey.status !== 'ACTIVE') {
+    return false;
+  }
+
+  await prisma.groupJourney.update({
+    where: { id: groupJourneyId },
+    data: {
+      status: 'COMPLETED',
+      completedAt: timestamp,
+    },
+  });
+
+  logger.info('[Cleanup] Auto-completed group journey', {
+    category: 'database_cleanup',
+    groupJourneyId,
+  });
+
+  return true;
 }
 
 async function cleanupOrphanedPhotos() {

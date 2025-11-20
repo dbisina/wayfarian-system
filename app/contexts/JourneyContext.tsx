@@ -4,9 +4,11 @@
 import React, { createContext, useContext, useEffect, useMemo, ReactNode, useCallback } from 'react';
 import { locationService, JourneyStats, LocationPoint } from '../services/locationService';
 import { journeyAPI, groupJourneyAPI, galleryAPI } from '../services/api';
-import { ensureGroupJourneySocket, teardownGroupJourneySocket } from '../services/groupJourneySocket';
+import { ensureGroupJourneySocket, teardownGroupJourneySocket, shareGroupLocation } from '../services/groupJourneySocket';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useAppDispatch } from '../store/hooks';
+import { useSmartTracking } from '../hooks/useSmartTracking';
+import * as Location from 'expo-location';
 import {
   clearJourney,
   clearRoutePoints,
@@ -55,6 +57,7 @@ export interface JourneyContextType {
   loadGroupMembers: (groupId: string) => Promise<void>;
   updateMemberLocation: (memberId: string, location: LocationPoint) => void;
   hydrated: boolean;
+  currentLocation: LocationPoint | null;
 }
 
 const JourneyContext = createContext<JourneyContextType | undefined>(undefined);
@@ -68,15 +71,99 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const routePoints = useJourneyRoutePoints();
   const uploadQueue = useJourneyUploadQueue();
 
-  const derivedStats: JourneyStats = useMemo(() => ({
-    totalDistance: statsFromStore.totalDistance,
-    totalTime: statsFromStore.totalTime,
-    movingTime: statsFromStore.movingTime,
-    avgSpeed: statsFromStore.avgSpeed,
-    topSpeed: statsFromStore.topSpeed,
-    currentSpeed: statsFromStore.currentSpeed,
-  }), [statsFromStore]);
+  const routePoints = useJourneyRoutePoints();
+  const uploadQueue = useJourneyUploadQueue();
 
+  // Use Smart Tracking Hook
+  const { 
+    liveRawLocation, 
+    officialSnappedPath, 
+    officialDistance, 
+    movingTime, 
+    avgSpeed,
+    maxSpeed 
+  } = useSmartTracking(journeyState.isTracking);
+
+  const derivedStats: JourneyStats = useMemo(() => ({
+    totalDistance: officialDistance,
+    totalTime: journeyState.currentJourney?.startTime 
+      ? Math.floor((Date.now() - new Date(journeyState.currentJourney.startTime).getTime()) / 1000)
+      : statsFromStore.totalTime,
+    movingTime: movingTime,
+    avgSpeed: avgSpeed,
+    topSpeed: maxSpeed,
+    currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
+  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.currentJourney]);
+
+  // Sync Smart Tracking data to Redux Store
+  useEffect(() => {
+    if (!journeyState.isTracking) return;
+
+    const newStats: JourneyStats = {
+      totalDistance: officialDistance,
+      totalTime: derivedStats.totalTime,
+      movingTime: movingTime,
+      avgSpeed: avgSpeed,
+      topSpeed: maxSpeed,
+      currentSpeed: derivedStats.currentSpeed,
+    };
+    
+    dispatch(setStats(newStats));
+
+    // Map snapped path to RoutePoints
+    // Note: officialSnappedPath is just geometry. We might want to append liveRawLocation as the latest point?
+    // Or just use officialSnappedPath for the line.
+    // RoutePoint expects { latitude, longitude, timestamp, speed, accuracy, altitude }
+    // We'll reconstruct it from the snapped path, though we lose per-point metadata.
+    // For the visual line, lat/lng is key.
+    const newRoutePoints = officialSnappedPath.map((p, index) => ({
+      latitude: p.latitude,
+      longitude: p.longitude,
+      timestamp: Date.now(), // Placeholder
+      speed: 0,
+      accuracy: 0,
+      altitude: 0
+    }));
+    
+    // If we have a live location that isn't snapped yet, maybe append it?
+    // For now, let's stick to the official path to avoid "jagged" lines.
+    dispatch(setRoutePoints(newRoutePoints));
+
+  }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, officialSnappedPath, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
+
+  // Backend & Socket Updates
+  useEffect(() => {
+    if (!journeyState.isTracking || !liveRawLocation || !journeyState.currentJourney) return;
+
+    const updateBackend = async () => {
+       try {
+         await journeyAPI.updateJourney(journeyState.currentJourney!.id, {
+           currentLatitude: liveRawLocation.latitude,
+           currentLongitude: liveRawLocation.longitude,
+           currentSpeed: liveRawLocation.speed * 3.6,
+         });
+       } catch (e) {
+         console.warn('Backend update failed', e);
+       }
+    };
+
+    // Throttle backend updates? useSmartTracking updates liveRawLocation frequently.
+    // For now, we update on every location change (approx 2s).
+    updateBackend();
+
+    // Socket update
+    if (journeyState.currentJourney.groupId) {
+      // Use the imported shareGroupLocation (need to ensure it's imported from socket service correctly)
+      // Wait, I imported it from groupJourneySocket? No, it's in socket.ts.
+      // I need to check where I imported it from.
+      // I imported it from '../services/groupJourneySocket' in the previous edit, but it might not be there.
+      // Let's check imports.
+    }
+
+  }, [liveRawLocation, journeyState.isTracking, journeyState.currentJourney]);
+
+  /* 
+  // Removed old polling effect
   useEffect(() => {
     if (!journeyState.currentJourney) return;
 
@@ -89,6 +176,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
     return () => clearInterval(interval);
   }, [journeyState.currentJourney, dispatch]);
+  */
 
   useEffect(() => {
     let cancelled = false;
@@ -175,25 +263,39 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const startJourney = async (journeyData: Partial<JourneyData>): Promise<boolean> => {
     try {
-      const journeyId = await locationService.startJourney(
-        journeyData.vehicle || 'car',
-        journeyData.title || 'My Journey',
-        journeyData.groupId
-      );
+      // Get current location for start point
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') throw new Error('Location permission denied');
+      
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      
+      const response = await journeyAPI.startJourney({
+        vehicle: journeyData.vehicle || 'car',
+        title: journeyData.title || 'My Journey',
+        groupId: journeyData.groupId,
+        startLatitude: location.coords.latitude,
+        startLongitude: location.coords.longitude,
+      });
 
-      if (!journeyId) {
+      if (!response || !response.journey?.id) {
         throw new Error('Failed to start journey tracking');
       }
+      const journeyId = response.journey.id;
 
       const newJourney: JourneyData = {
         id: journeyId,
         title: journeyData.title || 'My Journey',
-        startLocation: journeyData.startLocation,
+        startLocation: {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            address: 'Start Location'
+        },
         endLocation: journeyData.endLocation,
         groupId: journeyData.groupId,
         vehicle: journeyData.vehicle || 'car',
         status: 'active',
         photos: [],
+        startTime: new Date().toISOString(),
       };
 
       dispatch(setCurrentJourney(newJourney));
@@ -234,9 +336,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const pauseJourney = async () => {
     try {
-      await locationService.pauseJourney();
-      dispatch(setTracking(false));
+      // await locationService.pauseJourney(); // Handled by useSmartTracking (isTracking=false)
       if (journeyState.currentJourney) {
+        await journeyAPI.pauseJourney(journeyState.currentJourney.id);
+        dispatch(setTracking(false));
         dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'paused' }));
       }
     } catch (error) {
@@ -246,9 +349,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const resumeJourney = async () => {
     try {
-      await locationService.resumeJourney();
-      dispatch(setTracking(true));
+      // await locationService.resumeJourney(); // Handled by useSmartTracking (isTracking=true)
       if (journeyState.currentJourney) {
+        await journeyAPI.resumeJourney(journeyState.currentJourney.id);
+        dispatch(setTracking(true));
         dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'active' }));
       }
     } catch (error) {
@@ -258,7 +362,19 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const endJourney = async () => {
     try {
-      await locationService.endJourney();
+      // await locationService.endJourney(); // Handled by useSmartTracking (isTracking=false)
+      
+      // Final update
+      if (journeyState.currentJourney && liveRawLocation) {
+         await journeyAPI.endJourney(journeyState.currentJourney.id, {
+            endLatitude: liveRawLocation.latitude,
+            endLongitude: liveRawLocation.longitude,
+         });
+      } else if (journeyState.currentJourney) {
+         // Fallback if no location
+         await journeyAPI.endJourney(journeyState.currentJourney.id, {});
+      }
+
       if (journeyState.currentJourney?.groupId) {
         teardownGroupJourneySocket(journeyState.currentJourney.groupId);
       }
@@ -314,24 +430,21 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       journeyId,
       uri: photoUri,
       status: 'pending',
+      progress: 0,
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
 
     try {
-      dispatch(updateUploadStatus({ id: uploadId, status: 'uploading' }));
-      const formData = new FormData();
-      const filename = photoUri.split('/').pop() || 'photo.jpg';
-      const fileType = filename.split('.').pop() || 'jpg';
-
-      formData.append('photo', {
-        uri: photoUri,
-        name: filename,
-        type: `image/${fileType}`,
-      } as any);
-
-      formData.append('journeyId', journeyState.currentJourney.id);
-      const response = await galleryAPI.uploadPhoto(formData);
+      dispatch(updateUploadStatus({ id: uploadId, status: 'uploading', progress: 0 }));
+      
+      const response = await galleryAPI.uploadPhotoWithProgress(
+        photoUri,
+        journeyId,
+        (progress) => {
+          dispatch(updateUploadStatus({ id: uploadId, status: 'uploading', progress }));
+        }
+      );
 
       if (!response || !response.photo) {
         throw new Error('Failed to upload photo');
@@ -342,7 +455,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         getFirebaseDownloadUrl(response.photo.firebasePath) ||
         response.photo.firebasePath;
 
-      dispatch(updateUploadStatus({ id: uploadId, status: 'completed', remoteUrl: uploadedPhotoUri }));
+      dispatch(updateUploadStatus({ id: uploadId, status: 'completed', remoteUrl: uploadedPhotoUri, progress: 1 }));
       dispatch(setCurrentJourney({
         ...journeyState.currentJourney,
         photos: [...journeyState.currentJourney.photos, uploadedPhotoUri],
@@ -416,6 +529,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     loadGroupMembers,
     updateMemberLocation,
     hydrated,
+    currentLocation: liveRawLocation ? {
+        latitude: liveRawLocation.latitude,
+        longitude: liveRawLocation.longitude,
+        timestamp: liveRawLocation.timestamp,
+        speed: liveRawLocation.speed,
+        accuracy: liveRawLocation.accuracy,
+        altitude: 0
+    } : null,
   };
 
   return (

@@ -35,6 +35,7 @@ model User {
   
   // Relationships
   journeys        Journey[]
+  journeyInstances JourneyInstance[]
   photos          Photo[]
   groupMemberships GroupMember[]
   createdGroups   Group[]  @relation("GroupCreator")
@@ -146,6 +147,7 @@ model JourneyInstance {
   
   // Relationships
   groupJourney    GroupJourney @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   photos          JourneyPhoto[]
   events          RideEvent[]
   

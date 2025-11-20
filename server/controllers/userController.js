@@ -3,6 +3,7 @@
 
 const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
+const { hydratePhotos, getCoverPhotoUrl } = require('../utils/photoFormatter');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
@@ -445,6 +446,19 @@ const getJourneyHistory = async (req, res) => {
               name: true,
             },
           },
+          photos: {
+            select: {
+              id: true,
+              filename: true,
+              firebasePath: true,
+              thumbnailPath: true,
+              latitude: true,
+              longitude: true,
+              takenAt: true,
+            },
+            orderBy: { takenAt: 'asc' },
+            take: 10, // Include up to 10 photos for preview
+          },
           _count: {
             select: { photos: true },
           },
@@ -453,9 +467,18 @@ const getJourneyHistory = async (req, res) => {
       prisma.journey.count({ where: whereClause }),
     ]);
     
+    const formattedJourneys = journeys.map((journey) => {
+      const hydratedPhotos = hydratePhotos(journey.photos);
+      return {
+        ...journey,
+        photos: hydratedPhotos,
+        coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
+      };
+    });
+
     res.json({
       success: true,
-      journeys,
+      journeys: formattedJourneys,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

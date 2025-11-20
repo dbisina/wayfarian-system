@@ -29,6 +29,7 @@ import { useGroupJourney } from '../hooks/useGroupJourney';
 import { getSocket } from '../services/socket';
 import { useJourneyState, useJourneyMembers, useJourneyStats } from '../hooks/useJourneyState';
 import { useSettings } from '../contexts/SettingsContext';
+import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -64,6 +65,7 @@ export default function JourneyScreen(): React.JSX.Element {
     addPhoto,
     minimizeJourney,
     loadGroupMembers,
+    currentLocation,
   } = useJourney();
   const { currentJourney, isTracking, isMinimized } = useJourneyState();
   const stats = useJourneyStats();
@@ -700,6 +702,11 @@ export default function JourneyScreen(): React.JSX.Element {
 
             {/* Solo journey: do not show other users on the map */}
           </MapView>
+
+          {/* Speed Limit Sign */}
+          {currentLocation && (
+            <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} />
+          )}
 
           {/* Header */}
           <View style={styles.header}>

@@ -3,6 +3,8 @@
 
 const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
+const { getThumbnailUrl } = require('../services/CloudinaryService');
+const { hydratePhoto, hydratePhotos } = require('../utils/photoFormatter');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
@@ -56,28 +58,47 @@ const uploadPhoto = async (req, res) => {
       }
     }
     
-    // Generate unique filename
-    const fileExtension = req.file.originalname.split('.').pop();
+    const baseFolder = `users/${userId}/${journeyId || 'general'}`;
+    const fileExtension = req.file.originalname.split('.').pop() || 'jpg';
     const filename = `${uuidv4()}.${fileExtension}`;
-    const firebasePath = `users/${userId}/${journeyId || 'general'}/${filename}`;
+
+    // Parallelize image processing
+    const imagePipeline = sharp(req.file.buffer).rotate();
     
-    // Process image - create thumbnail and optimize
-    const originalBuffer = req.file.buffer;
-    const thumbnailBuffer = await sharp(originalBuffer)
-      .resize(300, 300, { fit: 'cover' })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-    
-    const optimizedBuffer = await sharp(originalBuffer)
-      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85 })
-      .toBuffer();
-    
-    // Upload to Firebase Storage
-    const [imageUrl, thumbnailUrl] = await Promise.all([
-      uploadToStorage(optimizedBuffer, filename, 'image/jpeg', `users/${userId}/${journeyId || 'general'}`),
-      uploadToStorage(thumbnailBuffer, `thumb_${filename}`, 'image/jpeg', `users/${userId}/${journeyId || 'general'}/thumbnails`),
+    const [optimizedBuffer, thumbBuffer] = await Promise.all([
+      imagePipeline.clone()
+        .resize(1400, 1400, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80, progressive: true })
+        .toBuffer(),
+      imagePipeline.clone()
+        .resize(420, 420, { fit: 'cover' })
+        .jpeg({ quality: 60, progressive: true })
+        .toBuffer()
     ]);
+
+    const thumbName = `thumb_${filename}`;
+    const thumbFolder = `${baseFolder}/thumbnails`;
+
+    // Parallelize uploads
+    const [imageUrl, thumbUploadUrl] = await Promise.all([
+      uploadToStorage(optimizedBuffer, filename, 'image/jpeg', baseFolder),
+      uploadToStorage(thumbBuffer, thumbName, 'image/jpeg', thumbFolder)
+    ]);
+
+    const storedImagePath = imageUrl.includes('cloudinary.com')
+      ? imageUrl
+      : `${baseFolder}/${filename}`;
+
+    let thumbnailUrl = thumbUploadUrl;
+    let storedThumbnailPath = thumbUploadUrl.includes('cloudinary.com')
+      ? thumbUploadUrl
+      : `${thumbFolder}/${thumbName}`;
+
+    // If Cloudinary is used, we could use dynamic resizing, but explicit upload ensures consistency
+    if (imageUrl.includes('cloudinary.com')) {
+      // Optional: Use Cloudinary's dynamic resizing if preferred, but we already uploaded a thumb
+      // thumbnailUrl = getThumbnailUrl(imageUrl, 420, 420);
+    }
     
     // Save photo metadata to database
     const photo = await prisma.photo.create({
@@ -86,8 +107,8 @@ const uploadPhoto = async (req, res) => {
         journeyId: journeyId || null,
         filename,
         originalName: req.file.originalname,
-        firebasePath,
-        thumbnailPath: `users/${userId}/${journeyId || 'general'}/thumbnails/thumb_${filename}`,
+        firebasePath: storedImagePath,
+        thumbnailPath: storedThumbnailPath,
         mimeType: req.file.mimetype,
         fileSize: req.file.size,
         latitude: latitude ? parseFloat(latitude) : null,
@@ -104,11 +125,11 @@ const uploadPhoto = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Photo uploaded successfully',
-      photo: {
+      photo: hydratePhoto({
         ...photo,
         imageUrl,
         thumbnailUrl,
-      },
+      }),
     });
     
   } catch (error) {
@@ -166,7 +187,7 @@ const getJourneyPhotos = async (req, res) => {
     
     res.json({
       success: true,
-      photos,
+      photos: hydratePhotos(photos),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -220,7 +241,7 @@ const getUserPhotos = async (req, res) => {
     
     res.json({
       success: true,
-      photos,
+      photos: hydratePhotos(photos),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -324,7 +345,7 @@ const updatePhotoMetadata = async (req, res) => {
     res.json({
       success: true,
       message: 'Photo metadata updated successfully',
-      photo: updatedPhoto,
+      photo: hydratePhoto(updatedPhoto),
     });
     
   } catch (error) {
@@ -369,7 +390,7 @@ const getPhotoById = async (req, res) => {
     
     res.json({
       success: true,
-      photo,
+      photo: hydratePhoto(photo),
     });
     
   } catch (error) {

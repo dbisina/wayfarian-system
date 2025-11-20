@@ -5,6 +5,7 @@ const prisma = require('../prisma/client');
 const redisService = require('../services/RedisService');
 const logger = require('../services/Logger');
 const jobQueue = require('../services/JobQueue');
+const { fetchInstanceWithUser } = require('../services/JourneyInstanceService');
 
 /**
  * FIXED: Start a group journey
@@ -650,7 +651,10 @@ const updateInstanceLocation = async (req, res) => {
     });
   } catch (error) {
     logger.error('Update instance location error:', error);
-    res.status(500).json({
+    if (res.headersSent) {
+      return;
+    }
+    return res.status(500).json({
       error: 'Failed to update location',
       message: error.message
     });
@@ -677,6 +681,13 @@ const completeInstance = async (req, res) => {
       where: { id: instanceId },
       include: {
         groupJourney: true,
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
       },
     });
 
@@ -687,12 +698,6 @@ const completeInstance = async (req, res) => {
     if (instance.userId !== userId) {
       return res.status(403).json({ error: 'Not authorized to complete this instance' });
     }
-
-    // Fetch user info (no direct relation on JourneyInstance)
-    const instanceUser = await prisma.user.findUnique({
-      where: { id: instance.userId },
-      select: { id: true, displayName: true, photoURL: true },
-    });
 
     // Calculate final stats
     const duration = instance.startTime 
@@ -706,6 +711,15 @@ const completeInstance = async (req, res) => {
         endTime: new Date(),
         totalDistance: instance.totalDistance || 0,
         totalTime: duration,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
       },
     });
 
@@ -723,7 +737,7 @@ const completeInstance = async (req, res) => {
       io.to(`group-journey-${instance.groupJourneyId}`).emit('member:journey-completed', {
         instanceId,
         userId,
-        displayName: instanceUser?.displayName,
+        displayName: updatedInstance.user?.displayName,
         distance: updatedInstance.totalDistance,
         duration,
         status: 'COMPLETED',
@@ -734,7 +748,7 @@ const completeInstance = async (req, res) => {
       io.to(`group-${instance.groupJourney.groupId}`).emit('group-journey:event', {
         type: 'MEMBER_COMPLETED',
         userId,
-        displayName: instanceUser?.displayName,
+        displayName: updatedInstance.user?.displayName,
         instanceId,
         timestamp: new Date(),
       });
@@ -748,7 +762,10 @@ const completeInstance = async (req, res) => {
     });
   } catch (error) {
     logger.error('[Instance] Error completing:', error);
-    res.status(500).json({ error: 'Failed to complete journey instance' });
+    if (res.headersSent) {
+      return;
+    }
+    return res.status(500).json({ error: 'Failed to complete journey instance' });
   }
 };
 
@@ -800,7 +817,10 @@ const pauseInstance = async (req, res) => {
     res.json({ success: true, instance: updatedInstance });
   } catch (error) {
     logger.error('[Instance] Error pausing:', error);
-    res.status(500).json({ error: 'Failed to pause instance' });
+    if (res.headersSent) {
+      return;
+    }
+    return res.status(500).json({ error: 'Failed to pause instance' });
   }
 };
 
@@ -852,7 +872,10 @@ const resumeInstance = async (req, res) => {
     res.json({ success: true, instance: updatedInstance });
   } catch (error) {
     logger.error('[Instance] Error resuming:', error);
-    res.status(500).json({ error: 'Failed to resume instance' });
+    if (res.headersSent) {
+      return;
+    }
+    return res.status(500).json({ error: 'Failed to resume instance' });
   }
 };
 
@@ -869,23 +892,9 @@ const getMyInstance = async (req, res) => {
     let instance = await redisService.get(cacheKey);
 
     if (!instance) {
-      instance = await prisma.journeyInstance.findFirst({
-        where: {
-          groupJourneyId,
-          userId,
-        },
-        // No direct relation to user on JourneyInstance; attach user separately if needed
-      });
+      instance = await fetchInstanceWithUser(groupJourneyId, userId);
 
       if (instance) {
-        // Optionally attach minimal user payload for convenience
-        try {
-          const u = await prisma.user.findUnique({
-            where: { id: instance.userId },
-            select: { id: true, displayName: true, photoURL: true },
-          });
-          instance.user = u;
-        } catch {}
         await redisService.set(cacheKey, instance, redisService.TTL.SHORT);
       }
     }
@@ -921,30 +930,20 @@ const getActiveForGroup = async (req, res) => {
           status: 'ACTIVE',
         },
         include: {
-          instances: true,
+          instances: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  displayName: true,
+                  photoURL: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
-
-      // Fetch user data for each instance separately
-      if (journey?.instances?.length > 0) {
-        const userIds = journey.instances.map(i => i.userId);
-        const users = await prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: {
-            id: true,
-            displayName: true,
-            photoURL: true,
-          }
-        });
-
-        // Map users to instances
-        const userMap = new Map(users.map(u => [u.id, u]));
-        journey.instances = journey.instances.map(instance => ({
-          ...instance,
-          user: userMap.get(instance.userId) || null
-        }));
-      }
 
       if (journey) {
         await redisService.set(cacheKey, journey.id, redisService.TTL.MEDIUM);

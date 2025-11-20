@@ -29,9 +29,12 @@ interface Journey {
   customTitle?: string | null;
   isHidden?: boolean;
   hiddenAt?: string | null;
+  coverPhotoUrl?: string;
   photos?: {
     id: string;
-    firebasePath: string;
+    firebasePath?: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
     takenAt: string;
   }[];
 }
@@ -300,7 +303,11 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
         ) : (
           visibleJourneys.map((journey, index) => {
             const photoCount = journey.photos?.length || 0;
-            const thumbnail = journey.photos?.[0];
+            const coverUri =
+              journey.coverPhotoUrl ||
+              journey.photos?.[0]?.thumbnailUrl ||
+              journey.photos?.[0]?.imageUrl ||
+              journey.photos?.[0]?.firebasePath;
             
             return (
               <TouchableOpacity
@@ -310,9 +317,9 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                 onPress={() => handleJourneyPress(journey)}
               >
                 <View style={styles.journeyContent}>
-                  {thumbnail ? (
+                  {coverUri ? (
                     <Image 
-                      source={{ uri: thumbnail.firebasePath }} 
+                      source={{ uri: coverUri }} 
                       style={styles.journeyImage} 
                     />
                   ) : (

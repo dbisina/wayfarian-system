@@ -104,6 +104,7 @@ export interface UploadJob {
   status: UploadStatus;
   remoteUrl?: string;
   error?: string;
+  progress?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -470,7 +471,7 @@ const journeySlice = createSlice({
     },
     updateUploadStatus: (
       state,
-      action: PayloadAction<{ id: string; status: UploadStatus; remoteUrl?: string }>
+      action: PayloadAction<{ id: string; status: UploadStatus; remoteUrl?: string; progress?: number }>
     ) => {
       state.uploadQueue = state.uploadQueue.map(job =>
         job.id === action.payload.id
@@ -478,6 +479,7 @@ const journeySlice = createSlice({
               ...job,
               status: action.payload.status,
               remoteUrl: action.payload.remoteUrl ?? job.remoteUrl,
+              progress: action.payload.progress ?? job.progress,
               updatedAt: Date.now(),
             }
           : job

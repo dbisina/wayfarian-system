@@ -362,7 +362,18 @@ export default function HomeScreen(): React.JSX.Element {
                   activeOpacity={0.7}
                 >
                   <View style={styles.journeyImagePlaceholder}>
-                    <Text style={styles.journeyEmoji}>🚗</Text>
+                    {(() => {
+                      const coverUri =
+                        journey.coverPhotoUrl ||
+                        journey.photos?.[0]?.thumbnailUrl ||
+                        journey.photos?.[0]?.imageUrl ||
+                        journey.photos?.[0]?.firebasePath;
+                      return coverUri ? (
+                        <Image source={{ uri: coverUri }} style={styles.journeyImage} />
+                      ) : (
+                        <Text style={styles.journeyEmoji}>🚗</Text>
+                      );
+                    })()}
                   </View>
                   <View style={styles.journeyInfo}>
                     <Text style={styles.journeyTitle} numberOfLines={1}>
@@ -784,6 +795,11 @@ const styles = StyleSheet.create({
     borderRadius: scale(8),
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  journeyImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: scale(8),
   },
   journeyEmoji: {
     fontSize: moderateScale(32),

@@ -19,6 +19,13 @@ type JourneyItem = {
   totalDistance?: number;
   totalTime?: number;
   group?: { id: string; name: string } | null;
+  coverPhotoUrl?: string;
+  photos?: {
+    id: string;
+    firebasePath?: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
+  }[];
 };
 
 export default function RideLogScreen(): React.JSX.Element {
@@ -195,19 +202,31 @@ export default function RideLogScreen(): React.JSX.Element {
             {soloJourneys.length === 0 ? (
               <Text style={styles.badgeTitle}>No solo rides yet</Text>
             ) : (
-              soloJourneys.map((j) => (
-                <View key={j.id} style={styles.challengeCard}>
-                  <Image source={require('../../assets/images/2025-10-15/1bd3DwwpQG.png')} style={styles.challengeImage} />
-                  <View style={styles.challengeContent}>
-                    <Text style={styles.challengeTitle}>{j.title || 'Solo Ride'}</Text>
-                    <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
-                    <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
-                    <View style={styles.challengeProgressContainer}>
-                      <Text style={styles.challengeStatus}>{new Date(j.startTime || '').toDateString()}</Text>
+              soloJourneys.map((j) => {
+                const coverUri =
+                  j.coverPhotoUrl ||
+                  j.photos?.[0]?.thumbnailUrl ||
+                  j.photos?.[0]?.imageUrl ||
+                  j.photos?.[0]?.firebasePath;
+
+                return (
+                  <View key={j.id} style={styles.challengeCard}>
+                    {coverUri ? (
+                      <Image source={{ uri: coverUri }} style={styles.challengeImage} />
+                    ) : (
+                      <Image source={require('../../assets/images/2025-10-15/1bd3DwwpQG.png')} style={styles.challengeImage} />
+                    )}
+                    <View style={styles.challengeContent}>
+                      <Text style={styles.challengeTitle}>{j.title || 'Solo Ride'}</Text>
+                      <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
+                      <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
+                      <View style={styles.challengeProgressContainer}>
+                        <Text style={styles.challengeStatus}>{new Date(j.startTime || '').toDateString()}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
@@ -225,25 +244,37 @@ export default function RideLogScreen(): React.JSX.Element {
                       {section.journeys.length === 1 ? '1 ride' : `${section.journeys.length} rides`}
                     </Text>
                   </View>
-                  {section.journeys.map((journey, index) => (
-                    <View key={journey.id}>
-                      <View style={styles.groupRideRow}>
-                        <Image
-                          source={require('../../assets/images/2025-10-15/2B62N8nM0F.png')}
-                          style={styles.groupRideImage}
-                        />
-                        <View style={styles.groupRideContent}>
-                          <Text style={styles.groupRideName} numberOfLines={1}>
-                            {journey.title || 'Group ride'}
-                          </Text>
-                          <Text style={styles.groupRideMeta}>
-                            {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
-                          </Text>
+                  {section.journeys.map((journey, index) => {
+                    const coverUri =
+                      journey.coverPhotoUrl ||
+                      journey.photos?.[0]?.thumbnailUrl ||
+                      journey.photos?.[0]?.imageUrl ||
+                      journey.photos?.[0]?.firebasePath;
+
+                    return (
+                      <View key={journey.id}>
+                        <View style={styles.groupRideRow}>
+                          {coverUri ? (
+                            <Image source={{ uri: coverUri }} style={styles.groupRideImage} />
+                          ) : (
+                            <Image
+                              source={require('../../assets/images/2025-10-15/2B62N8nM0F.png')}
+                              style={styles.groupRideImage}
+                            />
+                          )}
+                          <View style={styles.groupRideContent}>
+                            <Text style={styles.groupRideName} numberOfLines={1}>
+                              {journey.title || 'Group ride'}
+                            </Text>
+                            <Text style={styles.groupRideMeta}>
+                              {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
+                            </Text>
+                          </View>
                         </View>
+                        {index < section.journeys.length - 1 && <View style={styles.groupRideDivider} />}
                       </View>
-                      {index < section.journeys.length - 1 && <View style={styles.groupRideDivider} />}
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ))
             )}

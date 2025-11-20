@@ -4,6 +4,7 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
 const prisma = require('../prisma/client');
+const { hydratePhotos, getCoverPhotoUrl } = require('../utils/photoFormatter');
 const {
   upload,
   getUserProfile,
@@ -172,7 +173,7 @@ router.get('/dashboard', async (req, res) => {
       },
     });
 
-    const recentJourneys = await prisma.journey.findMany({
+    const recentJourneysRaw = await prisma.journey.findMany({
       where: { userId, status: 'COMPLETED' },
       orderBy: { endTime: 'desc' },
       take: 3,
@@ -183,7 +184,27 @@ router.get('/dashboard', async (req, res) => {
         endTime: true,
         totalDistance: true,
         totalTime: true,
+        photos: {
+          select: {
+            id: true,
+            filename: true,
+            firebasePath: true,
+            thumbnailPath: true,
+            takenAt: true,
+          },
+          orderBy: { takenAt: 'asc' },
+          take: 3,
+        },
       },
+    });
+    const recentJourneys = recentJourneysRaw.map((journey) => {
+      const hydratedPhotos = hydratePhotos(journey.photos || []);
+      const { photos, ...rest } = journey;
+      return {
+        ...rest,
+        photos: hydratedPhotos,
+        coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
+      };
     });
 
     const activeGroupsRaw = await prisma.groupMember.findMany({

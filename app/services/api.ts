@@ -3,6 +3,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
 
 const DEFAULT_API_URL = 'https://wayfarian-system-production.up.railway.app/api';
 const TOKEN_STORAGE_KEY = 'authToken';
@@ -617,6 +618,51 @@ export const galleryAPI = {
     });
     
     return response.json();
+  },
+  
+  uploadPhotoWithProgress: async (
+    photoUri: string,
+    journeyId: string,
+    onProgress: (progress: number) => void
+  ) => {
+    const token = await getAuthToken();
+    const url = `${getCurrentApiUrl()}/gallery/upload`;
+    
+    const uploadTask = FileSystem.createUploadTask(
+      url,
+      photoUri,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        },
+        fieldName: 'photo',
+        mimeType: 'image/jpeg',
+        uploadType: (FileSystem as any).UploadType?.MULTIPART ?? (FileSystem as any).FileSystemUploadType?.MULTIPART ?? 1,
+        parameters: {
+          journeyId,
+        },
+      },
+      (data) => {
+        if (data.totalBytesExpectedToSend > 0) {
+          const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+          onProgress(progress);
+        }
+      }
+    );
+
+    const result = await uploadTask.uploadAsync();
+    
+    if (result && result.status >= 200 && result.status < 300) {
+      return JSON.parse(result.body);
+    } else {
+      let errorMessage = 'Upload failed';
+      try {
+        const errorBody = JSON.parse(result?.body || '{}');
+        errorMessage = errorBody.message || errorBody.error || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
+    }
   },
   
   getJourneyPhotos: async (journeyId: string) => {

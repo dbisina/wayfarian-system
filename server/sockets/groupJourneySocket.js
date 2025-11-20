@@ -2,36 +2,9 @@
 // Real-time handlers for group journeys (rooms, snapshots, live telemetry)
 
 const prisma = require('../prisma/client');
+const { buildMemberSnapshot } = require('../services/JourneyInstanceService');
 
 module.exports = (io, socket) => {
-  const buildMemberSnapshot = async groupJourneyId => {
-    const instances = await prisma.journeyInstance.findMany({
-      where: { groupJourneyId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            photoURL: true,
-          },
-        },
-      },
-    });
-
-    return instances.map(inst => ({
-      instanceId: inst.id,
-      userId: inst.userId,
-      displayName: inst.user?.displayName || 'Member',
-      photoURL: inst.user?.photoURL,
-      status: inst.status,
-      latitude: inst.currentLatitude,
-      longitude: inst.currentLongitude,
-      totalDistance: inst.totalDistance,
-      totalTime: inst.totalTime,
-      lastUpdate: inst.lastLocationUpdate?.toISOString?.() || null,
-    }));
-  };
-
   const emitState = async (groupJourneyId, target = socket) => {
     const members = await buildMemberSnapshot(groupJourneyId);
     target.emit('group-journey:state', {
@@ -77,6 +50,7 @@ module.exports = (io, socket) => {
 
       const memberLocations = await emitState(groupJourneyId);
 
+      
       socket.emit('group-journey:joined', {
         groupJourneyId,
         groupJourney: {

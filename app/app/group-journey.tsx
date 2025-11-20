@@ -25,8 +25,10 @@ import { useGroupJourney } from '../hooks/useGroupJourney';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import { getSocket } from '../services/socket';
 import { apiRequest, galleryAPI } from '../services/api';
-import { getGoogleMapsApiKey } from '../services/directions';
+import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import JourneyCamera from '../components/JourneyCamera';
+import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
+import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 
 interface GroupJourneyData {
   id: string;
@@ -57,10 +59,11 @@ export default function GroupJourneyScreen() {
     { latitude: number; longitude: number }[]
   >([]);
   const [loading, setLoading] = useState(true);
-  const [initialRegionSet, setInitialRegionSet] = useState(false);
+  const [isLocatingUser, setIsLocatingUser] = useState(true);
+  const [userStartRegion, setUserStartRegion] = useState<Region | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const mapRef = useRef<MapView>(null);
-  const hasCenteredOnUser = useRef(false);
 
   const {
     memberLocations,
@@ -70,6 +73,16 @@ export default function GroupJourneyScreen() {
     stopLocationTracking,
     setMyInstance,
   } = useGroupJourney({ socket, groupJourneyId, autoStart: true });
+
+  // Group Map Behavior (Zoom Wars Fix)
+  const { mapViewProps, recenterOnGroup, isUserInteracting } = useGroupMapBehavior({
+    mapRef,
+    members: memberLocations
+      .filter(m => typeof m.latitude === 'number' && typeof m.longitude === 'number')
+      .map(m => ({ latitude: m.latitude!, longitude: m.longitude!, id: m.userId })),
+    currentUserLocation: region ? { latitude: region.latitude, longitude: region.longitude } : null,
+    isGroupJourney: true,
+  });
 
   useRealtimeEvents({ groupJourneyId });
 
@@ -138,32 +151,49 @@ export default function GroupJourneyScreen() {
     };
   }, [journeyData]);
 
-  const [region, setRegion] = useState<Region | null>(initialMapRegion);
+  const [region, setRegion] = useState<Region | null>(null);
+
 
   useEffect(() => {
-    if (initialMapRegion) {
-      setRegion(initialMapRegion);
-    }
-  }, [initialMapRegion]);
+    let isMounted = true;
 
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted) return;
+        if (status !== 'granted') {
+          setLocationError('Location permission denied');
+          return;
+        }
 
-  const animateRegion = useCallback(
-    (
-      coords?: { latitude?: number; longitude?: number },
-      delta: number = 0.04
-    ) => {
-      if (!coords?.latitude || !coords?.longitude) return;
-      const nextRegion = {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        latitudeDelta: delta,
-        longitudeDelta: delta,
-      };
-      setRegion(nextRegion);
-      mapRef.current?.animateToRegion(nextRegion, 800);
-    },
-    []
-  );
+        const current = await Location.getCurrentPositionAsync({});
+        if (!isMounted) return;
+
+        const bootstrapRegion = {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        };
+
+        setUserStartRegion(bootstrapRegion);
+        setRegion(bootstrapRegion);
+      } catch (error) {
+        if (isMounted) {
+          console.warn('Unable to determine current location', error);
+          setLocationError('Unable to determine current location');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLocatingUser(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const fetchJourney = useCallback(async () => {
     if (!groupJourneyId) return;
@@ -232,130 +262,114 @@ export default function GroupJourneyScreen() {
     myLocation?.longitude,
   ]);
 
-  useEffect(() => {
-    if (!destination || !directionOrigin) return;
 
-    const coordinates = [directionOrigin, destination];
-    const latitudes = coordinates.map((coord) => coord.latitude);
-    const longitudes = coordinates.map((coord) => coord.longitude);
-
-    const minLat = Math.min(...latitudes);
-    const maxLat = Math.max(...latitudes);
-    const minLng = Math.min(...longitudes);
-    const maxLng = Math.max(...longitudes);
-
-    const latitudeDelta = (maxLat - minLat) * 1.5;
-    const longitudeDelta = (maxLng - minLng) * 1.5;
-
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLng = (minLng + maxLng) / 2;
-
-    const routeRegion = {
-      latitude: centerLat,
-      longitude: centerLng,
-      latitudeDelta: Math.max(latitudeDelta, 0.02),
-      longitudeDelta: Math.max(longitudeDelta, 0.02),
-    };
-
-    setRegion(routeRegion);
-    mapRef.current?.animateToRegion(routeRegion, 1000);
-  }, [destination, directionOrigin]);
-
-  // Replace the manual route calculation useEffect
   useEffect(() => {
     if (!destination || !directionOrigin) {
       setManualRouteCoords([]);
       return;
     }
 
-    // Always use manual route for consistent display
-    const calculateManualRoute = () => {
-      // Create a smooth route with intermediate points
-      const start = directionOrigin;
-      const end = destination;
+    const shouldUseManualDirections = Platform.OS !== 'android' || !googleKey;
+    if (!shouldUseManualDirections) {
+      setManualRouteCoords([]);
+      return;
+    }
 
-      // Calculate intermediate points for a curved route
-      const midLat = (start.latitude + end.latitude) / 2;
-      const midLng = (start.longitude + end.longitude) / 2;
-
-      // Add slight curve to make it look more natural
-      const curveFactor = 0.1;
-      const curveLat =
-        midLat + curveFactor * Math.abs(end.latitude - start.latitude);
-      const curveLng =
-        midLng + curveFactor * Math.abs(end.longitude - start.longitude);
-
-      const route = [start, { latitude: curveLat, longitude: curveLng }, end];
-
-      setManualRouteCoords(route);
-
-      // Fit map to show the entire route
-      mapRef.current?.fitToCoordinates([start, end], {
-        edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
-        animated: true,
-      });
-    };
-
-    calculateManualRoute();
-  }, [destination, directionOrigin]);
-
-  useEffect(() => {
-    if (initialRegionSet) return;
+    let isMounted = true;
 
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setInitialRegionSet(true);
-        return;
-      }
+      try {
+        const result = await fetchDirections(directionOrigin, destination, {
+          mode: 'driving',
+          apiKey: googleKey,
+        });
 
-      // Only center on user if we don't have a route yet
-      if (!destination || !directionOrigin) {
-        const current = await Location.getCurrentPositionAsync({});
-        animateRegion(
-          {
-            latitude: current.coords.latitude,
-            longitude: current.coords.longitude,
-          },
-          0.03
-        );
-        hasCenteredOnUser.current = true;
+        if (!isMounted) return;
+
+        if (result?.coordinates?.length) {
+          setManualRouteCoords(result.coordinates);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch directions for group journey', error);
       }
-      setInitialRegionSet(true);
     })();
-  }, [animateRegion, initialRegionSet, destination, directionOrigin]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [destination, directionOrigin, googleKey]);
+
+  const regionFromCoords = useCallback(
+    (
+      coords: { latitude: number; longitude: number }[],
+      paddingMultiplier: number = 1.3
+    ): Region | null => {
+      if (!coords.length) return null;
+      if (coords.length === 1) {
+        const [coord] = coords;
+        return {
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        };
+      }
+
+      const latitudes = coords.map((c) => c.latitude);
+      const longitudes = coords.map((c) => c.longitude);
+      const minLat = Math.min(...latitudes);
+      const maxLat = Math.max(...latitudes);
+      const minLng = Math.min(...longitudes);
+      const maxLng = Math.max(...longitudes);
+
+      const latitudeDelta = Math.max((maxLat - minLat) * paddingMultiplier, 0.02);
+      const longitudeDelta = Math.max((maxLng - minLng) * paddingMultiplier, 0.02);
+
+      return {
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLng + maxLng) / 2,
+        latitudeDelta,
+        longitudeDelta,
+      };
+    },
+    []
+  );
+
+  const targetRegion = useMemo(() => {
+    if (manualRouteCoords.length >= 2) {
+      return regionFromCoords(manualRouteCoords, 1.2);
+    }
+    if (directionOrigin && destination) {
+      return regionFromCoords([directionOrigin, destination], 1.4);
+    }
+    if (myLocation?.latitude && myLocation?.longitude) {
+      return {
+        latitude: myLocation.latitude,
+        longitude: myLocation.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      };
+    }
+    if (userStartRegion) return userStartRegion;
+    return initialMapRegion;
+  }, [
+    destination,
+    directionOrigin,
+    initialMapRegion,
+    manualRouteCoords,
+    myLocation?.latitude,
+    myLocation?.longitude,
+    regionFromCoords,
+    userStartRegion,
+  ]);
 
   useEffect(() => {
-    if (journeyData?.startLatitude && journeyData?.startLongitude) {
-      animateRegion(
-        {
-          latitude: journeyData.startLatitude,
-          longitude: journeyData.startLongitude,
-        },
-        0.05
-      );
-    }
-  }, [journeyData?.startLatitude, journeyData?.startLongitude, animateRegion]);
+    if (!targetRegion) return;
+    setRegion(targetRegion);
+    mapRef.current?.animateToRegion(targetRegion, 800);
+  }, [targetRegion]);
 
-  useEffect(() => {
-    if (
-      myLocation?.latitude &&
-      myLocation?.longitude &&
-      !hasCenteredOnUser.current
-    ) {
-      animateRegion(
-        { latitude: myLocation.latitude, longitude: myLocation.longitude },
-        0.03
-      );
-      hasCenteredOnUser.current = true;
-    }
-  }, [myLocation?.latitude, myLocation?.longitude, animateRegion]);
 
-  useEffect(() => {
-    if (!myLocation) {
-      hasCenteredOnUser.current = false;
-    }
-  }, [myLocation, journeyData?.id]);
 
   useEffect(() => {
     if (myInstance?.status === "ACTIVE" && !isTracking && myInstance.id) {
@@ -364,27 +378,16 @@ export default function GroupJourneyScreen() {
   }, [isTracking, myInstance, startLocationTracking]);
 
   const fitMapToMembers = useCallback(() => {
-    if (!mapRef.current) return;
-    const coords = memberLocations
-      .filter(
-        (m) => typeof m.latitude === "number" && typeof m.longitude === "number"
-      )
-      .map((m) => ({
-        latitude: m.latitude as number,
-        longitude: m.longitude as number,
-      }));
-    if (!coords.length) return;
-    mapRef.current.fitToCoordinates(coords, {
-      edgePadding: { top: 120, right: 60, bottom: 260, left: 60 },
-      animated: true,
-    });
-  }, [memberLocations]);
+    // Handled by useGroupMapBehavior now
+  }, []);
 
+  /*
   useEffect(() => {
     if (memberLocations.length) {
       fitMapToMembers();
     }
   }, [memberLocations.length, fitMapToMembers]);
+  */
 
   const handleStartInstance = async () => {
     if (!groupJourneyId) return;
@@ -504,6 +507,19 @@ export default function GroupJourneyScreen() {
     );
   }
 
+  if (!region) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={styles.loadingText}>
+          {isLocatingUser
+            ? 'Getting your location…'
+            : locationError || 'Preparing map…'}
+        </Text>
+      </View>
+    );
+  }
+
   const completedCount = memberLocations.filter(
     (m) => m.status === "COMPLETED"
   ).length;
@@ -517,11 +533,16 @@ export default function GroupJourneyScreen() {
         ref={mapRef}
         style={styles.map}
         provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
-        region={(region ?? initialMapRegion ?? undefined) as Region | undefined}
-        initialRegion={(initialMapRegion ?? undefined) as Region | undefined}
-        onRegionChangeComplete={(nextRegion) => setRegion(nextRegion)}
+        region={region}
+        initialRegion={region}
+        // onRegionChangeComplete={(nextRegion) => setRegion(nextRegion)} // Handled by mapViewProps
         showsUserLocation
         showsCompass
+        {...mapViewProps}
+        onRegionChangeComplete={(r) => {
+            setRegion(r);
+            mapViewProps.onRegionChangeComplete(r);
+        }}
       >
         {Platform.OS === "android" &&
         destination &&
@@ -602,6 +623,11 @@ export default function GroupJourneyScreen() {
           );
         })}
       </MapView>
+
+      {/* Speed Limit Sign */}
+      {myLocation && myLocation.latitude && myLocation.longitude && (
+        <SpeedLimitSign latitude={myLocation.latitude} longitude={myLocation.longitude} />
+      )}
 
       <View style={styles.topPanel}>
         <View style={styles.statsRow}>
