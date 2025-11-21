@@ -18,6 +18,15 @@ const groupSocket = (io, socket) => {
       const { groupId } = data;
       const userId = socket.userId;
       
+      // Validate groupId
+      if (!groupId || typeof groupId !== 'string') {
+        socket.emit('error', {
+          type: 'GROUP_JOIN_ERROR',
+          message: 'Invalid group ID',
+        });
+        return;
+      }
+      
       // Verify user is member of the group
       const membership = await prisma.groupMember.findUnique({
         where: {
@@ -93,7 +102,7 @@ const groupSocket = (io, socket) => {
       const userId = socket.userId;
       const groupId = socket.currentGroupId;
       
-      if (!groupId) {
+      if (!groupId || typeof groupId !== 'string') {
         socket.emit('error', {
           type: 'LOCATION_SHARE_ERROR',
           message: 'Not in a group',
@@ -145,6 +154,15 @@ const groupSocket = (io, socket) => {
     try {
       const { groupId } = data;
       const userId = socket.userId;
+      
+      // Validate groupId
+      if (!groupId || typeof groupId !== 'string') {
+        socket.emit('error', {
+          type: 'GROUP_ACCESS_ERROR',
+          message: 'Invalid group ID',
+        });
+        return;
+      }
       
       // Verify user is member of the group
       const membership = await prisma.groupMember.findUnique({
@@ -216,6 +234,15 @@ const groupSocket = (io, socket) => {
     try {
       const { groupId } = data;
       const userId = socket.userId;
+      
+      // Validate groupId
+      if (!groupId || typeof groupId !== 'string') {
+        socket.emit('error', {
+          type: 'GROUP_LEAVE_ERROR',
+          message: 'Invalid group ID',
+        });
+        return;
+      }
       
       // Leave the group room
       socket.leave(`group-${groupId}`);

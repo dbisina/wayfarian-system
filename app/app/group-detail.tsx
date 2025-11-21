@@ -301,7 +301,7 @@ export default function GroupDetailScreen() {
     if (!socket) return;
     
     // Join group room for real-time updates
-    socket.emit('join-group', groupId);
+    socket.emit('join-group', { groupId });
     
     // Listen for member joins (silent updates)
     const handleMemberJoined = () => {

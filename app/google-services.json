@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "65260446195-ne6bb097m9jtgcogkvd6mec7fleb6q8p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wayfarian.com",
+            "certificate_hash": "38d0b601d37453b0109c0fb59a02e4ccd224e710"
+          }
+        },
+        {
           "client_id": "65260446195-vo1364h28l276h3d7pnnct96ac1qt5qh.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

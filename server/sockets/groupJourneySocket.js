@@ -47,6 +47,12 @@ module.exports = (io, socket) => {
 
       socket.join(`group-journey-${groupJourneyId}`);
       socket.currentGroupJourneyId = groupJourneyId;
+      // Also set currentGroupId for location sharing compatibility
+      if (journey.groupId) {
+        socket.currentGroupId = journey.groupId;
+        // Also join the group room for compatibility
+        socket.join(`group-${journey.groupId}`);
+      }
 
       const memberLocations = await emitState(groupJourneyId);
 

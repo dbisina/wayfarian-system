@@ -353,13 +353,8 @@ export default function GroupJourneyScreen() {
   );
 
   const targetRegion = useMemo(() => {
-    if (manualRouteCoords.length >= 2) {
-      return regionFromCoords(manualRouteCoords, 1.2);
-    }
-    if (directionOrigin && destination) {
-      return regionFromCoords([directionOrigin, destination], 1.4);
-    }
-    if (myLocation?.latitude && myLocation?.longitude) {
+    // Priority 1: Real-time location when actively tracking (follow user movement)
+    if (isTracking && myLocation?.latitude && myLocation?.longitude) {
       return {
         latitude: myLocation.latitude,
         longitude: myLocation.longitude,
@@ -367,12 +362,25 @@ export default function GroupJourneyScreen() {
         longitudeDelta: 0.02,
       };
     }
-    if (userStartRegion) return userStartRegion;
+    // Priority 2: User's initial location (fallback when not tracking)
+    if (userStartRegion) {
+      return userStartRegion;
+    }
+    // Priority 3: Route coordinates if available
+    if (manualRouteCoords.length >= 2) {
+      return regionFromCoords(manualRouteCoords, 1.2);
+    }
+    // Priority 4: Direction origin and destination
+    if (directionOrigin && destination) {
+      return regionFromCoords([directionOrigin, destination], 1.4);
+    }
+    // Priority 5: Journey start location
     return initialMapRegion;
   }, [
     destination,
     directionOrigin,
     initialMapRegion,
+    isTracking,
     manualRouteCoords,
     myLocation?.latitude,
     myLocation?.longitude,
@@ -395,27 +403,37 @@ export default function GroupJourneyScreen() {
   }, [isTracking, myInstance, startLocationTracking]);
 
   const handleStartInstance = async () => {
-    if (!groupJourneyId || !userStartLocation) return;
+    if (!groupJourneyId || !userStartLocation) {
+      Alert.alert("Error", "Please select your start location first");
+      return;
+    }
     try {
       const response = await apiRequest(
         `/group-journey/${groupJourneyId}/start-my-instance`,
         {
           method: "POST",
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
             startLatitude: userStartLocation.latitude,
             startLongitude: userStartLocation.longitude,
-            startAddress: userStartLocation.address,
+            startAddress: userStartLocation.address || undefined,
           }),
         }
       );
-      if (!response?.instance) throw new Error("Unable to start instance");
+      if (!response?.instance) {
+        throw new Error(response?.error || response?.message || "Unable to start instance");
+      }
       setMyInstance(response.instance);
       startLocationTracking(response.instance.id);
       setShowStartLocationModal(false);
     } catch (error: any) {
+      console.error('Start instance error:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || "Try again in a moment.";
       Alert.alert(
         "Unable to start",
-        error?.message || "Try again in a moment."
+        errorMessage
       );
     }
   };

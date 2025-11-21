@@ -100,7 +100,7 @@ const initializeSocket = (server) => {
         const { status, location } = data;
         
         // Update user's online status in active groups
-        if (location && socket.currentGroupId) {
+        if (location && socket.currentGroupId && typeof socket.currentGroupId === 'string') {
           await prisma.groupMember.update({
             where: {
               userId_groupId: {

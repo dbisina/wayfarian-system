@@ -17,6 +17,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useJourney } from '../contexts/JourneyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -73,12 +74,12 @@ export default function JourneyScreen(): React.JSX.Element {
   const { convertDistance, convertSpeed } = useSettings();
 
   const mapRef = useRef<MapView>(null);
-  const [region, setRegion] = useState({
-    latitude: 37.78825,
-    longitude: -122.4324,
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
-  });
+  const [region, setRegion] = useState<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
   const [manualRouteCoords, setManualRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const [groupView, setGroupView] = useState<{ start?: { latitude: number; longitude: number }; end?: { latitude: number; longitude: number } } | null>(null);
@@ -144,6 +145,32 @@ export default function JourneyScreen(): React.JSX.Element {
     // Load once when arriving with param
     loadGroupMembers(gid).catch(() => {});
   }, [paramGroupId, loadGroupMembers]);
+
+  // Initialize map with current location if no region set
+  useEffect(() => {
+    if (!region && !currentJourney?.startLocation && !groupView?.start) {
+      (async () => {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const location = await Location.getCurrentPositionAsync({});
+            const newRegion = {
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            };
+            setRegion(newRegion);
+            if (mapRef.current) {
+              try { mapRef.current.animateToRegion(newRegion, 800); } catch {}
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to get current location for map:', e);
+        }
+      })();
+    }
+  }, [region, currentJourney?.startLocation, groupView?.start]);
 
   // If a groupJourneyId param is present, fetch group journey data and user's instance
   useEffect(() => {
@@ -360,15 +387,22 @@ export default function JourneyScreen(): React.JSX.Element {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 1,
+        quality: 0.8,
+        exif: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
+      if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0].uri) {
         await addPhoto(result.assets[0].uri);
+      } else if (result.canceled) {
+        // User canceled, no error needed
+        return;
+      } else {
+        throw new Error('No photo captured');
       }
     } catch (err) {
       console.error('Error taking photo:', err);
-      Alert.alert('Error', 'Failed to take photo');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to take photo';
+      Alert.alert('Error', errorMessage === 'No photo captured' ? 'Please try taking the photo again' : errorMessage);
     }
   };
 
@@ -484,7 +518,7 @@ export default function JourneyScreen(): React.JSX.Element {
             ref={mapRef}
             provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
             style={styles.backgroundMap}
-            region={region}
+            region={region || undefined}
             showsUserLocation
             showsMyLocationButton={false}
             showsTraffic={false}
@@ -556,7 +590,7 @@ export default function JourneyScreen(): React.JSX.Element {
             ref={mapRef}
             provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
             style={styles.backgroundMap}
-            region={region}
+            region={region || undefined}
             showsUserLocation
             showsMyLocationButton={false}
             showsTraffic={false}

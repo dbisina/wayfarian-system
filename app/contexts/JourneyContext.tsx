@@ -1,7 +1,7 @@
 // app/contexts/JourneyContext.tsx
 // Journey state management and real-time tracking bridged through Redux
 
-import React, { createContext, useContext, useEffect, useMemo, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, ReactNode, useCallback, useRef, useState } from 'react';
 import { locationService, JourneyStats, LocationPoint } from '../services/locationService';
 import { journeyAPI, groupJourneyAPI, galleryAPI } from '../services/api';
 import { ensureGroupJourneySocket, teardownGroupJourneySocket, shareGroupLocation } from '../services/groupJourneySocket';
@@ -81,16 +81,48 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     maxSpeed 
   } = useSmartTracking(journeyState.isTracking);
 
+  // Local timer state for smooth updates
+  const [localElapsedTime, setLocalElapsedTime] = useState(0);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Update local timer every second when tracking
+  useEffect(() => {
+    if (journeyState.isTracking && journeyState.currentJourney?.startTime) {
+      const startTime = new Date(journeyState.currentJourney.startTime).getTime();
+      
+      // Update immediately
+      setLocalElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      
+      // Then update every second
+      timerIntervalRef.current = setInterval(() => {
+        setLocalElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+      
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+      };
+    } else {
+      setLocalElapsedTime(0);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    }
+  }, [journeyState.isTracking, journeyState.currentJourney?.startTime]);
+
   const derivedStats: JourneyStats = useMemo(() => ({
     totalDistance: officialDistance,
-    totalTime: journeyState.currentJourney?.startTime 
-      ? Math.floor((Date.now() - new Date(journeyState.currentJourney.startTime).getTime()) / 1000)
+    totalTime: journeyState.isTracking && journeyState.currentJourney?.startTime 
+      ? localElapsedTime
       : statsFromStore.totalTime,
     movingTime: movingTime,
     avgSpeed: avgSpeed,
     topSpeed: maxSpeed,
     currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
-  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.currentJourney]);
+  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.currentJourney, journeyState.isTracking, localElapsedTime]);
 
   // Sync Smart Tracking data to Redux Store
   useEffect(() => {
