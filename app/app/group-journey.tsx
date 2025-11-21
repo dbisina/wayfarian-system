@@ -251,8 +251,14 @@ export default function GroupJourneyScreen() {
     [memberLocations, user?.id]
   );
 
+  // Direction origin: Only show route for current user from their current/start location
   const directionOrigin = useMemo(() => {
-    // Priority 1: User's real-time location from memberLocations
+    // Only calculate directions if user has an active instance
+    if (!myInstance || myInstance.status === "COMPLETED") {
+      return undefined;
+    }
+    
+    // Priority 1: User's real-time location from memberLocations (most accurate)
     if (myLocation?.latitude && myLocation?.longitude) {
       return { latitude: myLocation.latitude, longitude: myLocation.longitude };
     }
@@ -260,23 +266,32 @@ export default function GroupJourneyScreen() {
     if (region) {
       return { latitude: region.latitude, longitude: region.longitude };
     }
-    // Priority 3: User's start location
+    // Priority 3: User's current location from instance (if available)
+    if (myInstance?.currentLatitude && myInstance?.currentLongitude) {
+      return { 
+        latitude: myInstance.currentLatitude, 
+        longitude: myInstance.currentLongitude 
+      };
+    }
+    // Priority 4: User's start location (from userStartRegion or instance startLatitude if available)
     if (userStartRegion) {
       return { latitude: userStartRegion.latitude, longitude: userStartRegion.longitude };
     }
-    // Priority 4: Journey start location (if not placeholder)
-    if (journeyData?.startLatitude && journeyData?.startLongitude) {
-      if (Math.abs(journeyData.startLatitude) > 0.0001) {
-        return {
-          latitude: journeyData.startLatitude,
-          longitude: journeyData.startLongitude,
-        };
-      }
+    // Fallback: Check if instance has startLatitude (from TypeScript interface, may not be in DB)
+    if (myInstance?.startLatitude && myInstance?.startLongitude) {
+      return { 
+        latitude: myInstance.startLatitude, 
+        longitude: myInstance.startLongitude 
+      };
     }
     return undefined;
   }, [
-    journeyData?.startLatitude,
-    journeyData?.startLongitude,
+    myInstance?.id,
+    myInstance?.status,
+    myInstance?.currentLatitude,
+    myInstance?.currentLongitude,
+    myInstance?.startLatitude,
+    myInstance?.startLongitude,
     myLocation?.latitude,
     myLocation?.longitude,
     userStartRegion,
@@ -481,14 +496,31 @@ export default function GroupJourneyScreen() {
         {
           text: "Complete",
           style: "destructive",
-          onPress: async () => {
+            onPress: async () => {
             setIsCompleting(true);
             try {
+              // Stop location tracking first
               stopLocationTracking();
-              await apiRequest(
+              
+              // Get current location for end coordinates
+              const currentLocation = myLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
+              
+              // Call complete endpoint with end location
+              // apiRequest handles JSON serialization automatically when body is an object
+              const response = await apiRequest(
                 `/group-journey/instance/${myInstance.id}/complete`,
-                { method: "POST" }
+                {
+                  method: "POST",
+                  body: {
+                    endLatitude: currentLocation?.latitude,
+                    endLongitude: currentLocation?.longitude,
+                  },
+                }
               );
+              
+              if (!response || !response.success) {
+                throw new Error(response?.error || response?.message || "Failed to complete journey");
+              }
               
               // Clear all journey state for fresh start
               setMyInstance(null);
@@ -500,10 +532,12 @@ export default function GroupJourneyScreen() {
               Alert.alert("Journey complete", "Great ride!");
               router.back();
             } catch (error: any) {
-              Alert.alert(
-                "Error",
-                error?.message || "Unable to complete journey."
-              );
+              console.error('[GroupJourney] Complete error:', error);
+              const errorMessage = error?.response?.data?.message || 
+                                 error?.response?.data?.error || 
+                                 error?.message || 
+                                 "Unable to complete journey. Please try again.";
+              Alert.alert("Error", errorMessage);
             } finally {
               setIsCompleting(false);
             }
@@ -588,7 +622,9 @@ export default function GroupJourneyScreen() {
             mapViewProps.onRegionChangeComplete(r);
         }}
       >
-        {Platform.OS === "android" &&
+        {/* Only show directions for current user (myLocation) - each member sees their own route */}
+        {myInstance && myInstance.status !== "COMPLETED" && 
+        Platform.OS === "android" &&
         destination &&
         directionOrigin &&
         googleKey ? (
@@ -599,7 +635,8 @@ export default function GroupJourneyScreen() {
             strokeWidth={4}
             strokeColor="#F9A825"
           />
-        ) : destination && manualRouteCoords.length > 1 ? (
+        ) : myInstance && myInstance.status !== "COMPLETED" && 
+        destination && manualRouteCoords.length > 1 ? (
           <Polyline
             coordinates={manualRouteCoords}
             strokeWidth={4}

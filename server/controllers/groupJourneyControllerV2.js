@@ -704,6 +704,17 @@ const completeInstance = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to complete this instance' });
     }
 
+    // Check if already completed
+    if (instance.status === 'COMPLETED') {
+      return res.status(400).json({ 
+        error: 'Journey already completed',
+        message: 'This journey instance has already been completed'
+      });
+    }
+
+    // Get end location from request body if provided
+    const { endLatitude, endLongitude } = req.body;
+
     // Calculate final stats
     const duration = instance.startTime 
       ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000) 
@@ -716,6 +727,11 @@ const completeInstance = async (req, res) => {
         endTime: new Date(),
         totalDistance: instance.totalDistance || 0,
         totalTime: duration,
+        // Update end location if provided
+        ...(endLatitude && endLongitude ? {
+          currentLatitude: endLatitude,
+          currentLongitude: endLongitude,
+        } : {}),
       },
       include: {
         user: {
