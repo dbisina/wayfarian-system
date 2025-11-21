@@ -63,21 +63,35 @@ export default function NewGroupScreen() {
     }
   };
 
-  const handleUploadPhoto = () => {
-    (async () => {
+  const handleUploadPhoto = async () => {
+    try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'We need access to your photos to set a cover.');
         return;
       }
+
+      // Small delay to ensure ActivityResultLauncher is registered (Android fix)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
+        base64: false,
       });
+      
       if (!result.canceled && result.assets?.length) {
         setCoverUri(result.assets[0].uri);
       }
-    })();
+    } catch (e: any) {
+      console.error('[New Group] Photo selection failed:', e);
+      // Handle ActivityResultLauncher error specifically
+      if (e?.message?.includes('ActivityResultLauncher') || e?.message?.includes('unregistered')) {
+        Alert.alert('Error', 'Please try again. If the issue persists, restart the app.');
+      } else {
+        Alert.alert('Error', e?.message || 'Failed to select photo. Please try again.');
+      }
+    }
   };
 
   return (

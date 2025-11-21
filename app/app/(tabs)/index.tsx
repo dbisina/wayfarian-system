@@ -18,27 +18,24 @@ import { Skeleton, SkeletonCircle, SkeletonLine } from '../../components/Skeleto
 import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import { scale, verticalScale, moderateScale } from '../../utils/responsive';
+import { useSettings } from '../../contexts/SettingsContext';
 
 
 export default function HomeScreen(): React.JSX.Element {
   const { user, isAuthenticated } = useAuth();
   const { dashboardData, achievements, loading, refreshData } = useUserData();
+  const { convertDistance, convertSpeed } = useSettings();
 
-  const formatDistance = (distance: number) => {
-    if (distance >= 1000) {
-      return `${(distance / 1000).toFixed(1)}K km`;
-    }
-    return `${distance.toFixed(0)} km`;
+  const normalizeDistance = (value: number) => {
+    if (!value) return 0;
+    // API returns distance in kilometers, use as-is
+    return value;
   };
 
   const formatTime = (timeInSeconds: number) => {
     const hours = Math.floor(timeInSeconds / 3600);
     const minutes = Math.floor((timeInSeconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
-  };
-
-  const formatSpeed = (speed: number) => {
-    return `${speed.toFixed(0)} km/h`;
   };
 
   const onRefresh = async () => {
@@ -111,7 +108,7 @@ export default function HomeScreen(): React.JSX.Element {
             </Text>
             <Text style={styles.userRank}>Explorer Rank</Text>
             <Text style={styles.userStats}>
-              {formatDistance(dashboardData?.user?.totalDistance || 0)} |{" "}
+              {convertDistance(normalizeDistance(dashboardData?.user?.totalDistance || 0))} |{" "}
               {formatTime(dashboardData?.user?.totalTime || 0)} |{" "}
               {achievements.filter((a) => a.unlocked).length} Badges
             </Text>
@@ -127,7 +124,7 @@ export default function HomeScreen(): React.JSX.Element {
                 {loading ? (
                   <SkeletonLine width={80} height={16} />
                 ) : (
-                  formatDistance(dashboardData?.user?.totalDistance || 0)
+                  convertDistance(normalizeDistance(dashboardData?.user?.totalDistance || 0))
                 )}
               </Text>
             </View>
@@ -149,8 +146,8 @@ export default function HomeScreen(): React.JSX.Element {
                 {loading ? (
                   <SkeletonLine width={60} height={16} />
                 ) : (
-                  formatSpeed(
-                    (dashboardData?.user?.totalDistance || 0) /
+                  convertSpeed(
+                    (normalizeDistance(dashboardData?.user?.totalDistance || 0)) /
                       Math.max(
                         (dashboardData?.user?.totalTime || 1) / 3600,
                         0.1
@@ -165,7 +162,7 @@ export default function HomeScreen(): React.JSX.Element {
                 {loading ? (
                   <SkeletonLine width={60} height={16} />
                 ) : (
-                  formatSpeed(dashboardData?.user?.topSpeed || 0)
+                  convertSpeed(dashboardData?.user?.topSpeed || 0)
                 )}
               </Text>
             </View>
@@ -369,7 +366,7 @@ export default function HomeScreen(): React.JSX.Element {
                         journey.photos?.[0]?.imageUrl ||
                         journey.photos?.[0]?.firebasePath;
                       return coverUri ? (
-                        <Image source={{ uri: coverUri }} style={styles.journeyImage} />
+                        <Image source={{ uri: coverUri }} style={styles.journeyImageFull} />
                       ) : (
                         <Text style={styles.journeyEmoji}>🚗</Text>
                       );
@@ -380,7 +377,7 @@ export default function HomeScreen(): React.JSX.Element {
                       {journey.title || `Journey ${index + 1}`}
                     </Text>
                     <Text style={styles.journeyStats}>
-                      {formatDistance(journey.totalDistance || 0)} |{" "}
+                      {convertDistance(normalizeDistance(journey.totalDistance || 0))} |{" "}
                       {formatTime(journey.totalTime || 0)}
                     </Text>
                   </View>
@@ -796,7 +793,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  journeyImage: {
+  journeyImageFull: {
     width: '100%',
     height: '100%',
     borderRadius: scale(8),

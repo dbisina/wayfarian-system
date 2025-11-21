@@ -50,6 +50,10 @@ class LocationService {
   private isCurrentlyMoving: boolean = false;
   private updateInterval: number = 5000; // Update backend every 5 seconds
   private currentGroupId: string | null = null;
+  // GPS-based speed calculation: track recent points for accurate speed calculation
+  private recentPoints: { point: LocationPoint; timestamp: number }[] = [];
+  private readonly SPEED_CALCULATION_WINDOW_MS = 3000; // Use last 3 seconds of points for speed calculation
+  private readonly MIN_SPEED_CALC_POINTS = 2; // Need at least 2 points to calculate speed
 
   // Calculate distance between two points using Haversine formula
   private calculateDistance(
@@ -168,6 +172,7 @@ class LocationService {
       this.lastMovementTime = Date.now();
       this.isCurrentlyMoving = false;
       this.routePoints = [startLocation];
+      this.recentPoints = []; // Initialize recent points for speed calculation
       
       // Reset stats
       this.stats = {
@@ -241,25 +246,87 @@ class LocationService {
   const lastAcc = lastPoint.accuracy || 0;
   const currAcc = newPoint.accuracy || 0;
       const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
-      // Accept if moved more than accuracy and threshold, or if reported speed indicates movement
-      // Added check: even if speed is high, ensure we actually moved a tiny bit (e.g. > 3m) to avoid adding noise
-      if (distanceMeters >= minAcceptable || ((newPoint.speed || 0) >= STATIONARY_SPEED_THRESHOLD_MPS && distanceMeters > 3)) {
-        this.stats.totalDistance += distanceKm;
+      const reportedSpeed = newPoint.speed || 0;
+      const isActuallyMoving = reportedSpeed >= STATIONARY_SPEED_THRESHOLD_MPS;
+      
+      // Only accept point if:
+      // 1. We actually moved a significant distance (more than accuracy threshold), OR
+      // 2. We're moving (speed > threshold) AND moved at least 3 meters (to avoid GPS drift)
+      // This prevents adding distance when stationary
+      if (distanceMeters >= minAcceptable || (isActuallyMoving && distanceMeters > 3)) {
+        // Only add distance if we actually moved
+        if (distanceMeters >= 3) {
+          this.stats.totalDistance += distanceKm;
+        }
         acceptPoint = true;
+      } else {
+        // Don't accept point if we haven't moved enough - prevents drift accumulation
+        acceptPoint = false;
       }
     } else {
       // Always accept the very first point
       acceptPoint = true;
     }
 
-    // Update speed stats and track movement
-    const speedMps = newPoint.speed || 0;
-    const moving = speedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
-    const speedKmh = speedMps * 3.6; // Convert m/s to km/h
+    // Calculate speed from GPS position changes (more accurate than reported speed)
+    // Speed = Distance / Time using actual GPS coordinates
+    let calculatedSpeedMps = 0;
+    const now = Date.now();
+    
+    // Add current point to recent points for speed calculation
+    this.recentPoints.push({ point: newPoint, timestamp: now });
+    
+    // Remove points older than calculation window
+    this.recentPoints = this.recentPoints.filter(
+      p => (now - p.timestamp) <= this.SPEED_CALCULATION_WINDOW_MS
+    );
+    
+    // Calculate speed from GPS position changes if we have enough points
+    if (this.recentPoints.length >= this.MIN_SPEED_CALC_POINTS) {
+      const oldestPoint = this.recentPoints[0];
+      const newestPoint = this.recentPoints[this.recentPoints.length - 1];
+      const timeDeltaSeconds = (newestPoint.timestamp - oldestPoint.timestamp) / 1000;
+      
+      if (timeDeltaSeconds > 0) {
+        // Calculate distance between oldest and newest point
+        const gpsDistanceKm = this.calculateDistance(
+          oldestPoint.point.latitude,
+          oldestPoint.point.longitude,
+          newestPoint.point.latitude,
+          newestPoint.point.longitude
+        );
+        const gpsDistanceMeters = gpsDistanceKm * 1000;
+        
+        // Speed = Distance / Time (in m/s)
+        calculatedSpeedMps = gpsDistanceMeters / timeDeltaSeconds;
+        
+        // Validate calculated speed is reasonable (0-200 m/s = 0-720 km/h)
+        if (calculatedSpeedMps < 0 || calculatedSpeedMps > 200) {
+          calculatedSpeedMps = 0;
+        }
+      }
+    }
+    
+    // Use GPS-calculated speed if available and reasonable, otherwise fall back to reported speed
+    // GPS-calculated speed is often more accurate than device-reported speed
+    const reportedSpeedMps = newPoint.speed || 0;
+    let finalSpeedMps = 0;
+    
+    if (calculatedSpeedMps > 0) {
+      // Use GPS-calculated speed as primary source
+      finalSpeedMps = calculatedSpeedMps;
+    } else if (reportedSpeedMps > 0 && reportedSpeedMps < 200) {
+      // Fall back to reported speed if GPS calculation unavailable
+      finalSpeedMps = reportedSpeedMps;
+    }
+    
+    // Apply stationary threshold filter
+    const moving = finalSpeedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
+    const speedKmh = finalSpeedMps * 3.6; // Convert m/s to km/h
     this.stats.currentSpeed = moving ? speedKmh : 0;
     
     // Track moving time only when actually moving
-    const now = Date.now();
+    // (reuse 'now' variable declared earlier for speed calculation)
     if (moving) {
       if (!this.isCurrentlyMoving) {
         // Just started moving again
@@ -346,6 +413,10 @@ class LocationService {
         this.locationSubscription = null;
       }
 
+      // Clear recent points when pausing
+      this.recentPoints = [];
+      this.stats.currentSpeed = 0;
+
       await journeyAPI.pauseJourney(this.currentJourneyId);
     } catch (error) {
       console.error('Error pausing journey:', error);
@@ -403,6 +474,7 @@ class LocationService {
       this.currentJourneyId = null;
       this.currentGroupId = null;
       this.routePoints = [];
+      this.recentPoints = []; // Clear recent points for speed calculation
       this.isCurrentlyMoving = false;
       this.lastMovementTime = 0;
       this.stats = {

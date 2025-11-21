@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
 import { router } from 'expo-router';
 import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
@@ -21,14 +22,14 @@ import { getCountryByCode } from '../../constants/countries';
 export default function LeaderboardScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { friendsData, globalData, loading, error, refreshLeaderboard } = useLeaderboard();
+  const { convertDistance, convertSpeed } = useSettings();
   const [activeTab, setActiveTab] = useState<'friends' | 'global'>('friends');
   const [sortBy] = useState<'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime'>('totalDistance');
 
-  const formatDistance = (distance: number) => {
-    if (distance >= 1000) {
-      return `${(distance / 1000).toFixed(1)}K km`;
-    }
-    return `${distance.toFixed(0)} km`;
+  const normalizeDistance = (value: number) => {
+    if (!value) return 0;
+    // API returns distance in kilometers, use as-is
+    return value;
   };
 
   const formatTime = (timeInSeconds: number) => {
@@ -37,22 +38,18 @@ export default function LeaderboardScreen(): React.JSX.Element {
     return `${hours}h ${minutes}m`;
   };
 
-  const formatSpeed = (speed: number) => {
-    return `${speed.toFixed(0)} km/h`;
-  };
-
   const getDisplayValue = (user: any) => {
     switch (sortBy) {
       case 'totalDistance':
-        return formatDistance(user.totalDistance || 0);
+        return convertDistance(normalizeDistance(user.totalDistance || 0));
       case 'totalTime':
         return formatTime(user.totalTime || 0);
       case 'topSpeed':
-        return formatSpeed(user.topSpeed || 0);
+        return convertSpeed(user.topSpeed || 0);
       case 'totalTrips':
         return `${user.totalTrips || 0} trips`;
       default:
-        return formatDistance(user.totalDistance || 0);
+        return convertDistance(normalizeDistance(user.totalDistance || 0));
     }
   };
 

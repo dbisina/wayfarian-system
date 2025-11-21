@@ -68,3 +68,6 @@ server/uploads/*
 # Coverage
 coverage/
 *.lcov
+
+GoogleService-Info.plist
+google-services.json

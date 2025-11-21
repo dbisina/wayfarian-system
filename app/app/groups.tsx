@@ -168,7 +168,7 @@ export default function GroupsScreen(): React.JSX.Element {
       
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/future-rides')}
+        onPress={() => router.push('/future-rides' as any)}
       >
         <Ionicons name="calendar" size={24} color="#fff" />
       </TouchableOpacity>

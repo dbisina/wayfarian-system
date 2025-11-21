@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '@/components/ui/Header';
 import { apiRequest } from '../services/api';
@@ -16,7 +16,6 @@ interface FutureRide {
 }
 
 export default function FutureRidesScreen() {
-  const router = useRouter();
   const [rides, setRides] = useState<FutureRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -82,7 +81,7 @@ export default function FutureRidesScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <Header title="Future Rides" showBack />
+      <Header title="Future Rides" />
       
       {loading ? (
         <View style={styles.loadingContainer}>

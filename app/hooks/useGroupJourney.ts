@@ -13,6 +13,7 @@ import {
   setGroupJourney as setGroupJourneyState,
   setGroupTracking,
   setMyInstance as setMyInstanceState,
+  setStats,
 } from '../store/slices/journeySlice';
 import type { JourneyInstance } from '../store/slices/journeySlice';
 import {
@@ -70,7 +71,7 @@ export const useGroupJourney = ({
     if (myInstance && myInstance.startTime) {
       // Update timer every second
       const updateTimer = () => {
-        const startTime = new Date(myInstance.startTime).getTime();
+        const startTime = new Date(myInstance.startTime!).getTime();
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
         

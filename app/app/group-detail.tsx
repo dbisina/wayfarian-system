@@ -22,7 +22,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { groupAPI, apiRequest, groupJourneyAPI } from '../services/api';
+import { groupAPI, apiRequest, groupJourneyAPI, journeyAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import LocationPicker from '../components/LocationPicker';
 import { getSocket, joinGroupJourneyRoom, leaveGroupJourneyRoom } from '../services/socket';
@@ -76,6 +76,8 @@ export default function GroupDetailScreen() {
   const [pendingCoverUri, setPendingCoverUri] = useState<string | null>(null);
   const [showCoverPreview, setShowCoverPreview] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [isStartingJourney, setIsStartingJourney] = useState(false);
+  const [isStartingRiding, setIsStartingRiding] = useState(false);
   const lastManualRefreshRef = useRef<number>(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -375,6 +377,7 @@ export default function GroupDetailScreen() {
       Alert.alert('Select destination', 'Please set the destination location');
       return;
     }
+    setIsStartingJourney(true);
     try {
       // Call using the options-based apiRequest signature
       const response = await apiRequest('/group-journey/start', {
@@ -434,6 +437,8 @@ export default function GroupDetailScreen() {
       } else {
         Alert.alert('Error', error?.message || 'Failed to start journey');
       }
+    } finally {
+      setIsStartingJourney(false);
     }
   };
 
@@ -448,6 +453,23 @@ export default function GroupDetailScreen() {
         [
           { text: 'Cancel', style: 'cancel' },
           {
+            text: 'Clear Solo Journey',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Try to force clear the solo journey
+                if (activeSoloJourney.id) {
+                  await journeyAPI.forceClearJourney(activeSoloJourney.id);
+                }
+                setActiveSoloJourney(null);
+                // Retry starting group journey
+                handleStartRiding();
+              } catch (error: any) {
+                Alert.alert('Error', error?.message || 'Failed to clear solo journey. Please try again.');
+              }
+            },
+          },
+          {
             text: 'View Solo Journey',
             onPress: () => router.push('/journey'),
           },
@@ -456,6 +478,7 @@ export default function GroupDetailScreen() {
       return;
     }
     
+    setIsStartingRiding(true);
     try {
       // Get current location
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -494,13 +517,26 @@ export default function GroupDetailScreen() {
         } catch {}
 
         // Navigate immediately to the Journey screen
-        router.push({ pathname: '/journey', params: { groupId, groupJourneyId: activeGroupJourneyId } });
+        try {
+          router.push({ 
+            pathname: '/journey', 
+            params: { 
+              groupId: String(groupId), 
+              groupJourneyId: String(activeGroupJourneyId) 
+            } 
+          });
+        } catch (navError) {
+          console.error('[Group Detail] Navigation error:', navError);
+          Alert.alert('Error', 'Failed to navigate to journey. Please try again.');
+        }
       } else {
         Alert.alert('Error', response?.message || 'Failed to start riding');
       }
     } catch (error: any) {
       console.error('Start riding error:', error);
       Alert.alert('Error', error?.message || 'Failed to start riding');
+    } finally {
+      setIsStartingRiding(false);
     }
   };
 
@@ -526,12 +562,16 @@ export default function GroupDetailScreen() {
         return;
       }
 
+      // Small delay to ensure ActivityResultLauncher is registered (Android fix)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Pick image
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
         allowsEditing: true,
         aspect: [2, 1], // 2:1 aspect ratio for cover photos
+        base64: false,
       });
 
       if (result.canceled || !result.assets?.length) {
@@ -544,7 +584,12 @@ export default function GroupDetailScreen() {
       setShowCoverPreview(true);
     } catch (e: any) {
       console.error('[Group Cover] Upload failed:', e);
-      Alert.alert('Upload Failed', e?.message || 'Failed to upload cover photo. Please try again.');
+      // Handle ActivityResultLauncher error specifically
+      if (e?.message?.includes('ActivityResultLauncher') || e?.message?.includes('unregistered')) {
+        Alert.alert('Error', 'Please try again. If the issue persists, restart the app.');
+      } else {
+        Alert.alert('Upload Failed', e?.message || 'Failed to upload cover photo. Please try again.');
+      }
     }
   };
 
@@ -763,9 +808,19 @@ export default function GroupDetailScreen() {
 
           {/* Start Journey Button - Only for creators/admins when no active journey */}
           {isAdmin && !activeGroupJourneyId && (
-            <TouchableOpacity style={styles.startJourneyButton} onPress={handleStartGroupJourney}>
-              <MaterialIcons name="navigation" size={24} color="#FFFFFF" />
-              <Text style={styles.startJourneyText}>Start Group Journey</Text>
+            <TouchableOpacity 
+              style={[styles.startJourneyButton, isStartingJourney && styles.buttonDisabled]} 
+              onPress={handleStartGroupJourney}
+              disabled={isStartingJourney}
+            >
+              {isStartingJourney ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <MaterialIcons name="navigation" size={24} color="#FFFFFF" />
+                  <Text style={styles.startJourneyText}>Start Group Journey</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
 
@@ -786,9 +841,19 @@ export default function GroupDetailScreen() {
 
           {/* Start Riding Button - For ALL members (including creator) when active journey exists */}
           {activeGroupJourneyId && !activeSoloJourney && (
-            <TouchableOpacity style={styles.startJourneyButton} onPress={handleStartRiding}>
-              <MaterialIcons name="directions-bike" size={24} color="#FFFFFF" />
-              <Text style={styles.startJourneyText}>Start Riding</Text>
+            <TouchableOpacity 
+              style={[styles.startJourneyButton, isStartingRiding && styles.buttonDisabled]} 
+              onPress={handleStartRiding}
+              disabled={isStartingRiding}
+            >
+              {isStartingRiding ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <MaterialIcons name="directions-bike" size={24} color="#FFFFFF" />
+                  <Text style={styles.startJourneyText}>Start Riding</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
 
@@ -1130,6 +1195,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     fontFamily: 'Space Grotesk',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   joinJourneyButton: {
     flexDirection: 'row',

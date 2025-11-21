@@ -3,7 +3,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
 
 const DEFAULT_API_URL = 'https://wayfarian-system-production.up.railway.app/api';
 const TOKEN_STORAGE_KEY = 'authToken';
@@ -628,41 +627,57 @@ export const galleryAPI = {
     const token = await getAuthToken();
     const url = `${getCurrentApiUrl()}/gallery/upload`;
     
-    const uploadTask = FileSystem.createUploadTask(
-      url,
-      photoUri,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
-        },
-        fieldName: 'photo',
-        mimeType: 'image/jpeg',
-        uploadType: (FileSystem as any).UploadType?.MULTIPART ?? (FileSystem as any).FileSystemUploadType?.MULTIPART ?? 1,
-        parameters: {
-          journeyId,
-        },
-      },
-      (data) => {
-        if (data.totalBytesExpectedToSend > 0) {
-          const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+    // Use FormData with fetch instead of deprecated createUploadTask
+    const formData = new FormData();
+    formData.append('photo', {
+      uri: photoUri,
+      type: 'image/jpeg',
+      name: `journey_photo_${Date.now()}.jpg`,
+    } as any);
+    formData.append('journeyId', journeyId);
+
+    // Use XMLHttpRequest for progress tracking since fetch doesn't support it
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = event.loaded / event.total;
           onProgress(progress);
         }
-      }
-    );
+      });
 
-    const result = await uploadTask.uploadAsync();
-    
-    if (result && result.status >= 200 && result.status < 300) {
-      return JSON.parse(result.body);
-    } else {
-      let errorMessage = 'Upload failed';
-      try {
-        const errorBody = JSON.parse(result?.body || '{}');
-        errorMessage = errorBody.message || errorBody.error || errorMessage;
-      } catch {}
-      throw new Error(errorMessage);
-    }
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          let errorMessage = 'Upload failed';
+          try {
+            const errorBody = JSON.parse(xhr.responseText || '{}');
+            errorMessage = errorBody.message || errorBody.error || errorMessage;
+          } catch {}
+          reject(new Error(errorMessage));
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload aborted'));
+      });
+
+      xhr.open('POST', url);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.send(formData as any);
+    });
   },
   
   getJourneyPhotos: async (journeyId: string) => {

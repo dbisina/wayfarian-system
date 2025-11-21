@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useUserData } from '../hooks/useUserData';
 import { getCurrentApiUrl } from '../services/api';
 import { testApiConnection, printDiagnostics } from '../utils/apiDiagnostics';
@@ -12,11 +13,17 @@ import { testApiConnection, printDiagnostics } from '../utils/apiDiagnostics';
 export default function ProfileScreen() {
   const { user, refreshUser } = useAuth();
   const { dashboardData, achievements, refreshData } = useUserData();
+  const { convertDistance } = useSettings();
   const [uploading, setUploading] = useState(false);
 
+  const normalizeDistance = (value: number) => {
+    if (!value) return 0;
+    // API returns distance in kilometers, use as-is
+    return value;
+  };
+
   const formatDistance = (distance: number) => {
-    if (distance >= 1000) return `${(distance / 1000).toFixed(1)}K km`;
-    return `${(distance || 0).toFixed(0)} km`;
+    return convertDistance(normalizeDistance(distance || 0));
   };
 
   const formatTime = (timeInSeconds: number) => {

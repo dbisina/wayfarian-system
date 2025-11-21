@@ -163,7 +163,7 @@ const RegisterScreen = ({onSignIn, onSignUp}: RegisterScreenProps): JSX.Element 
               
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don't Have an account? </Text>
+                <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
                 <TouchableOpacity onPress={onSignIn}>
                   <Text style={styles.signUpLink}>SignUp</Text>
                 </TouchableOpacity>

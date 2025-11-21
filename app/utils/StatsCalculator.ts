@@ -42,8 +42,9 @@ export const StatsCalculator = {
 
   /**
    * Formats distance in kilometers to a readable string (e.g., "1.2 km").
+   * @deprecated Use SettingsContext's convertDistance instead for unit conversion support.
    * @param distanceKm - Distance in kilometers.
-   * @returns Formatted string.
+   * @returns Formatted string (always in km).
    */
   formatDistance: (distanceKm: number): string => {
     return `${distanceKm.toFixed(2)} km`;
@@ -51,8 +52,9 @@ export const StatsCalculator = {
   
   /**
    * Formats speed in km/h.
+   * @deprecated Use SettingsContext's convertSpeed instead for unit conversion support.
    * @param speedKmh - Speed in km/h.
-   * @returns Formatted string.
+   * @returns Formatted string (always in km/h).
    */
   formatSpeed: (speedKmh: number): string => {
     return `${Math.round(speedKmh)} km/h`;

@@ -2,7 +2,7 @@
 // Displays the current speed limit using Google Roads API.
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 
 interface SpeedLimitSignProps {
   latitude: number;
@@ -14,7 +14,6 @@ const ROADS_API_SPEED_LIMITS_URL = 'https://roads.googleapis.com/v1/speedLimits'
 
 export const SpeedLimitSign: React.FC<SpeedLimitSignProps> = ({ latitude, longitude }) => {
   const [speedLimit, setSpeedLimit] = useState<number | null>(null);
-  const [units, setUnits] = useState<'KPH' | 'MPH'>('KPH'); // Default to KPH, API returns KPH usually
 
   useEffect(() => {
     if (!GOOGLE_MAPS_API_KEY) return;

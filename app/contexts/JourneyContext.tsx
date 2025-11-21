@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useEffect, useMemo, ReactNode, useCallback, useRef, useState } from 'react';
 import { locationService, JourneyStats, LocationPoint } from '../services/locationService';
 import { journeyAPI, groupJourneyAPI, galleryAPI } from '../services/api';
-import { ensureGroupJourneySocket, teardownGroupJourneySocket, shareGroupLocation } from '../services/groupJourneySocket';
+import { ensureGroupJourneySocket, teardownGroupJourneySocket } from '../services/groupJourneySocket';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useAppDispatch } from '../store/hooks';
 import { useSmartTracking } from '../hooks/useSmartTracking';
@@ -83,20 +83,49 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   // Local timer state for smooth updates
   const [localElapsedTime, setLocalElapsedTime] = useState(0);
-  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
 
   // Update local timer every second when tracking
   useEffect(() => {
-    if (journeyState.isTracking && journeyState.currentJourney?.startTime) {
-      const startTime = new Date(journeyState.currentJourney.startTime).getTime();
+    // For solo journeys, use startTimeRef; for group journeys, use myInstance.startTime
+    const hasStartTime = journeyState.isTracking && (
+      startTimeRef.current || 
+      journeyState.myInstance?.startTime ||
+      (journeyState.currentJourney && journeyState.currentJourney.id)
+    );
+    
+    if (hasStartTime) {
+      let startTime: number;
+      
+      if (journeyState.myInstance?.startTime) {
+        // Group journey - use instance startTime
+        startTime = new Date(journeyState.myInstance.startTime).getTime();
+      } else if (startTimeRef.current) {
+        // Solo journey - use stored startTime
+        startTime = startTimeRef.current;
+      } else if (journeyState.currentJourney?.id) {
+        // Fallback: fetch startTime from API if not available
+        // For now, use current time as fallback (will be corrected on next API sync)
+        startTime = Date.now();
+      } else {
+        startTime = Date.now();
+      }
+      
+      if (!startTimeRef.current && !journeyState.myInstance?.startTime) {
+        startTimeRef.current = startTime;
+      }
       
       // Update immediately
       setLocalElapsedTime(Math.floor((Date.now() - startTime) / 1000));
       
       // Then update every second
       timerIntervalRef.current = setInterval(() => {
-        setLocalElapsedTime(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
+        const currentStartTime = journeyState.myInstance?.startTime 
+          ? new Date(journeyState.myInstance.startTime).getTime()
+          : startTimeRef.current || Date.now();
+        setLocalElapsedTime(Math.floor((Date.now() - currentStartTime) / 1000));
+      }, 1000) as unknown as number;
       
       return () => {
         if (timerIntervalRef.current) {
@@ -106,23 +135,26 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       };
     } else {
       setLocalElapsedTime(0);
+      if (!journeyState.myInstance?.startTime) {
+        startTimeRef.current = null;
+      }
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
     }
-  }, [journeyState.isTracking, journeyState.currentJourney?.startTime]);
+  }, [journeyState.isTracking, journeyState.myInstance?.startTime, journeyState.currentJourney?.id, journeyState.currentJourney]);
 
   const derivedStats: JourneyStats = useMemo(() => ({
     totalDistance: officialDistance,
-    totalTime: journeyState.isTracking && journeyState.currentJourney?.startTime 
+    totalTime: journeyState.isTracking && (journeyState.myInstance?.startTime || startTimeRef.current)
       ? localElapsedTime
       : statsFromStore.totalTime,
     movingTime: movingTime,
     avgSpeed: avgSpeed,
     topSpeed: maxSpeed,
     currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
-  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.currentJourney, journeyState.isTracking, localElapsedTime]);
+  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.myInstance, journeyState.isTracking, localElapsedTime]);
 
   // Sync Smart Tracking data to Redux Store
   useEffect(() => {
@@ -311,6 +343,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }
       const journeyId = response.journey.id;
 
+      // Store startTime from API response for timer
+      const journeyStartTime = response.journey?.startTime || new Date().toISOString();
+      
       const newJourney: JourneyData = {
         id: journeyId,
         title: journeyData.title || 'My Journey',
@@ -324,12 +359,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         vehicle: journeyData.vehicle || 'car',
         status: 'active',
         photos: [],
-        startTime: new Date().toISOString(),
       };
 
       dispatch(setCurrentJourney(newJourney));
       dispatch(setTracking(true));
       dispatch(setJourneyMinimized(false));
+      
+      // Set startTime for timer
+      startTimeRef.current = new Date(journeyStartTime).getTime();
 
       if (journeyData.groupId) {
         await ensureGroupJourneySocket(journeyData.groupId, dispatch);
@@ -391,25 +428,87 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const endJourney = async () => {
     try {
-      // await locationService.endJourney(); // Handled by useSmartTracking (isTracking=false)
-      
-      // Final update
-      if (journeyState.currentJourney && liveRawLocation) {
-         await journeyAPI.endJourney(journeyState.currentJourney.id, {
-            endLatitude: liveRawLocation.latitude,
-            endLongitude: liveRawLocation.longitude,
-         });
-      } else if (journeyState.currentJourney) {
-         // Fallback if no location
-         await journeyAPI.endJourney(journeyState.currentJourney.id, {});
+      if (!journeyState.currentJourney) {
+        console.warn('No current journey to end');
+        return;
       }
 
+      // Final location update to backend
+      if (liveRawLocation) {
+        await journeyAPI.updateJourney(journeyState.currentJourney.id, {
+          latitude: liveRawLocation.latitude,
+          longitude: liveRawLocation.longitude,
+          speed: liveRawLocation.speed ? liveRawLocation.speed * 3.6 : 0,
+        });
+      }
+
+      // End journey with final location
+      const endLocation = liveRawLocation 
+        ? { endLatitude: liveRawLocation.latitude, endLongitude: liveRawLocation.longitude }
+        : {};
+      
+      await journeyAPI.endJourney(journeyState.currentJourney.id, endLocation);
+
+      // Clean up group journey socket if applicable
       if (journeyState.currentJourney?.groupId) {
         teardownGroupJourneySocket(journeyState.currentJourney.groupId);
       }
-      if (journeyState.currentJourney) {
-        dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'completed' }));
+
+      // Update journey status
+      dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'completed' }));
+      dispatch(setTracking(false));
+      dispatch(setJourneyMinimized(false));
+      
+      // Clear stats after a delay to allow UI to show completion
+      setTimeout(() => {
+        dispatch(setStats({
+          totalDistance: 0,
+          totalTime: 0,
+          movingTime: 0,
+          avgSpeed: 0,
+          topSpeed: 0,
+          currentSpeed: 0,
+          activeMembersCount: 0,
+          completedMembersCount: 0,
+        }));
+        dispatch(clearRoutePoints());
+        dispatch(clearJourney());
+        startTimeRef.current = null;
+        setLocalElapsedTime(0);
+      }, 2000);
+    } catch (error) {
+      console.error('Error ending journey:', error);
+      // Still clear local state even if API call fails
+      dispatch(setTracking(false));
+      dispatch(setJourneyMinimized(false));
+    }
+  };
+
+  const clearStuckJourney = async () => {
+    try {
+      // First try to end via location service
+      try {
+        await locationService.endJourney();
+      } catch (e) {
+        console.warn('Location service endJourney failed:', e);
       }
+
+      // Force clear via API if we have a journey ID
+      if (journeyState.currentJourney?.id) {
+        try {
+          await journeyAPI.forceClearJourney(journeyState.currentJourney.id);
+        } catch (e) {
+          console.warn('Force clear API call failed:', e);
+        }
+      }
+
+      // Clean up group journey socket
+      if (journeyState.currentJourney?.groupId) {
+        teardownGroupJourneySocket(journeyState.currentJourney.groupId);
+      }
+
+      // Clear Redux state
+      dispatch(clearJourney());
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
       dispatch(setStats({
@@ -423,25 +522,13 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         completedMembersCount: 0,
       }));
       dispatch(clearRoutePoints());
-      setTimeout(() => {
-        dispatch(clearJourney());
-      }, 3000);
-    } catch (error) {
-      console.error('Error ending journey:', error);
-    }
-  };
-
-  const clearStuckJourney = async () => {
-    try {
-      await locationService.endJourney();
-      if (journeyState.currentJourney?.groupId) {
-        teardownGroupJourneySocket(journeyState.currentJourney.groupId);
-      }
-      dispatch(clearJourney());
       dispatch(setHydrated(true));
     } catch (error) {
       console.error('Error clearing stuck journey:', error);
+      // Still clear local state even if API calls fail
       dispatch(clearJourney());
+      dispatch(setTracking(false));
+      dispatch(setJourneyMinimized(false));
     }
   };
 
@@ -473,7 +560,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         (progress) => {
           dispatch(updateUploadStatus({ id: uploadId, status: 'uploading', progress }));
         }
-      );
+      ) as { success?: boolean; photo?: { imageUrl?: string; firebasePath?: string; thumbnailPath?: string } };
 
       if (!response || !response.photo) {
         throw new Error('Failed to upload photo');
@@ -481,13 +568,17 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
       const uploadedPhotoUri =
         response.photo.imageUrl ||
-        getFirebaseDownloadUrl(response.photo.firebasePath) ||
+        (response.photo.firebasePath ? getFirebaseDownloadUrl(response.photo.firebasePath) : undefined) ||
         response.photo.firebasePath;
+
+      if (!uploadedPhotoUri) {
+        throw new Error('Failed to get photo URL after upload');
+      }
 
       dispatch(updateUploadStatus({ id: uploadId, status: 'completed', remoteUrl: uploadedPhotoUri, progress: 1 }));
       dispatch(setCurrentJourney({
         ...journeyState.currentJourney,
-        photos: [...journeyState.currentJourney.photos, uploadedPhotoUri],
+        photos: [...(journeyState.currentJourney.photos || []), uploadedPhotoUri],
       }));
 
       const activeGroupJourneyId = journeyState.currentJourney.groupJourneyId || journeyState.myInstance?.groupJourneyId;

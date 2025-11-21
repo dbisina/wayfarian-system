@@ -122,6 +122,26 @@ const uploadPhoto = async (req, res) => {
       },
     });
     
+    // If this is the first photo for a journey, update journey with cover photo
+    if (journeyId) {
+      try {
+        const journeyPhotos = await prisma.photo.findMany({
+          where: { journeyId },
+          orderBy: { takenAt: 'asc' },
+        });
+        
+        // If this is the first photo, set it as the journey cover
+        if (journeyPhotos.length === 1) {
+          // Journey cover is handled by getCoverPhotoUrl in photoFormatter
+          // No need to store separately - it's derived from first photo
+          console.log(`[Gallery] First photo uploaded for journey ${journeyId}, will be used as cover`);
+        }
+      } catch (coverError) {
+        console.warn('[Gallery] Failed to check/update journey cover:', coverError);
+        // Don't fail the upload if cover update fails
+      }
+    }
+    
     res.status(201).json({
       success: true,
       message: 'Photo uploaded successfully',

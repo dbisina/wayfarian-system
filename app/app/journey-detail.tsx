@@ -15,6 +15,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getCurrentApiUrl, journeyAPI } from '../services/api';
 import { getFirebaseDownloadUrl } from '../utils/storage';
+import { useSettings } from '../contexts/SettingsContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -33,6 +34,7 @@ interface JourneyDetail {
   title: string;
   startTime: string;
   endTime?: string;
+  status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'PLANNED';
   totalDistance: number;
   totalTime: number;
   avgSpeed: number;
@@ -54,10 +56,17 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [liveTime, setLiveTime] = useState<number | null>(null);
+  const { convertDistance, convertSpeed } = useSettings();
 
-  const formatDistance = (meters: number) => {
-    if (meters < 1000) return `${Math.round(meters)}m`;
-    return `${(meters / 1000).toFixed(2)}km`;
+  const normalizeDistance = (value: number) => {
+    if (!value) return 0;
+    // API returns distance in kilometers, use as-is
+    return value;
+  };
+
+  const formatDistance = (km: number) => {
+    return convertDistance(normalizeDistance(km));
   };
 
   const formatTime = (seconds: number) => {
@@ -65,10 +74,6 @@ const JourneyDetailScreen = (): React.JSX.Element => {
     const minutes = Math.floor((seconds % 3600) / 60);
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
-  };
-
-  const formatSpeed = (speed: number) => {
-    return `${speed.toFixed(1)} km/h`;
   };
 
   const formatDate = (dateString: string) => {
@@ -118,6 +123,25 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
     fetchJourneyDetail();
   }, [journeyId]);
+
+  // Live timer for active journeys
+  useEffect(() => {
+    if (!journey || journey.status !== 'ACTIVE') {
+      setLiveTime(null);
+      return;
+    }
+
+    const startTime = new Date(journey.startTime).getTime();
+    const updateTimer = () => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setLiveTime(elapsed);
+    };
+
+    updateTimer(); // Update immediately
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [journey]);
 
   const openPhotoViewer = (index: number) => {
     setSelectedPhotoIndex(index);
@@ -187,17 +211,19 @@ const JourneyDetailScreen = (): React.JSX.Element => {
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>⏱️</Text>
-              <Text style={styles.statValue}>{formatTime(journey.totalTime)}</Text>
+              <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
               <Text style={styles.statLabel}>Duration</Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statIcon}>⚡</Text>
-              <Text style={styles.statValue}>{formatSpeed(journey.avgSpeed)}</Text>
-              <Text style={styles.statLabel}>Avg Speed</Text>
-            </View>
+            {journey.avgSpeed > 0 && (
+              <View style={styles.statItem}>
+                <Text style={styles.statIcon}>⚡</Text>
+                <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
+                <Text style={styles.statLabel}>Avg Speed</Text>
+              </View>
+            )}
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>🚀</Text>
-              <Text style={styles.statValue}>{formatSpeed(journey.topSpeed)}</Text>
+              <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
               <Text style={styles.statLabel}>Top Speed</Text>
             </View>
           </View>

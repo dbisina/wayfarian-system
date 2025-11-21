@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useJourney } from '../contexts/JourneyContext';
 import { useAuth } from '../contexts/AuthContext';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, Stack } from 'expo-router';
 import { apiRequest } from '../services/api';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import RideTimeline from '../components/RideTimeline';
@@ -377,11 +377,15 @@ export default function JourneyScreen(): React.JSX.Element {
 
   const handleTakePhoto = async () => {
     try {
+      // Request permissions first
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Camera permission is required to take photos');
         return;
       }
+
+      // Small delay to ensure ActivityResultLauncher is registered (Android fix)
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -389,6 +393,7 @@ export default function JourneyScreen(): React.JSX.Element {
         aspect: [4, 3],
         quality: 0.8,
         exif: false,
+        base64: false,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0].uri) {
@@ -399,10 +404,15 @@ export default function JourneyScreen(): React.JSX.Element {
       } else {
         throw new Error('No photo captured');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error taking photo:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to take photo';
-      Alert.alert('Error', errorMessage === 'No photo captured' ? 'Please try taking the photo again' : errorMessage);
+      // Handle ActivityResultLauncher error specifically
+      if (err?.message?.includes('ActivityResultLauncher') || err?.message?.includes('unregistered')) {
+        Alert.alert('Camera Error', 'Please try again. If the issue persists, restart the app.');
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to take photo';
+        Alert.alert('Error', errorMessage === 'No photo captured' ? 'Please try taking the photo again' : errorMessage);
+      }
     }
   };
 
@@ -506,6 +516,7 @@ export default function JourneyScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
@@ -546,7 +557,7 @@ export default function JourneyScreen(): React.JSX.Element {
                         latitude: groupView.start.latitude,
                         longitude: groupView.start.longitude,
                       }
-                    : { latitude: region.latitude, longitude: region.longitude }
+                    : region ? { latitude: region.latitude, longitude: region.longitude } : undefined
                 }
                 destination={
                   currentJourney?.endLocation
@@ -564,7 +575,7 @@ export default function JourneyScreen(): React.JSX.Element {
                 apikey={GOOGLE_MAPS_API_KEY}
                 mode="DRIVING"
                 strokeWidth={5}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
                 optimizeWaypoints
                 onError={(err) => console.warn("Directions error:", err)}
               />
@@ -573,13 +584,13 @@ export default function JourneyScreen(): React.JSX.Element {
               <Polyline
                 coordinates={manualRouteCoords}
                 strokeWidth={5}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
               />
             ) : routePoints.length > 1 ? (
               <Polyline
                 coordinates={routePoints}
                 strokeWidth={4}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
               />
             ) : null}
           </MapView>
@@ -613,7 +624,7 @@ export default function JourneyScreen(): React.JSX.Element {
                         latitude: currentJourney.startLocation.latitude,
                         longitude: currentJourney.startLocation.longitude,
                       }
-                    : { latitude: region.latitude, longitude: region.longitude }
+                    : region ? { latitude: region.latitude, longitude: region.longitude } : undefined
                 }
                 destination={{
                   latitude: currentJourney.endLocation.latitude,
@@ -622,7 +633,7 @@ export default function JourneyScreen(): React.JSX.Element {
                 apikey={GOOGLE_MAPS_API_KEY}
                 mode="DRIVING"
                 strokeWidth={5}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
                 optimizeWaypoints
                 onReady={(result) => {
                   try {
@@ -643,13 +654,13 @@ export default function JourneyScreen(): React.JSX.Element {
               <Polyline
                 coordinates={manualRouteCoords}
                 strokeWidth={5}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
               />
             ) : !currentJourney?.endLocation && routePoints.length > 1 ? (
               <Polyline
                 coordinates={routePoints}
                 strokeWidth={4}
-                strokeColor="#2B8CFF"
+                strokeColor="#F9A825"
               />
             ) : null}
 

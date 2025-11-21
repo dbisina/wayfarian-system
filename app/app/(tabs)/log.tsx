@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { userAPI, leaderboardAPI } from '../../services/api';
 
 type JourneyItem = {
@@ -93,10 +94,16 @@ export default function RideLogScreen(): React.JSX.Element {
   }, [isAuthenticated]);
 
   const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
+  const { convertDistance } = useSettings();
+
+  const normalizeDistance = (value?: number) => {
+    if (!value || value <= 0) return 0;
+    // API returns distance in kilometers, use as-is
+    return value;
+  };
 
   const formatDistance = (km?: number) => {
-    if (!km || km <= 0) return '0 km';
-    return `${km.toFixed(1)} km`;
+    return convertDistance(normalizeDistance(km));
   };
   const formatDuration = (seconds?: number) => {
     if (!seconds || seconds <= 0) return '0m';

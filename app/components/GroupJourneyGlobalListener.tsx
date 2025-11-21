@@ -42,7 +42,22 @@ export default function GroupJourneyGlobalListener() {
             {
               text: 'Join Journey',
               onPress: () => {
-                router.push({ pathname: '/journey', params: { groupId: data.groupId, groupJourneyId: data.groupJourneyId } });
+                try {
+                  if (data?.groupId && data?.groupJourneyId) {
+                    router.push({ 
+                      pathname: '/journey', 
+                      params: { 
+                        groupId: String(data.groupId), 
+                        groupJourneyId: String(data.groupJourneyId) 
+                      } 
+                    });
+                  } else {
+                    console.warn('[GroupJourney] Missing groupId or groupJourneyId in alert data');
+                  }
+                } catch (error) {
+                  console.error('[GroupJourney] Navigation error:', error);
+                  Alert.alert('Error', 'Failed to navigate to journey. Please try again.');
+                }
               },
             },
             { text: 'Later', style: 'cancel' },

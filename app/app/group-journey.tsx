@@ -66,7 +66,8 @@ export default function GroupJourneyScreen() {
   const [userStartRegion, setUserStartRegion] = useState<Region | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<MapView | null>(null);
+  const [region, setRegion] = useState<Region | null>(null);
 
   const {
     memberLocations,
@@ -79,7 +80,7 @@ export default function GroupJourneyScreen() {
 
   // Group Map Behavior (Zoom Wars Fix)
   const { mapViewProps } = useGroupMapBehavior({
-    mapRef,
+    mapRef: mapRef as React.RefObject<MapView>,
     members: memberLocations
       .filter(m => typeof m.latitude === 'number' && typeof m.longitude === 'number')
       .map(m => ({ latitude: m.latitude!, longitude: m.longitude!, id: m.userId })),
@@ -159,9 +160,6 @@ export default function GroupJourneyScreen() {
       longitudeDelta: 0.05,
     };
   }, [journeyData]);
-
-  const [region, setRegion] = useState<Region | null>(null);
-
 
   useEffect(() => {
     let isMounted = true;
@@ -254,15 +252,20 @@ export default function GroupJourneyScreen() {
   );
 
   const directionOrigin = useMemo(() => {
+    // Priority 1: User's real-time location from memberLocations
     if (myLocation?.latitude && myLocation?.longitude) {
       return { latitude: myLocation.latitude, longitude: myLocation.longitude };
     }
-    // Fallback to user's current location if journey start is placeholder
+    // Priority 2: User's current region (from GPS)
+    if (region) {
+      return { latitude: region.latitude, longitude: region.longitude };
+    }
+    // Priority 3: User's start location
     if (userStartRegion) {
       return { latitude: userStartRegion.latitude, longitude: userStartRegion.longitude };
     }
+    // Priority 4: Journey start location (if not placeholder)
     if (journeyData?.startLatitude && journeyData?.startLongitude) {
-      // Ignore placeholder
       if (Math.abs(journeyData.startLatitude) > 0.0001) {
         return {
           latitude: journeyData.startLatitude,
@@ -277,6 +280,7 @@ export default function GroupJourneyScreen() {
     myLocation?.latitude,
     myLocation?.longitude,
     userStartRegion,
+    region,
   ]);
 
 
@@ -402,11 +406,16 @@ export default function GroupJourneyScreen() {
     }
   }, [isTracking, myInstance, startLocationTracking]);
 
+  const [isStarting, setIsStarting] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+
   const handleStartInstance = async () => {
     if (!groupJourneyId || !userStartLocation) {
       Alert.alert("Error", "Please select your start location first");
       return;
     }
+    setIsStarting(true);
     try {
       const response = await apiRequest(
         `/group-journey/${groupJourneyId}/start-my-instance`,
@@ -435,11 +444,14 @@ export default function GroupJourneyScreen() {
         "Unable to start",
         errorMessage
       );
+    } finally {
+      setIsStarting(false);
     }
   };
 
   const handleTogglePause = async () => {
     if (!myInstance) return;
+    setIsPausing(true);
     const endpoint = myInstance.status === "PAUSED" ? "resume" : "pause";
     try {
       await apiRequest(`/group-journey/instance/${myInstance.id}/${endpoint}`, {
@@ -454,6 +466,8 @@ export default function GroupJourneyScreen() {
       }
     } catch (error: any) {
       Alert.alert("Error", error?.message || `Unable to ${endpoint} instance.`);
+    } finally {
+      setIsPausing(false);
     }
   };
 
@@ -468,6 +482,7 @@ export default function GroupJourneyScreen() {
           text: "Complete",
           style: "destructive",
           onPress: async () => {
+            setIsCompleting(true);
             try {
               stopLocationTracking();
               await apiRequest(
@@ -484,6 +499,8 @@ export default function GroupJourneyScreen() {
                 "Error",
                 error?.message || "Unable to complete journey."
               );
+            } finally {
+              setIsCompleting(false);
             }
           },
         },
@@ -575,13 +592,13 @@ export default function GroupJourneyScreen() {
             destination={destination}
             apikey={googleKey}
             strokeWidth={4}
-            strokeColor="#6366f1"
+            strokeColor="#F9A825"
           />
         ) : destination && manualRouteCoords.length > 1 ? (
           <Polyline
             coordinates={manualRouteCoords}
             strokeWidth={4}
-            strokeColor="#6366f1"
+            strokeColor="#F9A825"
           />
         ) : null}
 
@@ -713,10 +730,15 @@ export default function GroupJourneyScreen() {
 
       {!myInstance && userStartLocation && (
         <TouchableOpacity
-          style={styles.startButton}
+          style={[styles.startButton, isStarting && styles.buttonDisabled]}
           onPress={handleStartInstance}
+          disabled={isStarting}
         >
-          <Text style={styles.startButtonText}>Start Riding</Text>
+          {isStarting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.startButtonText}>Start Riding</Text>
+          )}
         </TouchableOpacity>
       )}
 
@@ -730,24 +752,38 @@ export default function GroupJourneyScreen() {
             <Text style={styles.controlButtonText}>Camera</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.controlButton, styles.pauseButton]}
+            style={[styles.controlButton, styles.pauseButton, isPausing && styles.buttonDisabled]}
             onPress={handleTogglePause}
+            disabled={isPausing}
           >
-            <Ionicons
-              name={myInstance.status === "PAUSED" ? "play" : "pause"}
-              size={22}
-              color="#fff"
-            />
-            <Text style={styles.controlButtonText}>
-              {myInstance.status === "PAUSED" ? "Resume" : "Pause"}
-            </Text>
+            {isPausing ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons
+                  name={myInstance.status === "PAUSED" ? "play" : "pause"}
+                  size={22}
+                  color="#fff"
+                />
+                <Text style={styles.controlButtonText}>
+                  {myInstance.status === "PAUSED" ? "Resume" : "Pause"}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.controlButton, styles.completeButton]}
+            style={[styles.controlButton, styles.completeButton, isCompleting && styles.buttonDisabled]}
             onPress={handleComplete}
+            disabled={isCompleting}
           >
-            <Ionicons name="checkmark" size={22} color="#fff" />
-            <Text style={styles.controlButtonText}>Complete</Text>
+            {isCompleting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={22} color="#fff" />
+                <Text style={styles.controlButtonText}>Complete</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -983,6 +1019,9 @@ const styles = StyleSheet.create({
   controlButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   cameraOverlay: {
     position: 'absolute',

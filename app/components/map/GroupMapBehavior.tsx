@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import MapView, { Region } from 'react-native-maps';
-import { Platform } from 'react-native';
 
 interface MemberLocation {
   latitude: number;
@@ -26,7 +25,7 @@ export const useGroupMapBehavior = ({
 }: UseGroupMapBehaviorProps) => {
   const [isUserInteracting, setIsUserInteracting] = useState(false);
   const lastInteractionTime = useRef<number>(0);
-  const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const interactionTimeoutRef = useRef<number | null>(null);
   const AUTO_FIT_DELAY_MS = 15000; // 15 seconds
 
   // Function to fit all members and current user
