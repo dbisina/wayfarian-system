@@ -18,7 +18,7 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
     },
     {
       id: 2,
-      title: 'Add a bike/vehicle',
+      title: 'Scheduled Ride',
       icon: require('../assets/images/2025-10-15/4MPiLO8s20.png'),
       iconBg: null,
     },
@@ -48,6 +48,9 @@ const ActivityModal = ({ visible, onClose, anchorBottom = 85 }) => {
       switch (activity.id) {
         case 1: // Start Solo ride
           router.push('/new-journey');
+          break;
+        case 2: // Scheduled Ride
+          router.push('/future-rides');
           break;
         case 3: // Start Group ride
           router.push('/new-group');

@@ -67,15 +67,31 @@ export const useGroupJourney = ({
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
-    if (myInstance) {
-      dispatch(setStats({
-        totalDistance: myInstance.totalDistance || 0,
-        totalTime: myInstance.totalTime || 0,
-        activeMembersCount: members.filter(m => m.isOnline).length,
-        completedMembersCount: members.filter(m => m.status === 'COMPLETED').length,
-      }));
+    if (myInstance && myInstance.startTime) {
+      // Update timer every second
+      const updateTimer = () => {
+        const startTime = new Date(myInstance.startTime).getTime();
+        const now = Date.now();
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        
+        dispatch(setStats({
+          totalDistance: myInstance.totalDistance || 0,
+          totalTime: elapsedSeconds,
+          movingTime: myInstance.totalTime || 0,
+          avgSpeed: myInstance.avgSpeed || 0,
+          topSpeed: myInstance.topSpeed || 0,
+          currentSpeed: 0,
+          activeMembersCount: members.filter(m => m.isOnline).length,
+          completedMembersCount: Object.values(journeyState.memberInstances).filter(inst => inst.status === 'COMPLETED').length,
+        }));
+      };
+
+      updateTimer(); // Initial update
+      const interval = setInterval(updateTimer, 1000); // Update every second
+
+      return () => clearInterval(interval);
     }
-  }, [myInstance, dispatch, members]);
+  }, [myInstance, dispatch, members, journeyState.memberInstances]);
 
   const setMyInstance = useCallback((nextValue: JourneyInstance | null | ((prev: JourneyInstance | null) => JourneyInstance | null)) => {
     const resolved = typeof nextValue === 'function' ? nextValue(myInstanceRef.current) : nextValue;

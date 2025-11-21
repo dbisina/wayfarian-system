@@ -77,22 +77,31 @@ export default function JourneyCamera({
         throw new Error('Failed to capture photo');
       }
 
-      await ensureLocationPermission();
-      const location = await Location.getCurrentPositionAsync({});
-
       setCapturedPhoto(capture.uri);
       saveToLibraryIfAllowed(capture.uri);
-
-      onPhotoTaken({
-        uri: capture.uri,
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to take picture';
       Alert.alert('Camera error', message);
     }
-  }, [ensureLocationPermission, onPhotoTaken, saveToLibraryIfAllowed]);
+  }, [saveToLibraryIfAllowed]);
+
+  const handleConfirmPhoto = useCallback(async () => {
+    if (!capturedPhoto) return;
+    
+    try {
+      await ensureLocationPermission();
+      const location = await Location.getCurrentPositionAsync({});
+
+      onPhotoTaken({
+        uri: capturedPhoto,
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to process photo';
+      Alert.alert('Error', message);
+    }
+  }, [capturedPhoto, ensureLocationPermission, onPhotoTaken]);
 
   if (!cameraPermission) {
     return null;
@@ -118,7 +127,7 @@ export default function JourneyCamera({
             <Ionicons name="refresh" size={24} color="#fff" />
             <Text style={styles.previewButtonText}>Retake</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.previewButton} onPress={onClose}>
+          <TouchableOpacity style={styles.previewButton} onPress={handleConfirmPhoto}>
             <Ionicons name="checkmark" size={24} color="#fff" />
             <Text style={styles.previewButtonText}>Use Photo</Text>
           </TouchableOpacity>

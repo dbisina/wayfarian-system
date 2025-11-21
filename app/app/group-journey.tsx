@@ -28,6 +28,7 @@ import { getSocket } from '../services/socket';
 import { apiRequest, galleryAPI } from '../services/api';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import JourneyCamera from '../components/JourneyCamera';
+import LocationPicker from '../components/LocationPicker';
 import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 
@@ -89,6 +90,8 @@ export default function GroupJourneyScreen() {
   useRealtimeEvents({ groupJourneyId });
 
   const [showCamera, setShowCamera] = useState(false);
+  const [showStartLocationModal, setShowStartLocationModal] = useState(false);
+  const [userStartLocation, setUserStartLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
 
   const handlePhotoTaken = useCallback(
     async (photoData: { uri: string; latitude: number; longitude: number }) => {
@@ -392,24 +395,23 @@ export default function GroupJourneyScreen() {
   }, [isTracking, myInstance, startLocationTracking]);
 
   const handleStartInstance = async () => {
-    if (!groupJourneyId) return;
+    if (!groupJourneyId || !userStartLocation) return;
     try {
-      const { coords } = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-      });
       const response = await apiRequest(
         `/group-journey/${groupJourneyId}/start-my-instance`,
         {
           method: "POST",
           body: JSON.stringify({
-            startLatitude: coords.latitude,
-            startLongitude: coords.longitude,
+            startLatitude: userStartLocation.latitude,
+            startLongitude: userStartLocation.longitude,
+            startAddress: userStartLocation.address,
           }),
         }
       );
       if (!response?.instance) throw new Error("Unable to start instance");
       setMyInstance(response.instance);
       startLocationTracking(response.instance.id);
+      setShowStartLocationModal(false);
     } catch (error: any) {
       Alert.alert(
         "Unable to start",
@@ -682,12 +684,21 @@ export default function GroupJourneyScreen() {
         </ScrollView>
       </View>
 
-      {!myInstance && (
+      {!myInstance && !userStartLocation && (
+        <TouchableOpacity
+          style={styles.startButton}
+          onPress={() => setShowStartLocationModal(true)}
+        >
+          <Text style={styles.startButtonText}>Set Start Location</Text>
+        </TouchableOpacity>
+      )}
+
+      {!myInstance && userStartLocation && (
         <TouchableOpacity
           style={styles.startButton}
           onPress={handleStartInstance}
         >
-          <Text style={styles.startButtonText}>Start your ride</Text>
+          <Text style={styles.startButtonText}>Start Riding</Text>
         </TouchableOpacity>
       )}
 
@@ -720,6 +731,46 @@ export default function GroupJourneyScreen() {
             <Ionicons name="checkmark" size={22} color="#fff" />
             <Text style={styles.controlButtonText}>Complete</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {showStartLocationModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Set Your Start Location</Text>
+            <Text style={styles.modalSubtitle}>Where are you starting from?</Text>
+            <LocationPicker
+              placeholder="Start Location"
+              value={userStartLocation?.address || ''}
+              onLocationSelect={(location) => {
+                setUserStartLocation({
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  address: location.address,
+                });
+              }}
+              currentLocation={region ? { latitude: region.latitude, longitude: region.longitude } : undefined}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowStartLocationModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, !userStartLocation && styles.modalConfirmDisabled]}
+                onPress={() => {
+                  if (userStartLocation) {
+                    setShowStartLocationModal(false);
+                  }
+                }}
+                disabled={!userStartLocation}
+              >
+                <Text style={styles.modalConfirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       )}
 
@@ -923,5 +974,66 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#000',
     zIndex: 10,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+  },
+  modalConfirmDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  modalConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
