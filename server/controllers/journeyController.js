@@ -293,7 +293,7 @@ const updateJourneyProgress = async (req, res) => {
 const endJourney = async (req, res) => {
   try {
     const { journeyId } = req.params;
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, totalDistance: clientTotalDistance } = req.body;
     
     const userId = req.user.id;
     
@@ -313,9 +313,19 @@ const endJourney = async (req, res) => {
       });
     }
     
-    // Calculate final stats
-    const routePoints = journey.routePoints || [];
-    const totalDistance = calculateDistance(routePoints);
+    // CRITICAL: Use client-provided totalDistance if available (from Roads API snapped data)
+    // This ensures accurate final distance without phantom data
+    // Otherwise fall back to calculating from routePoints
+    let totalDistance;
+    if (clientTotalDistance !== undefined && clientTotalDistance !== null) {
+      // Client provided Roads API snapped distance (in kilometers)
+      totalDistance = clientTotalDistance;
+    } else {
+      // Fallback: Calculate from routePoints (less accurate due to GPS noise)
+      const routePoints = journey.routePoints || [];
+      totalDistance = calculateDistance(routePoints);
+    }
+    
     const totalTime = Math.floor((new Date() - new Date(journey.startTime)) / 1000);
     const avgSpeed = calculateAverageSpeed(totalDistance, totalTime);
     

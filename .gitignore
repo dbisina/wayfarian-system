@@ -69,5 +69,5 @@ server/uploads/*
 coverage/
 *.lcov
 
-GoogleService-Info.plist
-google-services.json
+# Google service files (sensitive credentials)
+

@@ -57,6 +57,12 @@ export function useSmartTracking(isTracking: boolean) {
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const isMovingRef = useRef<boolean>(false);
   const lastMovementTimeRef = useRef<number>(0);
+  
+  // Dwell Detection: Track when stationary for >5 seconds
+  const stationaryStartTimeRef = useRef<number | null>(null);
+  const DWELL_THRESHOLD_MS = 5000; // 5 seconds
+  const DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
+  const [isDwelling, setIsDwelling] = useState<boolean>(false); // True when stationary >5s
 
   // Flush buffer to Google Roads API
   const flushBufferToRoadsAPI = useCallback(async () => {
@@ -171,14 +177,41 @@ export function useSmartTracking(isTracking: boolean) {
       finalSpeedMps = reportedSpeedMps;
     }
     
-    // 1. Drift Filter (Local Physics)
+    // 1. Dwell Detection Filter - Track stationary time (check BEFORE filtering)
+    // Must check finalSpeedMps (unfiltered) to correctly detect speeds up to threshold
+    if (finalSpeedMps < DWELL_SPEED_THRESHOLD_MPS) {
+      // User is stationary
+      if (stationaryStartTimeRef.current === null) {
+        // Just became stationary - start timer
+        stationaryStartTimeRef.current = now;
+      } else {
+        // Check if we've been stationary for >5 seconds
+        const stationaryDuration = now - stationaryStartTimeRef.current;
+        if (stationaryDuration >= DWELL_THRESHOLD_MS && !isDwelling) {
+          setIsDwelling(true);
+        }
+      }
+    } else {
+      // User is moving - reset dwell detection
+      if (stationaryStartTimeRef.current !== null) {
+        stationaryStartTimeRef.current = null;
+      }
+      if (isDwelling) {
+        setIsDwelling(false);
+      }
+    }
+    
+    // 2. Drift Filter (Local Physics)
     // If calculated speed is below threshold, force it to 0 to prevent "ghost movement"
     const filteredSpeed = finalSpeedMps < STATIONARY_SPEED_THRESHOLD ? 0 : finalSpeedMps;
+    
+    // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
+    const displaySpeed = isDwelling ? 0 : filteredSpeed;
     
     const smartLoc: SmartLocation = {
       latitude,
       longitude,
-      speed: filteredSpeed,
+      speed: displaySpeed, // Use displaySpeed (dwell-filtered) for UI
       heading: heading || 0,
       timestamp,
       accuracy: accuracy || 0
@@ -187,15 +220,15 @@ export function useSmartTracking(isTracking: boolean) {
     setLiveRawLocation(smartLoc);
     lastLocationRef.current = smartLoc;
 
-    // Update Max Speed - only if actually moving (filtered speed > 0)
+    // Update Max Speed - only if actually moving (filtered speed > 0, not displaySpeed)
     if (filteredSpeed > 0) {
       const speedKmh = filteredSpeed * 3.6;
       setMaxSpeed(prev => Math.max(prev, speedKmh));
     }
 
-    // 2. Moving Time Calculation
-    // (reuse 'now' variable declared earlier for speed calculation)
-    if (filteredSpeed > 0) {
+    // 3. Moving Time Calculation
+    // Only count moving time when NOT dwelling (using filteredSpeed, not displaySpeed)
+    if (filteredSpeed > 0 && !isDwelling) {
       if (!isMovingRef.current) {
         isMovingRef.current = true;
         lastMovementTimeRef.current = now;
@@ -208,14 +241,13 @@ export function useSmartTracking(isTracking: boolean) {
       isMovingRef.current = false;
     }
 
-    // 3. Buffering
-    // Only buffer if we have moved or if it's a significant update
-    // We can use the filtered speed to decide if we should add to buffer for the path
-    if (filteredSpeed > 0) {
+    // 4. Buffering
+    // Only buffer if we have moved (not dwelling) - this ensures Roads API gets accurate path
+    if (filteredSpeed > 0 && !isDwelling) {
       bufferRef.current.push(smartLoc);
     }
 
-    // 4. Check Flush Conditions
+    // 5. Check Flush Conditions
     if (
       bufferRef.current.length >= BUFFER_SIZE ||
       (Date.now() - lastFlushTimeRef.current > FLUSH_INTERVAL_MS && bufferRef.current.length > 0)
@@ -223,7 +255,7 @@ export function useSmartTracking(isTracking: boolean) {
       flushBufferToRoadsAPI();
     }
 
-  }, [flushBufferToRoadsAPI]);
+  }, [flushBufferToRoadsAPI, isDwelling]);
 
   // Start/Stop Tracking
   useEffect(() => {

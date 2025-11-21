@@ -119,12 +119,13 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // Update immediately
       setLocalElapsedTime(Math.floor((Date.now() - startTime) / 1000));
       
-      // Then update every second
+      // Simplified timer: currentTime - startTime
       timerIntervalRef.current = setInterval(() => {
-        const currentStartTime = journeyState.myInstance?.startTime 
+        const startTime = journeyState.myInstance?.startTime 
           ? new Date(journeyState.myInstance.startTime).getTime()
           : startTimeRef.current || Date.now();
-        setLocalElapsedTime(Math.floor((Date.now() - currentStartTime) / 1000));
+        const currentTime = Date.now();
+        setLocalElapsedTime(Math.floor((currentTime - startTime) / 1000));
       }, 1000) as unknown as number;
       
       return () => {
@@ -433,7 +434,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Final location update to backend
+      // CRITICAL: Use officialDistance from Roads API (snapped data) for final distance
+      // This ensures accurate final stats without phantom data
+      const finalDistance = officialDistance; // Already in kilometers from Roads API
+
+      // Final location update to backend with official distance
       if (liveRawLocation) {
         await journeyAPI.updateJourney(journeyState.currentJourney.id, {
           latitude: liveRawLocation.latitude,
@@ -442,12 +447,16 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // End journey with final location
+      // End journey with final location and official distance
       const endLocation = liveRawLocation 
         ? { endLatitude: liveRawLocation.latitude, endLongitude: liveRawLocation.longitude }
         : {};
       
-      await journeyAPI.endJourney(journeyState.currentJourney.id, endLocation);
+      // Send final distance to server - it will use this for final stats
+      await journeyAPI.endJourney(journeyState.currentJourney.id, {
+        ...endLocation,
+        totalDistance: finalDistance, // Send Roads API snapped distance
+      });
 
       // Clean up group journey socket if applicable
       if (journeyState.currentJourney?.groupId) {

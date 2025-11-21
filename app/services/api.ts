@@ -439,12 +439,17 @@ export const journeyAPI = {
     endLongitude?: number;
     latitude?: number;
     longitude?: number;
+    totalDistance?: number; // Roads API snapped distance in kilometers
   }) => {
-    // Server expects PUT with latitude/longitude
-    const payload = {
+    // Server expects PUT with latitude/longitude and optionally totalDistance
+    const payload: any = {
       latitude: endData.latitude ?? endData.endLatitude,
       longitude: endData.longitude ?? endData.endLongitude,
     };
+    // Include totalDistance if provided (from Roads API snapped data)
+    if (endData.totalDistance !== undefined) {
+      payload.totalDistance = endData.totalDistance;
+    }
     return apiRequest(`/journey/${journeyId}/end`, 'PUT', payload);
   },
   

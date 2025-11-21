@@ -48,6 +48,12 @@ class LocationService {
   private lastUpdateTime: number = 0;
   private lastMovementTime: number = 0; // Track last time we were moving
   private isCurrentlyMoving: boolean = false;
+  
+  // Dwell Detection: Track when stationary for >5 seconds
+  private stationaryStartTime: number | null = null;
+  private readonly DWELL_THRESHOLD_MS = 5000; // 5 seconds
+  private readonly DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
+  private isDwelling: boolean = false; // True when stationary >5s
   private updateInterval: number = 5000; // Update backend every 5 seconds
   private currentGroupId: string | null = null;
   // GPS-based speed calculation: track recent points for accurate speed calculation
@@ -254,8 +260,8 @@ class LocationService {
       // 2. We're moving (speed > threshold) AND moved at least 3 meters (to avoid GPS drift)
       // This prevents adding distance when stationary
       if (distanceMeters >= minAcceptable || (isActuallyMoving && distanceMeters > 3)) {
-        // Only add distance if we actually moved
-        if (distanceMeters >= 3) {
+        // Only add distance if we actually moved AND not dwelling (prevents GPS drift accumulation)
+        if (distanceMeters >= 3 && !this.isDwelling) {
           this.stats.totalDistance += distanceKm;
         }
         acceptPoint = true;
@@ -322,12 +328,35 @@ class LocationService {
     
     // Apply stationary threshold filter
     const moving = finalSpeedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
-    const speedKmh = finalSpeedMps * 3.6; // Convert m/s to km/h
-    this.stats.currentSpeed = moving ? speedKmh : 0;
     
-    // Track moving time only when actually moving
-    // (reuse 'now' variable declared earlier for speed calculation)
-    if (moving) {
+    // Dwell Detection Filter - Track when stationary for >5 seconds
+    if (finalSpeedMps < this.DWELL_SPEED_THRESHOLD_MPS) {
+      // User is stationary
+      if (this.stationaryStartTime === null) {
+        // Just became stationary - start timer
+        this.stationaryStartTime = now;
+      } else {
+        // Check if we've been stationary for >5 seconds
+        const stationaryDuration = now - this.stationaryStartTime;
+        if (stationaryDuration >= this.DWELL_THRESHOLD_MS) {
+          this.isDwelling = true;
+        }
+      }
+    } else {
+      // User is moving - reset dwell detection
+      if (this.stationaryStartTime !== null) {
+        this.stationaryStartTime = null;
+      }
+      this.isDwelling = false;
+    }
+    
+    // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
+    const displaySpeedMps = this.isDwelling ? 0 : finalSpeedMps;
+    const speedKmh = displaySpeedMps * 3.6; // Convert m/s to km/h
+    this.stats.currentSpeed = this.isDwelling ? 0 : (moving ? speedKmh : 0);
+    
+    // Track moving time only when actually moving AND not dwelling
+    if (moving && !this.isDwelling) {
       if (!this.isCurrentlyMoving) {
         // Just started moving again
         this.lastMovementTime = now;
@@ -339,9 +368,10 @@ class LocationService {
         this.lastMovementTime = now;
       }
       
-      // Update top speed only when moving
-      if (speedKmh > this.stats.topSpeed) {
-        this.stats.topSpeed = speedKmh;
+      // Update top speed only when moving (use actual speed, not display speed)
+      const actualSpeedKmh = finalSpeedMps * 3.6;
+      if (actualSpeedKmh > this.stats.topSpeed) {
+        this.stats.topSpeed = actualSpeedKmh;
       }
     } else {
       this.isCurrentlyMoving = false;
@@ -416,6 +446,8 @@ class LocationService {
       // Clear recent points when pausing
       this.recentPoints = [];
       this.stats.currentSpeed = 0;
+      this.stationaryStartTime = null; // Reset dwell detection
+      this.isDwelling = false;
 
       await journeyAPI.pauseJourney(this.currentJourneyId);
     } catch (error) {

@@ -489,9 +489,14 @@ export default function GroupJourneyScreen() {
                 `/group-journey/instance/${myInstance.id}/complete`,
                 { method: "POST" }
               );
-              setMyInstance((prev) =>
-                prev ? { ...prev, status: "COMPLETED" } : prev
-              );
+              
+              // Clear all journey state for fresh start
+              setMyInstance(null);
+              setJourneyData(null);
+              // Note: memberLocations is managed by useGroupJourney hook, will clear automatically
+              setRegion(null);
+              setManualRouteCoords([]);
+              
               Alert.alert("Journey complete", "Great ride!");
               router.back();
             } catch (error: any) {
@@ -813,15 +818,20 @@ export default function GroupJourneyScreen() {
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalConfirmButton, !userStartLocation && styles.modalConfirmDisabled]}
+                style={[styles.modalConfirmButton, (!userStartLocation || isStarting) && styles.modalConfirmDisabled]}
                 onPress={() => {
-                  if (userStartLocation) {
+                  if (userStartLocation && !isStarting) {
+                    handleStartInstance();
                     setShowStartLocationModal(false);
                   }
                 }}
-                disabled={!userStartLocation}
+                disabled={!userStartLocation || isStarting}
               >
-                <Text style={styles.modalConfirmText}>Confirm</Text>
+                {isStarting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Confirm</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
