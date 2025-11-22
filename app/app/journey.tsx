@@ -804,7 +804,7 @@ export default function JourneyScreen(): React.JSX.Element {
             style={styles.clearButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <MaterialIcons name="warning" size={20} color="#FF5722" />
+            <Text style={styles.clearButtonText}>Clear Stuck Journey</Text>
           </TouchableOpacity>
 
           {/* Bottom Panel */}
@@ -979,10 +979,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 15,
     top: 532,
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255, 87, 34, 0.1)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FF5722',
+  },
+  clearButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FF5722',
   },
   profileImage: {
     width: 45,

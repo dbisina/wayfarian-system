@@ -1,0 +1,45 @@
+{
+    "common": {
+        "start": "Comenzar",
+        "stop": "Detener",
+        "pause": "Pausar",
+        "resume": "Reanudar",
+        "complete": "Completar",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "error": "Error",
+        "success": "Éxito",
+        "loading": "Cargando..."
+    },
+    "journey": {
+        "startRiding": "Comenzar a Conducir",
+        "stopJourney": "Detener Viaje",
+        "completeRide": "Completar Viaje",
+        "clearStuckJourney": "Limpiar Viaje Atascado",
+        "changeStartLocation": "Cambiar ubicación de inicio",
+        "setStartLocation": "Establecer Ubicación de Inicio",
+        "yourDistance": "Tu distancia",
+        "progress": "Progreso",
+        "status": "Estado",
+        "time": "Tiempo",
+        "speed": "Velocidad",
+        "distance": "Distancia"
+    },
+    "group": {
+        "groupJourney": "Viaje en Grupo",
+        "startLocation": "Ubicación de Inicio",
+        "destination": "Destino",
+        "members": "Miembros",
+        "completed": "Completado",
+        "active": "Activo",
+        "paused": "Pausado"
+    },
+    "alerts": {
+        "locationPermissionRequired": "Se requiere permiso de ubicación para comenzar a conducir",
+        "journeyComplete": "Viaje completado",
+        "greatRide": "¡Excelente viaje!",
+        "areYouSure": "¿Estás seguro?",
+        "stopSharingLocation": "¿Dejar de compartir tu ubicación y marcar este viaje en grupo como completo?",
+        "noActiveJourney": "No hay una instancia de viaje activa para completar"
+    }
+}

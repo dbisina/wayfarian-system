@@ -505,16 +505,16 @@ export default function GroupJourneyScreen() {
               // Get current location for end coordinates
               const currentLocation = myLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
               
-              // Call complete endpoint with end location
-              // apiRequest handles JSON serialization automatically when body is an object
+              // Call complete endpoint - backend expects JSON body and returns { success: true, instance: {...} }
               const response = await apiRequest(
                 `/group-journey/instance/${myInstance.id}/complete`,
                 {
                   method: "POST",
-                  body: {
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
                     endLatitude: currentLocation?.latitude,
                     endLongitude: currentLocation?.longitude,
-                  },
+                  }),
                 }
               );
               

@@ -14,10 +14,14 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings, MapType, Vehicle, Units } from '../contexts/SettingsContext';
+import LanguageSelector from '../components/LanguageSelector';
+import { LANGUAGES } from '../i18n';
 
 export default function SettingsScreen() {
+  const { i18n, t } = useTranslation();
   const { logout } = useAuth();
   const {
     notificationsEnabled,
@@ -30,6 +34,10 @@ export default function SettingsScreen() {
     setVehicle,
   } = useSettings();
   const [showUnitsModal, setShowUnitsModal] = React.useState(false);
+  const [showLanguageModal, setShowLanguageModal] = React.useState(false);
+  
+  // Get current language display name
+  const currentLanguage = LANGUAGES.find(lang => lang.code === i18n.language) || LANGUAGES[0];
 
   // Cross-platform option pickers
   const pickOption = (
@@ -146,8 +154,14 @@ export default function SettingsScreen() {
           </View>
 
           <SettingItem
-            title="Units"
-            subtitle={`Current: ${units === 'km' ? 'Kilometers' : 'Miles'}`}
+            title={t('settings.language')}
+            subtitle={`${t('settings.currentLanguage')}: ${currentLanguage.nativeName}`}
+            onPress={() => setShowLanguageModal(true)}
+          />
+
+          <SettingItem
+            title={t('settings.units')}
+            subtitle={`${t('settings.currentLanguage')}: ${units === 'km' ? t('settings.metricUnits') : t('settings.imperialUnits')}`}
             onPress={() => setShowUnitsModal(true)}
           />
 
@@ -251,9 +265,15 @@ export default function SettingsScreen() {
             <TouchableOpacity style={styles.unitsModalClose} onPress={() => setShowUnitsModal(false)}>
               <Text style={styles.unitsModalCloseText}>Done</Text>
             </TouchableOpacity>
-          </View>
+         </View>
         </View>
       </Modal>
+
+      {/* Language Selector Modal */}
+      <LanguageSelector 
+        visible={showLanguageModal}
+        onClose={() => setShowLanguageModal(false)}
+      />
     </View>
   );
 }

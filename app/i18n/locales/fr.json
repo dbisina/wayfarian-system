@@ -1,0 +1,45 @@
+{
+    "common": {
+        "start": "Commencer",
+        "stop": "Arrêter",
+        "pause": "Pause",
+        "resume": "Reprendre",
+        "complete": "Terminer",
+        "cancel": "Annuler",
+        "confirm": "Confirmer",
+        "error": "Erreur",
+        "success": "Succès",
+        "loading": "Chargement..."
+    },
+    "journey": {
+        "startRiding": "Commencer à Rouler",
+        "stopJourney": "Arrêter le Trajet",
+        "completeRide": "Terminer le Trajet",
+        "clearStuckJourney": "Effacer le Trajet Bloqué",
+        "changeStartLocation": "Changer l'emplacement de départ",
+        "setStartLocation": "Définir l'Emplacement de Départ",
+        "yourDistance": "Votre distance",
+        "progress": "Progrès",
+        "status": "Statut",
+        "time": "Temps",
+        "speed": "Vitesse",
+        "distance": "Distance"
+    },
+    "group": {
+        "groupJourney": "Trajet en Groupe",
+        "startLocation": "Emplacement de Départ",
+        "destination": "Destination",
+        "members": "Membres",
+        "completed": "Terminé",
+        "active": "Actif",
+        "paused": "En Pause"
+    },
+    "alerts": {
+        "locationPermissionRequired": "L'autorisation de localisation est requise pour commencer à rouler",
+        "journeyComplete": "Trajet terminé",
+        "greatRide": "Excellent trajet !",
+        "areYouSure": "Êtes-vous sûr ?",
+        "stopSharingLocation": "Arrêter de partager votre position et marquer ce trajet en groupe comme terminé?",
+        "noActiveJourney": "Aucune instance de trajet active à terminer"
+    }
+}
