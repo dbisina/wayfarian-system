@@ -318,10 +318,23 @@ const startMyInstance = async (req, res) => {
     });
 
     if (activeSoloJourney) {
-      return res.status(400).json({
-        error: 'Active journey detected',
-        message: 'You must complete or pause your current solo journey before starting a group journey'
-      });
+      if (req.body.force) {
+        // Force complete the solo journey
+        await prisma.journey.update({
+          where: { id: activeSoloJourney.id },
+          data: { 
+            status: 'COMPLETED',
+            endTime: new Date(),
+          }
+        });
+        logger.info(`[GroupJourney] Force completed solo journey ${activeSoloJourney.id} for user ${userId}`);
+      } else {
+        return res.status(400).json({
+          error: 'Active journey detected',
+          message: 'You must complete or pause your current solo journey before starting a group journey',
+          activeJourney: activeSoloJourney
+        });
+      }
     }
 
     // Check for existing instance
@@ -338,22 +351,40 @@ const startMyInstance = async (req, res) => {
           message: 'You have already started this journey'
         });
       }
-      // If paused or cancelled, allow restart
+      // If paused or cancelled, allow restart/resume logic could go here, 
+      // but for now we'll create a new one or update existing? 
+      // The original code just continued to create a new instance which might fail unique constraint 
+      // or it relied on the check above. 
+      // Let's assume we update the existing one to ACTIVE if it exists but is not active.
+      
+      instance = await prisma.journeyInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: 'ACTIVE',
+          currentLatitude: startLatitude,
+          currentLongitude: startLongitude,
+          lastLocationUpdate: new Date(),
+          startAddress,
+          // Don't overwrite routePoints if resuming, but maybe we should?
+          // For a fresh start feel, let's append a gap or just continue.
+          // If it was COMPLETED, we probably shouldn't be here unless re-riding.
+        }
+      });
+    } else {
+      // Create new instance with member's start location
+      instance = await prisma.journeyInstance.create({
+        data: {
+          groupJourneyId,
+          userId,
+          status: 'ACTIVE',
+          currentLatitude: startLatitude,
+          currentLongitude: startLongitude,
+          lastLocationUpdate: new Date(),
+          startAddress,
+          routePoints: [{ latitude: startLatitude, longitude: startLongitude, timestamp: new Date().toISOString() }]
+        }
+      });
     }
-
-    // Create new instance with member's start location
-    instance = await prisma.journeyInstance.create({
-      data: {
-        groupJourneyId,
-        userId,
-        status: 'ACTIVE',
-        currentLatitude: startLatitude,
-        currentLongitude: startLongitude,
-        lastLocationUpdate: new Date(),
-        startAddress,
-        routePoints: [{ latitude: startLatitude, longitude: startLongitude, timestamp: new Date().toISOString() }]
-      }
-    });
 
     // Update group member presence and last known location
     try {
@@ -440,6 +471,76 @@ const startMyInstance = async (req, res) => {
       error: 'Failed to start journey',
       message: error.message
     });
+  }
+};
+
+/**
+ * Helper to finish the entire group journey when all members are done
+ */
+const finishGroupJourney = async (groupJourneyId, io) => {
+  try {
+    const groupJourney = await prisma.groupJourney.findUnique({
+      where: { id: groupJourneyId },
+      include: { group: true }
+    });
+
+    if (!groupJourney || groupJourney.status === 'COMPLETED') return;
+
+    // Update status to COMPLETED
+    const completedJourney = await prisma.groupJourney.update({
+      where: { id: groupJourneyId },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+      }
+    });
+
+    // Clear cache
+    await redisService.del(redisService.key('group-journey', groupJourneyId, 'full'));
+    await redisService.del(redisService.key('group', groupJourney.groupId, 'active-journey'));
+
+    // Emit completion event
+    if (io) {
+      io.to(`group-journey-${groupJourneyId}`).emit('group-journey:completed', {
+        groupJourneyId,
+        groupId: groupJourney.groupId,
+        timestamp: new Date().toISOString(),
+      });
+      
+      io.to(`group-${groupJourney.groupId}`).emit('group-journey:completed', {
+        groupJourneyId,
+        groupId: groupJourney.groupId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    logger.info(`[GroupJourney] All members finished. Journey ${groupJourneyId} completed.`);
+
+    // AUTO-DELETE GROUP Logic
+    // "Once the journey ends for everyone the group should be deleted automatically"
+    if (groupJourney.groupId) {
+      try {
+        // We use soft-delete (isActive: false) to preserve journey history and timeline.
+        await prisma.group.update({
+          where: { id: groupJourney.groupId },
+          data: { isActive: false }
+        });
+
+        if (io) {
+           io.to(`group-${groupJourney.groupId}`).emit('group:archived', {
+             groupId: groupJourney.groupId
+           });
+        }
+        
+        logger.info(`[GroupJourney] Group ${groupJourney.groupId} automatically archived (soft deleted).`);
+        
+      } catch (e) {
+        logger.error(`[GroupJourney] Failed to auto-delete group ${groupJourney.groupId}`, e);
+      }
+    }
+
+  } catch (e) {
+    logger.error(`[GroupJourney] Error finishing journey ${groupJourneyId}`, e);
   }
 };
 
@@ -672,6 +773,7 @@ const updateInstanceLocation = async (req, res) => {
  * - Calculates final stats (distance, duration)
  * - Updates user stats and achievements
  * - Clears cache and emits events
+ * - CHECKS IF ALL MEMBERS COMPLETED -> FINISH GROUP JOURNEY
  */
 const completeInstance = async (req, res) => {
   try {
@@ -685,7 +787,13 @@ const completeInstance = async (req, res) => {
     const instance = await prisma.journeyInstance.findUnique({
       where: { id: instanceId },
       include: {
-        groupJourney: true,
+        groupJourney: {
+          include: {
+            group: {
+              include: { members: true }
+            }
+          }
+        },
         user: {
           select: {
             id: true,
@@ -704,11 +812,12 @@ const completeInstance = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to complete this instance' });
     }
 
-    // Check if already completed
+    // Check if already completed - idempotency
     if (instance.status === 'COMPLETED') {
-      return res.status(400).json({ 
-        error: 'Journey already completed',
-        message: 'This journey instance has already been completed'
+      return res.json({
+        success: true,
+        message: 'Already completed',
+        instance
       });
     }
 
@@ -778,6 +887,35 @@ const completeInstance = async (req, res) => {
     }
 
     logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
+
+    // CHECK IF ALL MEMBERS HAVE COMPLETED
+    // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
+    // AND if all group members have created an instance (optional, maybe just check active ones)
+    // Better logic: Check if any instance is still ACTIVE/PAUSED. If not, close the journey.
+    
+    const activeInstancesCount = await prisma.journeyInstance.count({
+      where: {
+        groupJourneyId: instance.groupJourneyId,
+        status: { in: ['ACTIVE', 'PAUSED'] },
+        id: { not: instanceId } // Exclude current one (already updated to COMPLETED)
+      }
+    });
+
+    if (activeInstancesCount === 0) {
+      // All active instances are done.
+      // But wait, what if some members haven't started yet?
+      // If the journey is "ACTIVE" but some members haven't started, should we close it?
+      // The user said "once the journey ends for everyone".
+      // Usually this means everyone who started has finished.
+      // Or maybe the creator explicitly ends it?
+      // Let's assume if everyone who STARTED has FINISHED, we can consider it done?
+      // Or maybe we should wait for the creator?
+      // The prompt says "can end the journey where ever you want other users will see where you end... once the journey ends for everyone the group should be deleted".
+      // This implies an automatic trigger.
+      // Let's stick to: If NO active instances remain, we mark the group journey as completed.
+      
+      await finishGroupJourney(instance.groupJourneyId, io);
+    }
 
     res.json({
       success: true,

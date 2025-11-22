@@ -91,6 +91,7 @@ const getUserProfile = async (req, res) => {
               id: true,
               name: true,
               code: true,
+              coverPhotoURL: true,
               _count: {
                 select: { members: true },
               },
@@ -162,6 +163,7 @@ const updateUserProfile = async (req, res) => {
         topSpeed: true,
         totalTrips: true,
         updatedAt: true,
+        createdAt: true,
       },
     });
     
@@ -444,6 +446,7 @@ const getJourneyHistory = async (req, res) => {
             select: {
               id: true,
               name: true,
+              coverPhotoURL: true,
             },
           },
           photos: {
@@ -541,6 +544,7 @@ const exportUserData = async (req, res) => {
               id: true,
               name: true,
               code: true,
+              coverPhotoURL: true,
               createdAt: true,
             },
           },

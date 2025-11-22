@@ -453,19 +453,44 @@ export default function GroupDetailScreen() {
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Clear Solo Journey',
+            text: 'End Solo & Start Group',
             style: 'destructive',
             onPress: async () => {
+              setIsStartingRiding(true);
               try {
-                // Try to force clear the solo journey
-                if (activeSoloJourney.id) {
-                  await journeyAPI.forceClearJourney(activeSoloJourney.id);
+                // Get current location
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert('Permission needed', 'Location permission is required to start riding');
+                  setIsStartingRiding(false);
+                  return;
                 }
-                setActiveSoloJourney(null);
-                // Retry starting group journey
-                handleStartRiding();
+
+                const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                
+                // Call start-my-instance with force: true
+                const response = await apiRequest(`/group-journey/${activeGroupJourneyId}/start-my-instance`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    startLatitude: location.coords.latitude,
+                    startLongitude: location.coords.longitude,
+                    force: true
+                  }),
+                });
+
+                if (response.success) {
+                  setActiveSoloJourney(null);
+                  router.push({
+                    pathname: '/group-journey',
+                    params: { id: activeGroupJourneyId }
+                  });
+                } else {
+                  Alert.alert('Error', response.message || 'Failed to start group journey');
+                }
               } catch (error: any) {
-                Alert.alert('Error', error?.message || 'Failed to clear solo journey. Please try again.');
+                Alert.alert('Error', error?.message || 'Failed to start group journey');
+              } finally {
+                setIsStartingRiding(false);
               }
             },
           },

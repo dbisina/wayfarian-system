@@ -37,6 +37,11 @@ interface Journey {
     thumbnailUrl?: string;
     takenAt: string;
   }[];
+  group?: {
+    id: string;
+    name: string;
+    coverPhotoUrl?: string;
+  };
 }
 
 interface PastJourneysScreenProps {
@@ -305,6 +310,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
             const photoCount = journey.photos?.length || 0;
             const coverUri =
               journey.coverPhotoUrl ||
+              journey.group?.coverPhotoUrl ||
               journey.photos?.[0]?.thumbnailUrl ||
               journey.photos?.[0]?.imageUrl ||
               journey.photos?.[0]?.firebasePath;

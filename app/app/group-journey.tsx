@@ -253,8 +253,8 @@ export default function GroupJourneyScreen() {
 
   // Direction origin: Only show route for current user from their current/start location
   const directionOrigin = useMemo(() => {
-    // Only calculate directions if user has an active instance
-    if (!myInstance || myInstance.status === "COMPLETED") {
+    // If completed, don't show route
+    if (myInstance?.status === "COMPLETED") {
       return undefined;
     }
     
@@ -622,8 +622,8 @@ export default function GroupJourneyScreen() {
             mapViewProps.onRegionChangeComplete(r);
         }}
       >
-        {/* Only show directions for current user (myLocation) - each member sees their own route */}
-        {myInstance && myInstance.status !== "COMPLETED" && 
+        {/* Show route if we have origin and destination, even if not started yet */}
+        {myInstance?.status !== "COMPLETED" && 
         Platform.OS === "android" &&
         destination &&
         directionOrigin &&
@@ -634,8 +634,10 @@ export default function GroupJourneyScreen() {
             apikey={googleKey}
             strokeWidth={4}
             strokeColor="#F9A825"
+            mode="DRIVING"
+            optimizeWaypoints={true}
           />
-        ) : myInstance && myInstance.status !== "COMPLETED" && 
+        ) : myInstance?.status !== "COMPLETED" && 
         destination && manualRouteCoords.length > 1 ? (
           <Polyline
             coordinates={manualRouteCoords}

@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 export interface RideEvent {
   id: string;
-  type: 'MESSAGE' | 'PHOTO' | 'CHECKPOINT' | 'STATUS' | 'EMERGENCY' | 'CUSTOM';
+  type: 'MESSAGE' | 'PHOTO' | 'CHECKPOINT' | 'STATUS' | 'EMERGENCY' | 'CUSTOM' | 'COMPLETED';
   message?: string;
   latitude?: number;
   longitude?: number;
@@ -43,6 +43,7 @@ function getEventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
     case 'CHECKPOINT': return 'flag';
     case 'STATUS': return 'info-outline';
     case 'EMERGENCY': return 'warning';
+    case 'COMPLETED': return 'check-circle';
     default: return 'event-note';
   }
 }
