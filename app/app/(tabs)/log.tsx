@@ -8,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { userAPI, leaderboardAPI } from '../../services/api';
@@ -31,6 +32,7 @@ type JourneyItem = {
 
 export default function RideLogScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
@@ -217,7 +219,16 @@ export default function RideLogScreen(): React.JSX.Element {
                   j.photos?.[0]?.firebasePath;
 
                 return (
-                  <View key={j.id} style={styles.challengeCard}>
+                  <TouchableOpacity 
+                    key={j.id} 
+                    style={styles.challengeCard}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/journey-detail',
+                        params: { journeyId: j.id }
+                      });
+                    }}
+                  >
                     {coverUri ? (
                       <Image source={{ uri: coverUri }} style={styles.challengeImage} />
                     ) : (
@@ -231,7 +242,7 @@ export default function RideLogScreen(): React.JSX.Element {
                         <Text style={styles.challengeStatus}>{new Date(j.startTime || '').toDateString()}</Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -260,7 +271,15 @@ export default function RideLogScreen(): React.JSX.Element {
 
                     return (
                       <View key={journey.id}>
-                        <View style={styles.groupRideRow}>
+                        <TouchableOpacity 
+                          style={styles.groupRideRow}
+                          onPress={() => {
+                            router.push({
+                              pathname: '/journey-detail',
+                              params: { journeyId: journey.id }
+                            });
+                          }}
+                        >
                           {coverUri ? (
                             <Image source={{ uri: coverUri }} style={styles.groupRideImage} />
                           ) : (
@@ -271,13 +290,13 @@ export default function RideLogScreen(): React.JSX.Element {
                           )}
                           <View style={styles.groupRideContent}>
                             <Text style={styles.groupRideName} numberOfLines={1}>
-                              {journey.title || 'Group ride'}
+                              {journey.title || section.groupName || 'Group ride'}
                             </Text>
                             <Text style={styles.groupRideMeta}>
                               {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
                             </Text>
                           </View>
-                        </View>
+                        </TouchableOpacity>
                         {index < section.journeys.length - 1 && <View style={styles.groupRideDivider} />}
                       </View>
                     );

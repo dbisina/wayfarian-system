@@ -888,6 +888,53 @@ const completeInstance = async (req, res) => {
 
     logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
 
+    // Create a Journey record from the completed instance so it shows up in journey history
+    // Use the group name as the title
+    if (instance.groupJourney?.group) {
+      try {
+        const groupName = instance.groupJourney.group.name;
+        
+        // Extract start location from routePoints or use current location
+        let startLat = 0;
+        let startLng = 0;
+        if (instance.routePoints && Array.isArray(instance.routePoints) && instance.routePoints.length > 0) {
+          const firstPoint = instance.routePoints[0];
+          startLat = firstPoint.latitude || firstPoint.lat || 0;
+          startLng = firstPoint.longitude || firstPoint.lng || firstPoint.lon || 0;
+        }
+        
+        // Fallback to current location if routePoints don't have start
+        if (startLat === 0 && startLng === 0) {
+          startLat = instance.currentLatitude || 0;
+          startLng = instance.currentLongitude || 0;
+        }
+        
+        await prisma.journey.create({
+          data: {
+            userId: instance.userId,
+            title: groupName, // Use group name as title
+            groupId: instance.groupJourney.groupId,
+            startTime: instance.startTime,
+            endTime: updatedInstance.endTime || new Date(),
+            status: 'COMPLETED',
+            totalDistance: updatedInstance.totalDistance || 0,
+            totalTime: duration,
+            avgSpeed: updatedInstance.avgSpeed || 0,
+            topSpeed: updatedInstance.topSpeed || 0,
+            startLatitude: startLat,
+            startLongitude: startLng,
+            endLatitude: updatedInstance.currentLatitude,
+            endLongitude: updatedInstance.currentLongitude,
+            routePoints: instance.routePoints || null,
+          },
+        });
+        logger.info(`[Instance] Created Journey record for instance ${instanceId} with group name: ${groupName}`);
+      } catch (journeyError) {
+        // Log but don't fail the completion if journey creation fails
+        logger.error(`[Instance] Failed to create Journey record for instance ${instanceId}:`, journeyError);
+      }
+    }
+
     // CHECK IF ALL MEMBERS HAVE COMPLETED
     // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
     // AND if all group members have created an instance (optional, maybe just check active ones)

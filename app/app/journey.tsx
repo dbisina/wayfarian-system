@@ -97,6 +97,7 @@ export default function JourneyScreen(): React.JSX.Element {
     memberLocations,
     isTracking: isGroupTracking,
     startLocationTracking,
+    stopLocationTracking,
     setMyInstance,
     myInstance,
   } = useGroupJourney({
@@ -457,11 +458,47 @@ export default function JourneyScreen(): React.JSX.Element {
             { text: 'Cancel', style: 'cancel' },
             { text: 'Stop', style: 'destructive', onPress: async () => {
               try {
-                await apiRequest(`/group-journey/instance/${myInstance.id}/complete`, { method: 'POST' });
+                // Stop location tracking first
+                stopLocationTracking();
+                
+                // Get current location for end coordinates
+                const currentLocationForEnd = currentLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
+                
+                // Prepare request body - only include coordinates if they're valid numbers
+                const requestBody: { endLatitude?: number; endLongitude?: number } = {};
+                if (currentLocationForEnd?.latitude != null && typeof currentLocationForEnd.latitude === 'number' && !isNaN(currentLocationForEnd.latitude)) {
+                  requestBody.endLatitude = currentLocationForEnd.latitude;
+                }
+                if (currentLocationForEnd?.longitude != null && typeof currentLocationForEnd.longitude === 'number' && !isNaN(currentLocationForEnd.longitude)) {
+                  requestBody.endLongitude = currentLocationForEnd.longitude;
+                }
+                
+                // Call complete endpoint with end coordinates
+                const response = await apiRequest(
+                  `/group-journey/instance/${myInstance.id}/complete`,
+                  {
+                    method: 'POST',
+                    body: requestBody,
+                  }
+                );
+                
+                // Validate response
+                if (!response || !response.success) {
+                  throw new Error(response?.error || response?.message || 'Failed to complete journey');
+                }
+                
+                // Clear instance state
+                setMyInstance(null);
+                
                 // Navigate away after stopping
                 try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
-              } catch {
-                Alert.alert('Error', 'Failed to stop group journey. Please try again.');
+              } catch (error: any) {
+                console.error('[Journey] Complete group journey error:', error);
+                const errorMessage = error?.response?.data?.message || 
+                                   error?.response?.data?.error || 
+                                   error?.message || 
+                                   'Failed to stop group journey. Please try again.';
+                Alert.alert('Error', errorMessage);
               }
             }}
           ]

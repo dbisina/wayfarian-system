@@ -299,12 +299,16 @@ export default function GroupJourneyScreen() {
   ]);
 
 
+  // Fetch directions for iOS or when Google Maps API is not available
+  // Android uses MapViewDirections which automatically updates when origin changes
   useEffect(() => {
     if (!destination || !directionOrigin) {
       setManualRouteCoords([]);
       return;
     }
 
+    // Only fetch manual directions for iOS or when Google key is not available
+    // Android uses MapViewDirections which handles updates automatically
     const shouldUseManualDirections = Platform.OS !== 'android' || !googleKey;
     if (!shouldUseManualDirections) {
       setManualRouteCoords([]);
@@ -327,6 +331,7 @@ export default function GroupJourneyScreen() {
         }
       } catch (error) {
         console.warn('Failed to fetch directions for group journey', error);
+        // Keep previous route coords on error to avoid flickering
       }
     })();
 
@@ -505,16 +510,21 @@ export default function GroupJourneyScreen() {
               // Get current location for end coordinates
               const currentLocation = myLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
               
+              // Prepare request body - only include coordinates if they're valid numbers
+              const requestBody: { endLatitude?: number; endLongitude?: number } = {};
+              if (currentLocation?.latitude != null && typeof currentLocation.latitude === 'number' && !isNaN(currentLocation.latitude)) {
+                requestBody.endLatitude = currentLocation.latitude;
+              }
+              if (currentLocation?.longitude != null && typeof currentLocation.longitude === 'number' && !isNaN(currentLocation.longitude)) {
+                requestBody.endLongitude = currentLocation.longitude;
+              }
+              
               // Call complete endpoint - backend expects JSON body and returns { success: true, instance: {...} }
               const response = await apiRequest(
                 `/group-journey/instance/${myInstance.id}/complete`,
                 {
                   method: "POST",
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    endLatitude: currentLocation?.latitude,
-                    endLongitude: currentLocation?.longitude,
-                  }),
+                  body: requestBody,
                 }
               );
               
@@ -622,28 +632,35 @@ export default function GroupJourneyScreen() {
             mapViewProps.onRegionChangeComplete(r);
         }}
       >
-        {/* Show route if we have origin and destination, even if not started yet */}
+        {/* Show route from user's current location to destination */}
         {myInstance?.status !== "COMPLETED" && 
-        Platform.OS === "android" &&
         destination &&
-        directionOrigin &&
-        googleKey ? (
-          <MapViewDirections
-            origin={directionOrigin}
-            destination={destination}
-            apikey={googleKey}
-            strokeWidth={4}
-            strokeColor="#F9A825"
-            mode="DRIVING"
-            optimizeWaypoints={true}
-          />
-        ) : myInstance?.status !== "COMPLETED" && 
-        destination && manualRouteCoords.length > 1 ? (
-          <Polyline
-            coordinates={manualRouteCoords}
-            strokeWidth={4}
-            strokeColor="#F9A825"
-          />
+        directionOrigin ? (
+          Platform.OS === "android" && googleKey ? (
+            <MapViewDirections
+              key={`${directionOrigin.latitude}-${directionOrigin.longitude}-${destination.latitude}-${destination.longitude}`}
+              origin={directionOrigin}
+              destination={destination}
+              apikey={googleKey}
+              strokeWidth={4}
+              strokeColor="#F9A825"
+              mode="DRIVING"
+              optimizeWaypoints={true}
+              onReady={(result) => {
+                // Optional: Log when route is ready
+                console.log('[GroupJourney] Route ready:', result.distance, result.duration);
+              }}
+              onError={(errorMessage) => {
+                console.warn('[GroupJourney] Directions error:', errorMessage);
+              }}
+            />
+          ) : manualRouteCoords.length > 1 ? (
+            <Polyline
+              coordinates={manualRouteCoords}
+              strokeWidth={4}
+              strokeColor="#F9A825"
+            />
+          ) : null
         ) : null}
 
         <Marker
