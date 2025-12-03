@@ -21,7 +21,9 @@
     "cache:clear": "node -e \"require('./services/CacheService').cacheService.clear(); console.log('Cache cleared');\"",
     "health:check": "curl http://localhost:3001/health",
     "build": "echo 'No build step required for Node.js'",
-    "prestart": "npm run db:generate"
+    "prestart": "npm run db:generate",
+    "db:migrate-to-railway": "node scripts/migrate-db.js",
+    "start:scheduler": "node scripts/scheduler.js"
   },
   "keywords": [
     "travel",
@@ -57,6 +59,7 @@
     "ioredis": "^5.8.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.0",
+    "node-cron": "^4.2.1",
     "redis": "^5.9.0",
     "sharp": "^0.33.2",
     "socket.io": "^4.7.5",

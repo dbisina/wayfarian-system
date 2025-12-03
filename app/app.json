@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Wayfarian Adventures",
+    "name": "Wayfarian",
     "slug": "wayfarian",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -77,7 +77,7 @@
         "READ_MEDIA_VIDEO",
         "CAMERA"
       ],
-      "package": "com.wayfarian.com",
+      "package": "com.wayfarian.wayfarianadventures",
       "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "config": {}
