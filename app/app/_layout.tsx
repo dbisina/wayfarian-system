@@ -8,6 +8,7 @@ import { PersistGate } from 'redux-persist/integration/react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -80,17 +81,19 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-    <Provider store={store}>
-      <PersistGate loading={null} persistor={persistor}>
-        <AuthProvider>
-          <SettingsProvider>
-            <JourneyProvider>
-              <RootLayoutContent />
-            </JourneyProvider>
-          </SettingsProvider>
-        </AuthProvider>
-      </PersistGate>
-    </Provider>
+    <SafeAreaProvider>
+      <Provider store={store}>
+        <PersistGate loading={null} persistor={persistor}>
+          <AuthProvider>
+            <SettingsProvider>
+              <JourneyProvider>
+                <RootLayoutContent />
+              </JourneyProvider>
+            </SettingsProvider>
+          </AuthProvider>
+        </PersistGate>
+      </Provider>
+    </SafeAreaProvider>
   );
 }
 

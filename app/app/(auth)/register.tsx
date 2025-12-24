@@ -8,7 +8,6 @@ import {
   Dimensions,
   TouchableOpacity,
   TextInput,
-  ImageBackground,
   ScrollView,
   StatusBar,
   Alert,
@@ -16,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -131,10 +131,11 @@ const RegisterScreen = () => {
       keyboardVerticalOffset={keyboardVerticalOffset ?? 0}
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <ImageBackground
-        source={{uri: 'https://codia-f2c.s3.us-west-1.amazonaws.com/image/2025-09-15/rfzYAAc8iR.png'}}
-        style={styles.backgroundImage}
-        resizeMode="cover"
+      <LinearGradient
+        colors={['#1a1a2e', '#16213e', '#0f3460']}
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
       >
         <View style={styles.overlay}>
           <ScrollView 
@@ -306,7 +307,7 @@ const RegisterScreen = () => {
           </ScrollView>
         </View>
         <TermsAndConditionsModal visible={showTerms} onClose={handleHideTerms} />
-      </ImageBackground>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 };
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  backgroundImage: {
+  backgroundGradient: {
     flex: 1,
     width: screenWidth,
     height: screenHeight,
