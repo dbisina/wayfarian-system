@@ -273,23 +273,27 @@ export const authAPI = {
     }
     return apiRequest('/auth/login', 'POST', payload, false);
   },
-  
+
   register: async (idToken: string, userData: any) => {
     // Registration is handled same as login on server; only idToken required
     return apiRequest('/auth/register', 'POST', { idToken }, false);
   },
-  
+
   getCurrentUser: async () => {
     return apiRequest('/auth/me', 'GET');
   },
-  
+
   updateProfile: async (profileData: any) => {
     return apiRequest('/auth/profile', 'PUT', profileData);
   },
-  
+
   logout: async () => {
     await removeAuthToken();
     return apiRequest('/auth/logout', 'POST');
+  },
+
+  deleteAccount: async () => {
+    return apiRequest('/auth/account', 'DELETE', { confirmDelete: true });
   },
 
   refreshToken: async (refreshToken: string) => {
@@ -309,7 +313,7 @@ export const userAPI = {
   getProfile: async () => {
     return apiRequest('/user/profile', 'GET');
   },
-  
+
   updateProfile: async (data: {
     displayName?: string;
     phoneNumber?: string;
@@ -318,11 +322,11 @@ export const userAPI = {
   }) => {
     return apiRequest('/user/profile', 'PUT', data);
   },
-  
+
   getStats: async (timeframe: 'allTime' | 'week' | 'month' | 'year' = 'allTime') => {
     return apiRequest(`/user/stats?timeframe=${timeframe}`, 'GET');
   },
-  
+
   getJourneyHistory: async (params?: {
     page?: number;
     limit?: number;
@@ -335,21 +339,21 @@ export const userAPI = {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/user/journey-history?${queryString}`, 'GET');
   },
-  
+
   getDashboard: async () => {
     const result = await apiRequest('/user/dashboard', 'GET');
     return result;
   },
-  
+
   getAchievements: async () => {
     return apiRequest('/user/achievements', 'GET');
   },
-  
+
   getFriends: async () => {
     const result = await apiRequest('/user/friends', 'GET');
     return result;
   },
-  
+
   addFriend: async (friendId: string) => {
     return apiRequest('/user/friends', 'POST', { friendId });
   },
@@ -414,7 +418,7 @@ export const journeyAPI = {
     }
     return apiRequest('/journey/start', 'POST', payload);
   },
-  
+
   updateJourney: async (journeyId: string, updateData: {
     currentLatitude?: number;
     currentLongitude?: number;
@@ -433,7 +437,7 @@ export const journeyAPI = {
     };
     return apiRequest(`/journey/${journeyId}/progress`, 'PUT', payload);
   },
-  
+
   endJourney: async (journeyId: string, endData: {
     endLatitude?: number;
     endLongitude?: number;
@@ -452,11 +456,11 @@ export const journeyAPI = {
     }
     return apiRequest(`/journey/${journeyId}/end`, 'PUT', payload);
   },
-  
+
   pauseJourney: async (journeyId: string) => {
     return apiRequest(`/journey/${journeyId}/pause`, 'POST');
   },
-  
+
   resumeJourney: async (journeyId: string) => {
     return apiRequest(`/journey/${journeyId}/resume`, 'POST');
   },
@@ -476,15 +480,15 @@ export const journeyAPI = {
   clearCustomJourneyTitles: async () => {
     return apiRequest('/journey/clear-custom-titles', 'POST');
   },
-  
+
   getActiveJourney: async () => {
     return apiRequest('/journey/active', 'GET');
   },
-  
+
   getJourney: async (journeyId: string) => {
     return apiRequest(`/journey/${journeyId}`, 'GET');
   },
-  
+
   getJourneyHistory: async (params?: {
     page?: number;
     limit?: number;
@@ -507,15 +511,15 @@ export const groupAPI = {
     // Server expects /group/create
     return apiRequest('/group/create', 'POST', groupData);
   },
-  
+
   joinGroup: async (code: string) => {
     return apiRequest('/group/join', 'POST', { code });
   },
-  
+
   getGroup: async (groupId: string) => {
     return apiRequest(`/group/${groupId}`, 'GET');
   },
-  
+
   getUserGroups: async (status: 'active' | 'all' = 'active', page?: number, limit?: number) => {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
@@ -523,7 +527,7 @@ export const groupAPI = {
     if (limit) params.append('limit', String(limit));
     return apiRequest(`/group/my-groups?${params.toString()}`, 'GET');
   },
-  
+
   getGroupMembers: async (groupId: string) => {
     return apiRequest(`/group/${groupId}/members`, 'GET');
   },
@@ -531,7 +535,7 @@ export const groupAPI = {
   uploadGroupCover: async (groupId: string, fileUri: string, filename?: string) => {
     const token = await getAuthToken();
     const url = `${getCurrentApiUrl()}/group/${groupId}/cover`;
-    
+
     // Determine file type and name
     const name = filename || fileUri.split('/').pop() || 'cover.jpg';
     const match = /\.(\w+)$/.exec(name);
@@ -560,7 +564,7 @@ export const groupAPI = {
 
     return response.json();
   },
-  
+
   updateGroupMemberLocation: async (groupId: string, locationData: {
     latitude: number;
     longitude: number;
@@ -569,7 +573,7 @@ export const groupAPI = {
     console.warn('updateGroupMemberLocation endpoint not available on server');
     return { success: false };
   },
-  
+
   leaveGroup: async (groupId: string) => {
     // Server uses DELETE method
     return apiRequest(`/group/${groupId}/leave`, 'DELETE');
@@ -587,21 +591,21 @@ export const leaderboardAPI = {
     const result = await apiRequest(`/leaderboard/global?${queryString}`, 'GET');
     return result;
   },
-  
+
   getGroupLeaderboard: async (groupId: string, params?: {
     sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime';
   }) => {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/leaderboard/group/${groupId}?${queryString}`, 'GET');
   },
-  
+
   getFriendsLeaderboard: async (params?: {
     sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime';
   }) => {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/leaderboard/friends?${queryString}`, 'GET');
   },
-  
+
   getUserPosition: async (params?: { sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' }) => {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/leaderboard/position?${queryString}`, 'GET');
@@ -620,10 +624,10 @@ export const galleryAPI = {
       },
       body: photoData,
     });
-    
+
     return response.json();
   },
-  
+
   uploadPhotoWithProgress: async (
     photoUri: string,
     journeyId: string,
@@ -631,7 +635,7 @@ export const galleryAPI = {
   ) => {
     const token = await getAuthToken();
     const url = `${getCurrentApiUrl()}/gallery/upload`;
-    
+
     // Use FormData with fetch instead of deprecated createUploadTask
     const formData = new FormData();
     formData.append('photo', {
@@ -665,7 +669,7 @@ export const galleryAPI = {
           try {
             const errorBody = JSON.parse(xhr.responseText || '{}');
             errorMessage = errorBody.message || errorBody.error || errorMessage;
-          } catch {}
+          } catch { }
           reject(new Error(errorMessage));
         }
       });
@@ -684,11 +688,11 @@ export const galleryAPI = {
       xhr.send(formData as any);
     });
   },
-  
+
   getJourneyPhotos: async (journeyId: string) => {
     return apiRequest(`/gallery/journey/${journeyId}`, 'GET');
   },
-  
+
   getUserPhotos: async (params?: {
     page?: number;
     limit?: number;
@@ -696,7 +700,7 @@ export const galleryAPI = {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/gallery/photos?${queryString}`, 'GET');
   },
-  
+
   deletePhoto: async (photoId: string) => {
     return apiRequest(`/gallery/photo/${photoId}`, 'DELETE');
   },

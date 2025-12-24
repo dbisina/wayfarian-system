@@ -19,6 +19,7 @@ const prismaSource = new PrismaClient({
       url: SOURCE_DB_URL,
     },
   },
+  log: ['query', 'info', 'warn', 'error'],
 });
 
 const prismaTarget = new PrismaClient({
@@ -27,7 +28,23 @@ const prismaTarget = new PrismaClient({
       url: TARGET_DB_URL,
     },
   },
+  log: ['query', 'info', 'warn', 'error'],
 });
+
+async function testConnection() {
+    try {
+        console.log('Testing Source Connection...');
+        await prismaSource.$connect();
+        console.log('Source Connected.');
+        
+        console.log('Testing Target Connection...');
+        await prismaTarget.$connect();
+        console.log('Target Connected.');
+    } catch (e) {
+        console.error('Connection failed:', e);
+        process.exit(1);
+    }
+}
 
 async function migrateTable(modelName, uniqueKey = 'id', dependencyOrder = []) {
   console.log(`Migrating ${modelName}...`);
@@ -71,6 +88,8 @@ async function main() {
   console.log('Starting migration...');
   console.log('Source:', SOURCE_DB_URL.split('@')[1]); // Log masked URL
   console.log('Target:', TARGET_DB_URL.split('@')[1]); // Log masked URL
+
+  await testConnection();
 
   try {
     // 1. Users (No dependencies)

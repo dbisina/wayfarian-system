@@ -120,6 +120,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshUser: (updatedUser?: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -238,7 +239,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         webClientId: GOOGLE_WEB_CLIENT_ID,
         offlineAccess: true,
         ...(GOOGLE_ANDROID_CLIENT_ID ? { androidClientId: GOOGLE_ANDROID_CLIENT_ID } : {}),
-        ...(GOOGLE_IOS_CLIENT_ID ? { iosClientId: GOOGLE_IOS_CLIENT_ID } : {}),
+        // iosClientId is NOT set here - we rely on GoogleService-Info.plist for iOS configuration
+        // to avoid mismatch crashes.
       });
     }
   }, []);
@@ -684,7 +686,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       // For native builds, use @react-native-google-signin
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // hasPlayServices is Android-only, don't call on iOS
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
+      
       const signInResult = await GoogleSignin.signIn();
       const idToken = (signInResult as unknown as { idToken?: string })?.idToken ?? (signInResult as any)?.data?.idToken;
 
@@ -699,6 +705,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error: any) {
       console.error('Google login error:', error);
 
+      // Handle user cancellation - don't show error
+      if (error.code === 12501 || error.code === '-5' || error.message?.includes('SIGN_IN_CANCELLED')) {
+        return; // User cancelled, so we just return without an error
+      }
+
       let errorMessage = error?.message || 'Google sign-in failed. Please try again.';
       if (error.code === 'auth/account-exists-with-different-credential') {
         errorMessage = 'An account already exists with this email address using a different sign-in method.';
@@ -708,8 +719,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         errorMessage = 'Google sign-in is not enabled. Please contact support.';
       } else if (error.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled. Please contact support.';
-      } else if (error.code === 12501) { // Google Sign-In cancelled
-        return; // User cancelled, so we just return without an error
       }
 
       try {
@@ -749,10 +758,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         .replace(/\//g, '_')
         .replace(/=+$/, '')
         .substring(0, 32);
+      
+      // Hash the nonce with SHA256 and encode as HEX (not base64)
       const hashedNonce = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         nonce,
-        { encoding: Crypto.CryptoEncoding.BASE64 }
+        { encoding: Crypto.CryptoEncoding.HEX }
       );
       
       // Request Apple authentication
@@ -785,6 +796,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await syncUserData(userCredential.user);
     } catch (error: any) {
       console.error('Apple login error:', error);
+      // Detailed error logging for debugging malformed credentials
+      if (error.code) console.error('Apple Error Code:', error.code);
+      if (error.message) console.error('Apple Error Message:', error.message);
       
       // Handle specific Apple Sign-In errors
       if (error.code === 'ERR_CANCELED') {
@@ -931,6 +945,65 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Delete user account
+  const deleteAccount = async () => {
+    try {
+      setLoading(true);
+      
+      // 1. Delete from backend first
+      try {
+        await authAPI.deleteAccount();
+      } catch (backendError: any) {
+        // If backend returns that user owns groups with members, surface this to user
+        if (backendError?.body?.groupsWithMembers) {
+          throw new Error(backendError.message || 'You must transfer ownership or delete groups before deleting your account.');
+        }
+        throw backendError;
+      }
+      
+      // 2. Delete Firebase user - this will trigger auth state change
+      if (firebaseUser) {
+        try {
+          // For Firebase, we need to delete the user
+          // Note: This requires recent authentication
+          await firebaseUser.delete();
+        } catch (firebaseError: any) {
+          // If requires-recent-login, the backend already deleted the user
+          // so we just sign out locally
+          console.warn('Firebase user deletion failed (backend already deleted):', firebaseError);
+        }
+      }
+      
+      // 3. Clean up local state (similar to logout)
+      if (Platform.OS !== 'web') {
+        try {
+          await GoogleSignin.signOut();
+        } catch (err) {
+          console.warn('Google sign-out failed during account deletion:', err);
+        }
+      }
+      try {
+        await signOut(auth);
+      } catch {
+        console.warn('Firebase signOut failed during account deletion');
+      }
+      
+      // Clear local auth state
+      clearTokenRefreshTimer();
+      setUser(null);
+      setFirebaseUser(null);
+      setIsAuthenticated(false);
+      setUserContext(null);
+      try { await removeAuthToken(); } catch {}
+      
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      throw new Error(error.message || 'Failed to delete account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const value: AuthContextType = {
     user,
     firebaseUser,
@@ -943,6 +1016,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loginWithGoogle,
     loginWithApple,
     logout,
+    deleteAccount,
     refreshUser,
     completeOnboarding,
     resetPassword,

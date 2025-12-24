@@ -63,7 +63,9 @@ const calculateDistanceBetweenPoints = (lat1, lon1, lat2, lon2) => {
   const calculateAverageSpeed = (distance, time) => {
     if (time <= 0) return 0;
     const hours = time / 3600;
-    return Math.round((distance / hours) * 100) / 100;
+    const avgSpeed = Math.round((distance / hours) * 100) / 100;
+    // Cap at 250 km/h to prevent unrealistic values if time is incorrectly small
+    return Math.min(avgSpeed, 250);
   };
   
   /**

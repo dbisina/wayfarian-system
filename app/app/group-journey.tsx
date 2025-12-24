@@ -636,7 +636,7 @@ export default function GroupJourneyScreen() {
         {myInstance?.status !== "COMPLETED" && 
         destination &&
         directionOrigin ? (
-          Platform.OS === "android" && googleKey ? (
+          googleKey ? (
             <MapViewDirections
               key={`${directionOrigin.latitude}-${directionOrigin.longitude}-${destination.latitude}-${destination.longitude}`}
               origin={directionOrigin}

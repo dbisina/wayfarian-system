@@ -11,6 +11,8 @@ const MIN_ACCURACY_METERS = 20; // ignore low-accuracy updates over this thresho
 const MIN_MOVE_METERS = 10; // minimum movement to count towards distance
 const STATIONARY_SPEED_THRESHOLD_MPS = 1.2; // below this m/s, treat as stationary (increased to ~4.3 km/h to reduce drift)
 const MAX_ACCURACY_THRESHOLD = 100; // Ignore points with accuracy worse than this
+const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
+const MAX_REASONABLE_SPEED_MPS = 69.5; // 250 km/h in m/s - cap for realistic vehicle speeds
 
 export interface LocationPoint {
   latitude: number;
@@ -48,7 +50,7 @@ class LocationService {
   private lastUpdateTime: number = 0;
   private lastMovementTime: number = 0; // Track last time we were moving
   private isCurrentlyMoving: boolean = false;
-  
+
   // Dwell Detection: Track when stationary for >5 seconds
   private stationaryStartTime: number | null = null;
   private readonly DWELL_THRESHOLD_MS = 5000; // 5 seconds
@@ -71,14 +73,14 @@ class LocationService {
     const R = 6371; // Earth's radius in km
     const dLat = this.toRad(lat2 - lat1);
     const dLon = this.toRad(lon2 - lon1);
-    
+
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(this.toRad(lat1)) *
-        Math.cos(this.toRad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    
+      Math.cos(this.toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
@@ -91,7 +93,7 @@ class LocationService {
   async requestPermissions(): Promise<boolean> {
     try {
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (foregroundStatus !== 'granted') {
         console.error('Foreground location permission denied');
         return false;
@@ -168,10 +170,10 @@ class LocationService {
       if (!response || !response.journey?.id) {
         throw new Error('Backend unavailable: failed to start journey');
       }
-  const journeyId: string = response.journey.id;
+      const journeyId: string = response.journey.id;
 
       this.currentJourneyId = journeyId;
-  this.currentGroupId = groupId || null;
+      this.currentGroupId = groupId || null;
       this.isTracking = true;
       this.startTime = Date.now();
       this.lastUpdateTime = Date.now();
@@ -179,7 +181,7 @@ class LocationService {
       this.isCurrentlyMoving = false;
       this.routePoints = [startLocation];
       this.recentPoints = []; // Initialize recent points for speed calculation
-      
+
       // Reset stats
       this.stats = {
         totalDistance: 0,
@@ -249,12 +251,12 @@ class LocationService {
         newPoint.longitude
       );
       const distanceMeters = distanceKm * 1000;
-  const lastAcc = lastPoint.accuracy || 0;
-  const currAcc = newPoint.accuracy || 0;
+      const lastAcc = lastPoint.accuracy || 0;
+      const currAcc = newPoint.accuracy || 0;
       const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
       const reportedSpeed = newPoint.speed || 0;
       const isActuallyMoving = reportedSpeed >= STATIONARY_SPEED_THRESHOLD_MPS;
-      
+
       // Only accept point if:
       // 1. We actually moved a significant distance (more than accuracy threshold), OR
       // 2. We're moving (speed > threshold) AND moved at least 3 meters (to avoid GPS drift)
@@ -278,22 +280,24 @@ class LocationService {
     // Speed = Distance / Time using actual GPS coordinates
     let calculatedSpeedMps = 0;
     const now = Date.now();
-    
+
     // Add current point to recent points for speed calculation
     this.recentPoints.push({ point: newPoint, timestamp: now });
-    
+
     // Remove points older than calculation window
     this.recentPoints = this.recentPoints.filter(
       p => (now - p.timestamp) <= this.SPEED_CALCULATION_WINDOW_MS
     );
-    
+
     // Calculate speed from GPS position changes if we have enough points
     if (this.recentPoints.length >= this.MIN_SPEED_CALC_POINTS) {
       const oldestPoint = this.recentPoints[0];
       const newestPoint = this.recentPoints[this.recentPoints.length - 1];
       const timeDeltaSeconds = (newestPoint.timestamp - oldestPoint.timestamp) / 1000;
-      
-      if (timeDeltaSeconds > 0) {
+
+      // Only calculate speed if we have enough time elapsed to get accurate reading
+      // With very short time deltas, GPS jitter causes unrealistically high speeds
+      if (timeDeltaSeconds >= MIN_TIME_DELTA_FOR_SPEED_CALC) {
         // Calculate distance between oldest and newest point
         const gpsDistanceKm = this.calculateDistance(
           oldestPoint.point.latitude,
@@ -302,22 +306,23 @@ class LocationService {
           newestPoint.point.longitude
         );
         const gpsDistanceMeters = gpsDistanceKm * 1000;
-        
+
         // Speed = Distance / Time (in m/s)
         calculatedSpeedMps = gpsDistanceMeters / timeDeltaSeconds;
-        
-        // Validate calculated speed is reasonable (0-200 m/s = 0-720 km/h)
-        if (calculatedSpeedMps < 0 || calculatedSpeedMps > 200) {
+
+        // Validate speed is reasonable - cap at MAX_REASONABLE_SPEED_MPS (250 km/h)
+        // This prevents GPS drift/jitter from causing insane top speed readings
+        if (calculatedSpeedMps < 0 || calculatedSpeedMps > MAX_REASONABLE_SPEED_MPS) {
           calculatedSpeedMps = 0;
         }
       }
     }
-    
+
     // Use GPS-calculated speed if available and reasonable, otherwise fall back to reported speed
     // GPS-calculated speed is often more accurate than device-reported speed
     const reportedSpeedMps = newPoint.speed || 0;
     let finalSpeedMps = 0;
-    
+
     if (calculatedSpeedMps > 0) {
       // Use GPS-calculated speed as primary source
       finalSpeedMps = calculatedSpeedMps;
@@ -325,10 +330,10 @@ class LocationService {
       // Fall back to reported speed if GPS calculation unavailable
       finalSpeedMps = reportedSpeedMps;
     }
-    
+
     // Apply stationary threshold filter
     const moving = finalSpeedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
-    
+
     // Dwell Detection Filter - Track when stationary for >5 seconds
     if (finalSpeedMps < this.DWELL_SPEED_THRESHOLD_MPS) {
       // User is stationary
@@ -349,12 +354,12 @@ class LocationService {
       }
       this.isDwelling = false;
     }
-    
+
     // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
     const displaySpeedMps = this.isDwelling ? 0 : finalSpeedMps;
     const speedKmh = displaySpeedMps * 3.6; // Convert m/s to km/h
     this.stats.currentSpeed = this.isDwelling ? 0 : (moving ? speedKmh : 0);
-    
+
     // Track moving time only when actually moving AND not dwelling
     if (moving && !this.isDwelling) {
       if (!this.isCurrentlyMoving) {
@@ -367,7 +372,7 @@ class LocationService {
         this.stats.movingTime += Math.floor(elapsedMs / 1000);
         this.lastMovementTime = now;
       }
-      
+
       // Update top speed only when moving (use actual speed, not display speed)
       const actualSpeedKmh = finalSpeedMps * 3.6;
       if (actualSpeedKmh > this.stats.topSpeed) {
@@ -382,7 +387,9 @@ class LocationService {
 
     // Calculate average speed based on moving time only
     if (this.stats.movingTime > 0) {
-      this.stats.avgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600; // km/h
+      const calculatedAvgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600; // km/h
+      // Cap at 250 km/h to prevent unrealistic values
+      this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250);
     } else {
       this.stats.avgSpeed = 0;
     }
@@ -420,7 +427,7 @@ class LocationService {
 
     try {
       const currentLocation = this.lastKnownLocation || this.routePoints[this.routePoints.length - 1];
-      
+
       await journeyAPI.updateJourney(this.currentJourneyId, {
         currentLatitude: currentLocation.latitude,
         currentLongitude: currentLocation.longitude,
@@ -437,7 +444,7 @@ class LocationService {
 
     try {
       this.isTracking = false;
-      
+
       if (this.locationSubscription) {
         this.locationSubscription.remove();
         this.locationSubscription = null;
@@ -490,7 +497,7 @@ class LocationService {
       await this.updateBackend();
 
       const currentLocation = this.routePoints[this.routePoints.length - 1];
-      
+
       await journeyAPI.endJourney(this.currentJourneyId, {
         endLatitude: currentLocation.latitude,
         endLongitude: currentLocation.longitude,
@@ -528,19 +535,21 @@ class LocationService {
     if (this.isTracking && this.startTime > 0) {
       const now = Date.now();
       this.stats.totalTime = Math.floor((now - this.startTime) / 1000);
-      
+
       // If currently moving, add the elapsed time since last movement update
       if (this.isCurrentlyMoving && this.lastMovementTime > 0) {
         const additionalMovingMs = now - this.lastMovementTime;
         const currentMovingTime = this.stats.movingTime + Math.floor(additionalMovingMs / 1000);
-        
+
         // Calculate avg speed based on moving time
         if (currentMovingTime > 0) {
-          this.stats.avgSpeed = (this.stats.totalDistance / currentMovingTime) * 3600;
+          const calculatedAvgSpeed = (this.stats.totalDistance / currentMovingTime) * 3600;
+          this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250); // Cap at 250 km/h
         }
       } else if (this.stats.movingTime > 0) {
         // Not currently moving, use stored moving time
-        this.stats.avgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600;
+        const calculatedAvgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600;
+        this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250); // Cap at 250 km/h
       }
     }
     return { ...this.stats };

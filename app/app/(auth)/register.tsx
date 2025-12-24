@@ -154,7 +154,7 @@ const RegisterScreen = () => {
                 disabled={loading}
               >
                 <GoogleIcon />
-                <Text style={styles.socialButtonText}>Sign in with Google</Text>
+                <Text style={styles.socialButtonText}>Sign up with Google</Text>
               </TouchableOpacity>
               
               {/* Apple Sign In Button */}
@@ -164,7 +164,7 @@ const RegisterScreen = () => {
                 disabled={loading}
               >
                 <AppleIcon />
-                <Text style={styles.socialButtonText}>Sign in with Apple</Text>
+                <Text style={styles.socialButtonText}>Sign up with Apple</Text>
               </TouchableOpacity>
               
               {/* Divider */}
@@ -348,7 +348,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#FFFFFF',
     marginBottom: 47,
-    fontFamily: 'Poppins',
     lineHeight: 25.5,
   },
   socialButton: {
@@ -366,7 +365,6 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#000000',
     marginLeft: 24,
-    fontFamily: 'Poppins',
     lineHeight: 18,
   },
   dividerContainer: {
@@ -384,7 +382,6 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: '#FFFFFF',
     marginHorizontal: 10,
-    fontFamily: 'Poppins',
     lineHeight: 12,
   },
   inputGroup: {
@@ -395,7 +392,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#FFFFFF',
     marginBottom: 8,
-    fontFamily: 'Poppins',
     lineHeight: 18,
   },
   textInput: {
@@ -404,7 +400,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '300',
     color: '#000000',
-    fontFamily: 'Poppins',
     lineHeight: 18,
   },
   inputWrapper: {
@@ -444,7 +439,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     color: 'rgba(238, 238, 238, 0.8)',
-    fontFamily: 'Poppins',
     lineHeight: 18,
   },
   signInButton: {
@@ -458,7 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#FFFFFF',
-    fontFamily: 'Poppins',
     lineHeight: 24,
   },
   signUpContainer: {
@@ -470,14 +463,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '400',
     color: 'rgba(255, 255, 255, 0.4)',
-    fontFamily: 'Poppins',
     lineHeight: 15,
   },
   signUpLink: {
     fontSize: 10,
     fontWeight: '400',
     color: '#FFFFFF',
-    fontFamily: 'Poppins',
     lineHeight: 15,
   },
   disabledButton: {

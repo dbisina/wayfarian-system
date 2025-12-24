@@ -11,7 +11,9 @@ export const StatsCalculator = {
    */
   calculateAverageSpeed: (distanceKm: number, movingTimeSeconds: number): number => {
     if (!movingTimeSeconds || movingTimeSeconds <= 0) return 0;
-    return (distanceKm / movingTimeSeconds) * 3600;
+    const avgSpeed = (distanceKm / movingTimeSeconds) * 3600;
+    // Cap at 250 km/h to prevent unrealistic values if time is somehow too small
+    return Math.min(avgSpeed, 250);
   },
 
   /**
@@ -49,7 +51,7 @@ export const StatsCalculator = {
   formatDistance: (distanceKm: number): string => {
     return `${distanceKm.toFixed(2)} km`;
   },
-  
+
   /**
    * Formats speed in km/h.
    * @deprecated Use SettingsContext's convertSpeed instead for unit conversion support.

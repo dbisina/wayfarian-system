@@ -688,8 +688,13 @@ const updateInstanceLocation = async (req, res) => {
     const now = new Date();
     const elapsedSeconds = Math.floor((now - new Date(instance.startTime)) / 1000);
     const newDistance = (instance.totalDistance || 0) + (distance || 0);
-    const newTopSpeed = Math.max(instance.topSpeed || 0, speed || 0);
-    const newAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3.6 : 0;
+    
+    // Validate speed before updating topSpeed - cap at 250 km/h to prevent GPS drift issues
+    const MAX_REASONABLE_SPEED_KMH = 250;
+    const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
+    const newTopSpeed = Math.max(instance.topSpeed || 0, validatedSpeed);
+    const calculatedAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3.6 : 0;
+    const newAvgSpeed = Math.min(calculatedAvgSpeed, MAX_REASONABLE_SPEED_KMH); // Cap avgSpeed too
 
     // Update route points
     let routePoints = instance.routePoints || [];

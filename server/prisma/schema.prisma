@@ -7,111 +7,115 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   // Use a direct connection for migrations (Supabase/pgbouncer compatibility)
   directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id              String   @id @default(cuid())
-  firebaseUid     String   @unique
-  email           String?  @unique
-  phoneNumber     String?  @unique
-  displayName     String?
-  photoURL        String?
-  country         String?  // Country name
-  countryCode     String?  // ISO 3166-1 alpha-2 code (e.g., "US", "GB")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  id          String   @id @default(cuid())
+  firebaseUid String   @unique
+  email       String?  @unique
+  phoneNumber String?  @unique
+  displayName String?
+  photoURL    String?
+  country     String? // Country name
+  countryCode String? // ISO 3166-1 alpha-2 code (e.g., "US", "GB")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Profile stats
-  totalDistance   Float    @default(0)
-  totalTime       Int      @default(0) // in seconds
-  topSpeed        Float    @default(0)
-  totalTrips      Int      @default(0)
-  xp              Int      @default(0) // Experience points from achievements
-  level           Int      @default(1) // User level based on XP
-  
+  totalDistance Float @default(0)
+  totalTime     Int   @default(0) // in seconds
+  topSpeed      Float @default(0)
+  totalTrips    Int   @default(0)
+  xp            Int   @default(0) // Experience points from achievements
+  level         Int   @default(1) // User level based on XP
+
+  // Push notifications
+  expoPushToken String? // Expo push token for notifications
+
   // Relationships
-  journeys        Journey[]
+  journeys         Journey[]
   journeyInstances JourneyInstance[]
-  photos          Photo[]
+  photos           Photo[]
   groupMemberships GroupMember[]
-  createdGroups   Group[]  @relation("GroupCreator")
-  rideEvents      RideEvent[]
-  
+  createdGroups    Group[]           @relation("GroupCreator")
+  rideEvents       RideEvent[]
+
   @@map("users")
 }
 
 model Journey {
-  id              String   @id @default(cuid())
-  userId          String
-  title           String?
-  startTime       DateTime
-  endTime         DateTime?
-  status          JourneyStatus @default(ACTIVE)
-  
+  id        String        @id @default(cuid())
+  userId    String
+  title     String?
+  startTime DateTime
+  endTime   DateTime?
+  status    JourneyStatus @default(ACTIVE)
+
   // Journey stats
-  totalDistance   Float    @default(0)
-  totalTime       Int      @default(0) // in seconds
-  avgSpeed        Float    @default(0)
-  topSpeed        Float    @default(0)
-  
+  totalDistance Float @default(0)
+  totalTime     Int   @default(0) // in seconds
+  avgSpeed      Float @default(0)
+  topSpeed      Float @default(0)
+
   // Route data
-  startLatitude   Float
-  startLongitude  Float
-  endLatitude     Float?
-  endLongitude    Float?
-  routePoints     Json?    // Array of GPS coordinates
-  
+  startLatitude  Float
+  startLongitude Float
+  endLatitude    Float?
+  endLongitude   Float?
+  routePoints    Json? // Array of GPS coordinates
+
   // Metadata
-  vehicle         String?  // bike, car, truck, etc.
-  weatherData     Json?
-  customTitle     String?
-  isHidden        Boolean  @default(false)
-  hiddenAt        DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  vehicle     String? // bike, car, truck, etc.
+  weatherData Json?
+  customTitle String?
+  isHidden    Boolean   @default(false)
+  hiddenAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
   // Group journey (deprecated - use GroupJourney instead)
-  groupId         String?
-  
+  groupId String?
+
   // Relationships
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group           Group?   @relation(fields: [groupId], references: [id])
-  photos          Photo[]
-  
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group?            @relation(fields: [groupId], references: [id])
+  photos    Photo[]
+  reminders JourneyReminder[]
+
   @@map("journeys")
 }
 
 model GroupJourney {
-  id              String   @id @default(cuid())
-  groupId         String
-  creatorId       String
-  title           String
-  description     String?
-  
+  id          String  @id @default(cuid())
+  groupId     String
+  creatorId   String
+  title       String
+  description String?
+
   // Journey configuration
-  startLatitude   Float
-  startLongitude  Float
-  endLatitude     Float?
-  endLongitude    Float?
-  routePoints     Json?    // Shared route waypoints
-  
+  startLatitude  Float
+  startLongitude Float
+  endLatitude    Float?
+  endLongitude   Float?
+  routePoints    Json? // Shared route waypoints
+
   // Journey state
-  status          GroupJourneyStatus @default(ACTIVE)
-  startedAt       DateTime @default(now())
-  completedAt     DateTime?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  status      GroupJourneyStatus @default(ACTIVE)
+  startedAt   DateTime           @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relationships
-  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  instances       JourneyInstance[]
-  events          RideEvent[]
-  
+  group     Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  instances JourneyInstance[]
+  events    RideEvent[]
+
   @@index([groupId])
   @@index([creatorId])
   @@index([status])
@@ -119,38 +123,38 @@ model GroupJourney {
 }
 
 model JourneyInstance {
-  id              String   @id @default(cuid())
-  groupJourneyId  String
-  userId          String
-  
+  id             String @id @default(cuid())
+  groupJourneyId String
+  userId         String
+
   // Individual progress
-  status          JourneyStatus @default(ACTIVE)
-  startTime       DateTime @default(now())
-  endTime         DateTime?
-  
+  status    JourneyStatus @default(ACTIVE)
+  startTime DateTime      @default(now())
+  endTime   DateTime?
+
   // Stats
-  totalDistance   Float    @default(0)
-  totalTime       Int      @default(0) // in seconds
-  avgSpeed        Float    @default(0)
-  topSpeed        Float    @default(0)
-  
+  totalDistance Float @default(0)
+  totalTime     Int   @default(0) // in seconds
+  avgSpeed      Float @default(0)
+  topSpeed      Float @default(0)
+
   // Current location
-  currentLatitude  Float?
-  currentLongitude Float?
+  currentLatitude    Float?
+  currentLongitude   Float?
   lastLocationUpdate DateTime?
-  
+
   // Route tracking
-  routePoints     Json?    // Individual GPS trail
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  routePoints Json? // Individual GPS trail
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relationships
-  groupJourney    GroupJourney @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  photos          JourneyPhoto[]
-  events          RideEvent[]
-  
+  groupJourney GroupJourney   @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photos       JourneyPhoto[]
+  events       RideEvent[]
+
   @@unique([groupJourneyId, userId])
   @@index([userId])
   @@index([status])
@@ -158,112 +162,112 @@ model JourneyInstance {
 }
 
 model JourneyPhoto {
-  id              String   @id @default(cuid())
-  instanceId      String
-  userId          String
-  
+  id         String @id @default(cuid())
+  instanceId String
+  userId     String
+
   // File info
-  filename        String
-  originalName    String?
-  firebasePath    String
-  mimeType        String
-  fileSize        Int
-  
+  filename     String
+  originalName String?
+  firebasePath String
+  mimeType     String
+  fileSize     Int
+
   // Photo metadata
-  latitude        Float?
-  longitude       Float?
-  takenAt         DateTime
-  
-  createdAt       DateTime @default(now())
-  
+  latitude  Float?
+  longitude Float?
+  takenAt   DateTime
+
+  createdAt DateTime @default(now())
+
   // Relationships
-  instance        JourneyInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  
+  instance JourneyInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
   @@index([instanceId])
   @@index([userId])
   @@map("journey_photos")
 }
 
 model Photo {
-  id              String   @id @default(cuid())
-  userId          String
-  journeyId       String?
-  
+  id        String  @id @default(cuid())
+  userId    String
+  journeyId String?
+
   // File info
-  filename        String
-  originalName    String?
-  firebasePath    String   // Path in Firebase Storage
-  mimeType        String
-  fileSize        Int
-  
+  filename     String
+  originalName String?
+  firebasePath String // Path in Firebase Storage
+  mimeType     String
+  fileSize     Int
+
   // Photo metadata
-  latitude        Float?
-  longitude       Float?
-  takenAt         DateTime
-  deviceInfo      Json?
-  
+  latitude   Float?
+  longitude  Float?
+  takenAt    DateTime
+  deviceInfo Json?
+
   // Processing
-  thumbnailPath   String?
-  isProcessed     Boolean  @default(false)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  thumbnailPath String?
+  isProcessed   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relationships
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  journey         Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
-  
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journey Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+
   @@map("photos")
 }
 
 model Group {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?
-  code            String   @unique // Join code
-  creatorId       String
-  isActive        Boolean  @default(true)
-  maxMembers      Int      @default(10)
-  coverPhotoURL   String?  // Group cover photo
-  
+  id            String  @id @default(cuid())
+  name          String
+  description   String?
+  code          String  @unique // Join code
+  creatorId     String
+  isActive      Boolean @default(true)
+  maxMembers    Int     @default(10)
+  coverPhotoURL String? // Group cover photo
+
   // Group settings
   allowLocationSharing Boolean @default(true)
-  isPrivate       Boolean  @default(false)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  isPrivate            Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relationships
-  creator         User     @relation("GroupCreator", fields: [creatorId], references: [id])
-  members         GroupMember[]
-  journeys        Journey[]
-  groupJourneys   GroupJourney[]
+  creator       User           @relation("GroupCreator", fields: [creatorId], references: [id])
+  members       GroupMember[]
+  journeys      Journey[]
+  groupJourneys GroupJourney[]
   // Not a direct relation, events are tied to GroupJourney
-  
+
   @@index([creatorId])
   @@index([isActive])
   @@map("groups")
 }
 
 model RideEvent {
-  id              String   @id @default(cuid())
-  groupJourneyId  String
-  instanceId      String?
-  userId          String
+  id             String  @id @default(cuid())
+  groupJourneyId String
+  instanceId     String?
+  userId         String
 
-  type            RideEventType
-  message         String?
-  latitude        Float?
-  longitude       Float?
-  mediaUrl        String?
-  data            Json?
+  type      RideEventType
+  message   String?
+  latitude  Float?
+  longitude Float?
+  mediaUrl  String?
+  data      Json?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   // Relations
-  groupJourney    GroupJourney @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
-  instance        JourneyInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
-  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupJourney GroupJourney     @relation(fields: [groupJourneyId], references: [id], onDelete: Cascade)
+  instance     JourneyInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([groupJourneyId])
   @@index([instanceId])
@@ -273,26 +277,41 @@ model RideEvent {
 }
 
 model GroupMember {
-  id              String   @id @default(cuid())
-  userId          String
-  groupId         String
-  role            GroupRole @default(MEMBER)
-  joinedAt        DateTime @default(now())
-  
+  id       String    @id @default(cuid())
+  userId   String
+  groupId  String
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+
   // Real-time tracking
-  lastLatitude    Float?
-  lastLongitude   Float?
-  lastSeen        DateTime?
-  isLocationShared Boolean @default(false)
-  
+  lastLatitude     Float?
+  lastLongitude    Float?
+  lastSeen         DateTime?
+  isLocationShared Boolean   @default(false)
+
   // Relationships
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   @@unique([userId, groupId])
   @@index([userId])
   @@index([groupId])
   @@map("group_members")
+}
+
+// Journey Reminder model for tracking sent notifications
+model JourneyReminder {
+  id        String   @id @default(cuid())
+  journeyId String
+  userId    String
+  type      String // "3_DAYS", "2_DAYS", "1_DAY", "D_DAY", "READY"
+  sentAt    DateTime @default(now())
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, type])
+  @@index([journeyId])
+  @@map("journey_reminders")
 }
 
 // Enums
@@ -302,6 +321,7 @@ enum JourneyStatus {
   COMPLETED
   CANCELLED
   PLANNED
+  READY_TO_START // Journey scheduled time has arrived
 }
 
 enum GroupJourneyStatus {

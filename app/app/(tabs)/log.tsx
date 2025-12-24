@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { userAPI, leaderboardAPI } from '../../services/api';
+import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 
 type JourneyItem = {
   id: string;
@@ -38,7 +39,7 @@ export default function RideLogScreen(): React.JSX.Element {
   const [rank, setRank] = useState<number | null>(null);
   const [xpProgress, setXpProgress] = useState<number>(0);
   const [nextBadge, setNextBadge] = useState<string>('');
-  const [badges, setBadges] = useState<{ id: string; title: string; imageUrl?: string }[]>([]);
+  const [badges, setBadges] = useState<{ id: string; title: string; achievementId: string }[]>([]);
   const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
   const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
   const [, setLoading] = useState(false);
@@ -71,10 +72,10 @@ export default function RideLogScreen(): React.JSX.Element {
         setNextBadge(nextName);
 
         // Build badges from unlocked tiers (top 4)
-  const unlockedBadges: { id: string; title: string }[] = [];
+        const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
         ach.forEach((a: any) => {
           (a.tiers || []).forEach((t: any) => {
-            if (t.unlocked) unlockedBadges.push({ id: `${a.id}_${t.level}`, title: t.name || a.name });
+            if (t.unlocked) unlockedBadges.push({ id: `${a.id}_${t.level}`, title: t.name || a.name, achievementId: a.id });
           });
         });
         setBadges(unlockedBadges.slice(0, 4));
@@ -165,14 +166,25 @@ export default function RideLogScreen(): React.JSX.Element {
             {badges.length === 0 ? (
               <Text style={styles.badgeTitle}>No badges yet — start riding!</Text>
             ) : (
-              badges.map((badge) => (
-                <View key={badge.id} style={styles.badgeContainer}>
-                  <View style={[styles.badgeImage, { alignItems: 'center', justifyContent: 'center' }]}>
-                    <Text style={{ fontSize: 20 }}>🏅</Text>
+              badges.map((badge) => {
+                const badgeSource = ACHIEVEMENT_BADGES[badge.achievementId as keyof typeof ACHIEVEMENT_BADGES];
+                return (
+                  <View key={badge.id} style={styles.badgeContainer}>
+                    <View style={[styles.badgeImage, { alignItems: 'center', justifyContent: 'center' }]}>
+                      {badgeSource ? (
+                        <Image
+                          source={badgeSource}
+                          style={{ width: 50, height: 50 }}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Text style={{ fontSize: 20 }}>🏅</Text>
+                      )}
+                    </View>
+                    {badge.title ? <Text style={styles.badgeTitle}>{badge.title}</Text> : null}
                   </View>
-                  {badge.title ? <Text style={styles.badgeTitle}>{badge.title}</Text> : null}
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         </View>

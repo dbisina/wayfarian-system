@@ -12,6 +12,14 @@
     "plugins": [
       "expo-router",
       [
+        "@sentry/react-native/expo",
+        {
+          "organization": "sevenloops",
+          "project": "wayfarian"
+        }
+      ],
+      "./plugins/withPodfileFix",
+      [
         "expo-splash-screen",
         {
           "image": "./assets/icons/splash-icon.png",
@@ -25,7 +33,13 @@
       ],
       "expo-web-browser",
       "expo-secure-store",
-      "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.65260446195-kkgnkq7joge7t0gks5bcr9km300o64af"
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -44,13 +58,33 @@
           "photosPermission": "Allow Wayfarian to access your photos to save and share journey memories.",
           "savePhotosPermission": "Allow Wayfarian to save photos to your device."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "ccacheEnabled": true
+          },
+          "android": {
+            "enableProguardInReleaseBuilds": false
+          }
+        }
       ]
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.65260446195-kkgnkq7joge7t0gks5bcr9km300o64af"
+            ]
+          }
+        ]
       },
       "bundleIdentifier": "com.wayfarian.wayfarianadventures",
       "googleServicesFile": "./GoogleService-Info.plist",

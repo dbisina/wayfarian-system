@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>65260446195-7n1mq16bpltm67hmbdqimqi31id9d2gt.apps.googleusercontent.com</string>
+	<string>65260446195-kkgnkq7joge7t0gks5bcr9km300o64af.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.65260446195-7n1mq16bpltm67hmbdqimqi31id9d2gt</string>
+	<string>com.googleusercontent.apps.65260446195-kkgnkq7joge7t0gks5bcr9km300o64af</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>65260446195-0r4o67jmhdi1a77uou5fgepviffni2e5.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyCpyJEqdTPRPcDqfrS8s7GWdMjphlPb3N4</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.wayfarian.wayfairanadventures</string>
+	<string>com.wayfarian.wayfarianadventures</string>
 	<key>PROJECT_ID</key>
 	<string>wayfarian-e49b4</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:65260446195:ios:cc53324a8f69b77ca83286</string>
+	<string>1:65260446195:ios:88fbaafa93103495a83286</string>
 </dict>
 </plist>

@@ -8,6 +8,7 @@ const app = require('./app');
 const http = require('http');
 const { initializeSocket } = require('./sockets');
 const { schedulePeriodicJobs } = require('./jobs/workers');
+const { startReminderJob } = require('./jobs/journeyReminderJob');
 const healthService = require('./services/HealthService');
 const logger = require('./services/Logger');
 const { startMetricsLogging } = require('./middleware/logging');
@@ -26,6 +27,7 @@ app.set('io', io);
 // Start background services
 schedulePeriodicJobs();
 startMetricsLogging();
+startReminderJob(); // Start journey reminder notifications
 healthService.startPeriodicChecks(5 * 60 * 1000); // Every 5 minutes
 
 // Start server - bind to 0.0.0.0 to allow network access

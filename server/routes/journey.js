@@ -205,6 +205,101 @@ router.post(
 );
 
 /**
+ * @route POST /api/journey/:journeyId/start
+ * @desc Start a planned or ready-to-start journey
+ * @access Private
+ */
+router.post(
+  "/:journeyId/start",
+  [
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+    body("latitude")
+      .optional()
+      .isFloat({ min: -90, max: 90 })
+      .withMessage("Latitude must be between -90 and 90"),
+    body("longitude")
+      .optional()
+      .isFloat({ min: -180, max: 180 })
+      .withMessage("Longitude must be between -180 and 180"),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const userId = req.user.id;
+      const { latitude, longitude } = req.body;
+
+      // Find the journey
+      const journey = await prisma.journey.findFirst({
+        where: {
+          id: journeyId,
+          userId,
+          status: { in: ['PLANNED', 'READY_TO_START'] },
+        },
+      });
+
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Journey not found or not in PLANNED/READY_TO_START status',
+        });
+      }
+
+      // Check for existing active journey
+      const activeJourney = await prisma.journey.findFirst({
+        where: {
+          userId,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (activeJourney) {
+        return res.status(400).json({
+          error: 'Active journey exists',
+          message: 'Please end your current journey before starting a new one',
+          activeJourneyId: activeJourney.id,
+        });
+      }
+
+      // Update journey to ACTIVE
+      const updateData = {
+        status: 'ACTIVE',
+        startTime: new Date(),
+      };
+
+      // Update start location if provided
+      if (latitude !== undefined && longitude !== undefined) {
+        updateData.startLatitude = latitude;
+        updateData.startLongitude = longitude;
+        updateData.routePoints = [{
+          lat: latitude,
+          lng: longitude,
+          timestamp: new Date().toISOString(),
+          speed: 0,
+        }];
+      }
+
+      const updatedJourney = await prisma.journey.update({
+        where: { id: journeyId },
+        data: updateData,
+      });
+
+      res.json({
+        success: true,
+        message: 'Journey started successfully',
+        journey: updatedJourney,
+      });
+    } catch (error) {
+      console.error('Start planned journey error:', error);
+      res.status(500).json({
+        error: 'Failed to start journey',
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
  * @route DELETE /api/journey/:journeyId/force-clear
  * @desc Force clear/delete a stuck journey (any status)
  * @access Private
@@ -273,7 +368,7 @@ router.get(
       .withMessage("Limit must be between 1 and 50"),
     query("status")
       .optional()
-      .isIn(["ACTIVE", "PAUSED", "COMPLETED", "CANCELLED", "PLANNED"])
+      .isIn(["ACTIVE", "PAUSED", "COMPLETED", "CANCELLED", "PLANNED", "READY_TO_START"])
       .withMessage("Invalid status"),
   ],
   handleValidationErrors,

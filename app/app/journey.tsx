@@ -573,8 +573,7 @@ export default function JourneyScreen(): React.JSX.Element {
             showsBuildings
             showsIndoors={false}
           >
-            {Platform.OS === "android" &&
-            (currentJourney?.endLocation || groupView?.end) &&
+            {(currentJourney?.endLocation || groupView?.end) &&
             GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
                 origin={
@@ -645,8 +644,7 @@ export default function JourneyScreen(): React.JSX.Element {
             showsBuildings
             showsIndoors={false}
           >
-            {Platform.OS === "android" &&
-            currentJourney?.endLocation &&
+            {currentJourney?.endLocation &&
             GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
                 origin={

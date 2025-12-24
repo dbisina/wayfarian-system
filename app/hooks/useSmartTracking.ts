@@ -12,16 +12,18 @@ const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
 const BUFFER_SIZE = 10; // Flush every 10 points
 const FLUSH_INTERVAL_MS = 30000; // Or every 30 seconds
 const STATIONARY_SPEED_THRESHOLD = 1.5; // m/s (approx 5.4 km/h)
+const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
+const MAX_REASONABLE_SPEED_MPS = 69.5; // 250 km/h in m/s - cap for realistic vehicle speeds
 
 // Calculate distance between two points (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
@@ -49,7 +51,7 @@ export function useSmartTracking(isTracking: boolean) {
   const [officialDistance, setOfficialDistance] = useState<number>(0); // in km
   const [movingTime, setMovingTime] = useState<number>(0); // in seconds
   const [maxSpeed, setMaxSpeed] = useState<number>(0); // km/h
-  
+
   // Refs for mutable state without re-renders
   const bufferRef = useRef<SmartLocation[]>([]);
   const lastFlushTimeRef = useRef<number>(Date.now());
@@ -57,7 +59,7 @@ export function useSmartTracking(isTracking: boolean) {
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const isMovingRef = useRef<boolean>(false);
   const lastMovementTimeRef = useRef<number>(0);
-  
+
   // Dwell Detection: Track when stationary for >5 seconds
   const stationaryStartTimeRef = useRef<number | null>(null);
   const DWELL_THRESHOLD_MS = 5000; // 5 seconds
@@ -71,22 +73,22 @@ export function useSmartTracking(isTracking: boolean) {
     const pointsToSnap = [...bufferRef.current];
     // Keep the last point in the buffer to maintain continuity for the next segment
     const lastPoint = pointsToSnap[pointsToSnap.length - 1];
-    bufferRef.current = [lastPoint]; 
+    bufferRef.current = [lastPoint];
     lastFlushTimeRef.current = Date.now();
 
     if (!GOOGLE_MAPS_API_KEY) {
       console.warn('[SmartTracking] No Google Maps API Key provided. Skipping snapToRoads.');
       // Fallback: just append raw points
       setOfficialSnappedPath(prev => [
-        ...prev, 
+        ...prev,
         ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
       ]);
-      
+
       // Calculate distance roughly
       let addedDist = 0;
       for (let i = 1; i < pointsToSnap.length; i++) {
         addedDist += calculateDistance(
-          pointsToSnap[i-1].latitude, pointsToSnap[i-1].longitude,
+          pointsToSnap[i - 1].latitude, pointsToSnap[i - 1].longitude,
           pointsToSnap[i].latitude, pointsToSnap[i].longitude
         );
       }
@@ -97,7 +99,7 @@ export function useSmartTracking(isTracking: boolean) {
     try {
       const path = pointsToSnap.map(p => `${p.latitude},${p.longitude}`).join('|');
       const url = `${ROADS_API_BASE_URL}?path=${path}&interpolate=true&key=${GOOGLE_MAPS_API_KEY}`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
 
@@ -113,7 +115,7 @@ export function useSmartTracking(isTracking: boolean) {
         let segmentDist = 0;
         for (let i = 1; i < newSnappedPoints.length; i++) {
           segmentDist += calculateDistance(
-            newSnappedPoints[i-1].latitude, newSnappedPoints[i-1].longitude,
+            newSnappedPoints[i - 1].latitude, newSnappedPoints[i - 1].longitude,
             newSnappedPoints[i].latitude, newSnappedPoints[i].longitude
           );
         }
@@ -138,37 +140,40 @@ export function useSmartTracking(isTracking: boolean) {
 
     // Calculate speed from GPS position changes (more accurate)
     let calculatedSpeedMps = 0;
-    
+
     // Add current point to recent points
     recentPointsRef.current.push({ lat: latitude, lng: longitude, timestamp: now });
-    
+
     // Remove points outside calculation window
     recentPointsRef.current = recentPointsRef.current.filter(
       p => (now - p.timestamp) <= SPEED_CALC_WINDOW_MS
     );
-    
+
     // Calculate speed from GPS if we have enough points
     if (recentPointsRef.current.length >= 2) {
       const oldest = recentPointsRef.current[0];
       const newest = recentPointsRef.current[recentPointsRef.current.length - 1];
       const timeDeltaSeconds = (newest.timestamp - oldest.timestamp) / 1000;
-      
-      if (timeDeltaSeconds > 0) {
+
+      // Only calculate speed if we have enough time elapsed to get accurate reading
+      // With very short time deltas, GPS jitter causes unrealistically high speeds
+      if (timeDeltaSeconds >= MIN_TIME_DELTA_FOR_SPEED_CALC) {
         const distanceKm = calculateDistance(oldest.lat, oldest.lng, newest.lat, newest.lng);
         const distanceMeters = distanceKm * 1000;
         calculatedSpeedMps = distanceMeters / timeDeltaSeconds;
-        
-        // Validate speed is reasonable (0-200 m/s)
-        if (calculatedSpeedMps < 0 || calculatedSpeedMps > 200) {
+
+        // Validate speed is reasonable - cap at MAX_REASONABLE_SPEED_MPS (250 km/h)
+        // This prevents GPS drift/jitter from causing insane top speed readings
+        if (calculatedSpeedMps < 0 || calculatedSpeedMps > MAX_REASONABLE_SPEED_MPS) {
           calculatedSpeedMps = 0;
         }
       }
     }
-    
+
     // Use GPS-calculated speed as primary, fall back to reported speed
     const reportedSpeedMps = speed || 0;
     let finalSpeedMps = 0;
-    
+
     if (calculatedSpeedMps > 0) {
       // GPS-calculated speed is more accurate
       finalSpeedMps = calculatedSpeedMps;
@@ -176,7 +181,7 @@ export function useSmartTracking(isTracking: boolean) {
       // Fall back to reported speed when GPS calculation unavailable
       finalSpeedMps = reportedSpeedMps;
     }
-    
+
     // 1. Dwell Detection Filter - Track stationary time (check BEFORE filtering)
     // Must check finalSpeedMps (unfiltered) to correctly detect speeds up to threshold
     if (finalSpeedMps < DWELL_SPEED_THRESHOLD_MPS) {
@@ -200,14 +205,14 @@ export function useSmartTracking(isTracking: boolean) {
         setIsDwelling(false);
       }
     }
-    
+
     // 2. Drift Filter (Local Physics)
     // If calculated speed is below threshold, force it to 0 to prevent "ghost movement"
     const filteredSpeed = finalSpeedMps < STATIONARY_SPEED_THRESHOLD ? 0 : finalSpeedMps;
-    
+
     // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
     const displaySpeed = isDwelling ? 0 : filteredSpeed;
-    
+
     const smartLoc: SmartLocation = {
       latitude,
       longitude,

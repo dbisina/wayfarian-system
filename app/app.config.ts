@@ -1,5 +1,6 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+import 'dotenv/config';
 const baseConfig = require('./app.json');
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -12,6 +13,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const expoConfig: ExpoConfig = {
     ...baseConfig.expo,
     ...config,
+    plugins: [
+      ...(baseConfig.expo?.plugins ?? []),
+      ...(config?.plugins ?? []),
+      // Note: react-native-maps config plugin not available in v1.20.1
+      // API keys are configured via ios.config.googleMapsApiKey and android.config.googleMaps.apiKey
+    ],
     extra: {
       ...baseConfig.expo?.extra,
       ...config?.extra,
@@ -25,7 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     config: {
       ...(baseConfig.expo?.ios?.config ?? {}),
       ...(config?.ios?.config ?? {}),
-      googleMapsApiKey: googleMapsKey ?? '',
+      // Using Apple Maps (MapKit) on iOS - no Google Maps API key needed
     },
   };
 

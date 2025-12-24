@@ -1,0 +1,43 @@
+# EAS Build ignore file
+# This overrides .gitignore for EAS builds
+# Files listed here will be EXCLUDED from the build
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native (we let EAS generate these)
+.kotlin/
+*.orig.*
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# typescript
+*.tsbuildinfo
+
+app-example
+
+# generated native folders (EAS generates these)
+/ios
+/android
+
+.npm-cache/
+
+# NOTE: We intentionally DO NOT ignore:
+# - .env (needed for EXPO_PUBLIC_* variables)
+# - google-services.json (needed for Android Google Sign-In)
+# - GoogleService-Info.plist (needed for iOS Google Sign-In)
+# - *.jks, *.p8, *.p12, *.key, *.mobileprovision (EAS manages these)

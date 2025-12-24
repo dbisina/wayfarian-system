@@ -99,7 +99,7 @@ router.get(
       .withMessage('Limit must be between 1 and 100'),
     query('status')
       .optional()
-      .isIn(['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'])
+      .isIn(['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED', 'PLANNED', 'READY_TO_START'])
       .withMessage('Invalid status'),
     query('vehicle')
       .optional()
@@ -668,6 +668,78 @@ router.delete('/profile-picture', async (req, res) => {
     console.error('Remove profile picture error:', error);
     res.status(500).json({
       error: 'Failed to remove profile picture',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route POST /api/user/push-token
+ * @desc Register Expo push token for notifications
+ * @access Private
+ */
+router.post(
+  '/push-token',
+  [
+    body('token')
+      .notEmpty()
+      .withMessage('Push token is required')
+      .matches(/^ExponentPushToken\[.+\]$/)
+      .withMessage('Invalid Expo push token format'),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const { token } = req.body;
+
+      // Update user's push token
+      await prisma.user.update({
+        where: { id: userId },
+        data: { expoPushToken: token },
+      });
+
+      console.log(`[PushToken] Registered push token for user ${userId}`);
+
+      res.json({
+        success: true,
+        message: 'Push token registered successfully',
+      });
+    } catch (error) {
+      console.error('Register push token error:', error);
+      res.status(500).json({
+        error: 'Failed to register push token',
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route DELETE /api/user/push-token
+ * @desc Remove Expo push token (for logout)
+ * @access Private
+ */
+router.delete('/push-token', async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Clear user's push token
+    await prisma.user.update({
+      where: { id: userId },
+      data: { expoPushToken: null },
+    });
+
+    console.log(`[PushToken] Removed push token for user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Push token removed successfully',
+    });
+  } catch (error) {
+    console.error('Remove push token error:', error);
+    res.status(500).json({
+      error: 'Failed to remove push token',
       message: error.message,
     });
   }

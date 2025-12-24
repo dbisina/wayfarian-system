@@ -251,7 +251,11 @@ const updateJourneyProgress = async (req, res) => {
     const totalDistance = calculateDistance(updatedRoutePoints);
     const totalTime = Math.floor((new Date() - new Date(journey.startTime)) / 1000);
     const avgSpeed = calculateAverageSpeed(totalDistance, totalTime);
-    const topSpeed = Math.max(journey.topSpeed, speed || 0);
+    
+    // Validate speed before updating topSpeed - cap at 250 km/h to prevent GPS drift issues
+    const MAX_REASONABLE_SPEED_KMH = 250;
+    const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
+    const topSpeed = Math.max(journey.topSpeed, validatedSpeed);
     
     // Update journey
     const updatedJourney = await prisma.journey.update({

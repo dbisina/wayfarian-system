@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '@/components/ui/Header';
 import { apiRequest } from '../services/api';
@@ -13,32 +13,51 @@ interface FutureRide {
   date: string;
   location: string;
   creatorName?: string;
+  status: 'PLANNED' | 'READY_TO_START';
 }
 
 export default function FutureRidesScreen() {
   const [rides, setRides] = useState<FutureRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [startingJourneyId, setStartingJourneyId] = useState<string | null>(null);
+  const router = useRouter();
 
   const fetchRides = async () => {
     try {
-      // Fetch planned solo journeys
-      const response = await apiRequest('/journey/history?status=PLANNED', { method: 'GET' });
-      if (response.success && Array.isArray(response.journeys)) {
-        // Map journey history format to FutureRide format
-        const mappedRides = response.journeys.map((j: any) => ({
-          id: j.id,
-          title: j.title || 'Planned Ride',
-          groupName: j.group?.name || 'Solo Ride',
-          groupId: j.groupId,
-          date: j.startTime,
-          location: (j.startLatitude && j.startLongitude)
-            ? `${j.startLatitude.toFixed(3)}, ${j.startLongitude.toFixed(3)}`
-            : 'Location TBD',
-          creatorName: 'You' // Since these are my planned rides
-        }));
-        setRides(mappedRides);
-      }
+      // Fetch both PLANNED and READY_TO_START journeys
+      const [plannedResponse, readyResponse] = await Promise.all([
+        apiRequest('/journey/history?status=PLANNED', { method: 'GET' }),
+        apiRequest('/journey/history?status=READY_TO_START', { method: 'GET' }),
+      ]);
+
+      const allJourneys = [
+        ...(readyResponse.success && Array.isArray(readyResponse.journeys) ? readyResponse.journeys : []),
+        ...(plannedResponse.success && Array.isArray(plannedResponse.journeys) ? plannedResponse.journeys : []),
+      ];
+
+      // Map journey history format to FutureRide format
+      const mappedRides = allJourneys.map((j: any) => ({
+        id: j.id,
+        title: j.title || 'Planned Ride',
+        groupName: j.group?.name || 'Solo Ride',
+        groupId: j.groupId,
+        date: j.startTime,
+        location: (j.startLatitude && j.startLongitude)
+          ? `${j.startLatitude.toFixed(3)}, ${j.startLongitude.toFixed(3)}`
+          : 'Location TBD',
+        creatorName: 'You',
+        status: j.status,
+      }));
+      
+      // Sort by date, with READY_TO_START first
+      mappedRides.sort((a, b) => {
+        if (a.status === 'READY_TO_START' && b.status !== 'READY_TO_START') return -1;
+        if (a.status !== 'READY_TO_START' && b.status === 'READY_TO_START') return 1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
+      
+      setRides(mappedRides);
     } catch (error: any) {
       console.warn('Failed to fetch future rides', error);
       Alert.alert('Error', 'Failed to load upcoming rides');
@@ -57,26 +76,105 @@ export default function FutureRidesScreen() {
     fetchRides();
   };
 
-  const renderItem = ({ item }: { item: FutureRide }) => (
-    <TouchableOpacity style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.groupName}>{item.groupName}</Text>
-      </View>
-      <View style={styles.cardDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="calendar" size={16} color="#666" />
-          <Text style={styles.detailText}>
-            {new Date(item.date).toLocaleDateString()} at {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
+  const handleStartJourney = async (journeyId: string) => {
+    try {
+      setStartingJourneyId(journeyId);
+      
+      // Update journey status to ACTIVE
+      const response = await apiRequest(`/journey/${journeyId}/start`, {
+        method: 'POST',
+      });
+
+      if (response.success) {
+        // Navigate to active journey screen
+        router.push('/journey');
+      } else {
+        Alert.alert('Error', response.message || 'Failed to start journey');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to start journey');
+    } finally {
+      setStartingJourneyId(null);
+    }
+  };
+
+  const getTimeUntil = (date: string): string => {
+    const now = new Date();
+    const target = new Date(date);
+    const diffMs = target.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return 'Now';
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} left`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} left`;
+    
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    return `${minutes} min${minutes > 1 ? 's' : ''} left`;
+  };
+
+  const renderItem = ({ item }: { item: FutureRide }) => {
+    const isReady = item.status === 'READY_TO_START';
+    const isStarting = startingJourneyId === item.id;
+    
+    return (
+      <TouchableOpacity 
+        style={[styles.card, isReady && styles.readyCard]}
+        onPress={() => isReady && handleStartJourney(item.id)}
+        disabled={isStarting}
+      >
+        {isReady && (
+          <View style={styles.readyBadge}>
+            <Ionicons name="flag" size={12} color="#fff" />
+            <Text style={styles.readyBadgeText}>Ready to Start!</Text>
+          </View>
+        )}
+        
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.title}</Text>
+          <Text style={styles.groupName}>{item.groupName}</Text>
         </View>
-        <View style={styles.detailRow}>
-          <Ionicons name="location" size={16} color="#666" />
-          <Text style={styles.detailText}>{item.location}</Text>
+        
+        <View style={styles.cardDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons name="calendar" size={16} color={isReady ? "#059669" : "#666"} />
+            <Text style={[styles.detailText, isReady && styles.readyText]}>
+              {new Date(item.date).toLocaleDateString()} at {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="location" size={16} color="#666" />
+            <Text style={styles.detailText}>{item.location}</Text>
+          </View>
+          {!isReady && (
+            <View style={styles.detailRow}>
+              <Ionicons name="time" size={16} color="#6366f1" />
+              <Text style={styles.countdownText}>{getTimeUntil(item.date)}</Text>
+            </View>
+          )}
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+        
+        {isReady && (
+          <TouchableOpacity 
+            style={styles.startButton}
+            onPress={() => handleStartJourney(item.id)}
+            disabled={isStarting}
+          >
+            {isStarting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="play" size={18} color="#fff" />
+                <Text style={styles.startButtonText}>Start Journey</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -97,7 +195,9 @@ export default function FutureRidesScreen() {
           onRefresh={handleRefresh}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
+              <Ionicons name="calendar-outline" size={64} color="#d1d5db" />
               <Text style={styles.emptyText}>No upcoming rides scheduled.</Text>
+              <Text style={styles.emptySubtext}>Plan a journey to see it here!</Text>
             </View>
           }
         />
@@ -109,7 +209,7 @@ export default function FutureRidesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f9fafb',
   },
   loadingContainer: {
     flex: 1,
@@ -118,10 +218,11 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+    paddingBottom: 32,
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
@@ -130,7 +231,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: '#e5e7eb',
+  },
+  readyCard: {
+    borderColor: '#059669',
+    borderWidth: 2,
+    backgroundColor: '#ecfdf5',
+  },
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    gap: 4,
+  },
+  readyBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   cardHeader: {
     marginBottom: 12,
@@ -158,12 +280,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4b5563',
   },
-  emptyContainer: {
-    padding: 24,
+  readyText: {
+    color: '#059669',
+    fontWeight: '600',
+  },
+  countdownText: {
+    fontSize: 14,
+    color: '#6366f1',
+    fontWeight: '600',
+  },
+  startButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 8,
+  },
+  startButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptyContainer: {
+    padding: 48,
+    alignItems: 'center',
+    gap: 12,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#6b7280',
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
   },
 });
+

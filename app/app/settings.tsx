@@ -22,7 +22,7 @@ import { LANGUAGES } from '../i18n';
 
 export default function SettingsScreen() {
   const { i18n, t } = useTranslation();
-  const { logout } = useAuth();
+  const { logout, deleteAccount } = useAuth();
   const {
     notificationsEnabled,
     units,
@@ -35,9 +35,27 @@ export default function SettingsScreen() {
   } = useSettings();
   const [showUnitsModal, setShowUnitsModal] = React.useState(false);
   const [showLanguageModal, setShowLanguageModal] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
   
   // Get current language display name
   const currentLanguage = LANGUAGES.find(lang => lang.code === i18n.language) || LANGUAGES[0];
+
+  // Handle account deletion with proper API call
+  const handleDeleteAccount = async () => {
+    try {
+      setIsDeleting(true);
+      await deleteAccount();
+      // After successful deletion, navigate to login
+      router.replace('/(auth)/login');
+    } catch (error: any) {
+      Alert.alert(
+        'Deletion Failed',
+        error.message || 'Failed to delete account. Please try again later.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Cross-platform option pickers
   const pickOption = (
@@ -124,8 +142,6 @@ export default function SettingsScreen() {
             onPress={() => router.push('/edit-profile')}
           />
 
-
-
           <SettingItem
             title="Vehicle Type"
             subtitle={`Current: ${vehicle}`}
@@ -133,6 +149,47 @@ export default function SettingsScreen() {
               pickOption('Select vehicle', ['car', 'bike', 'scooter'], ['car','bike','scooter'].indexOf(vehicle), (i) => setVehicle(['car','bike','scooter'][i] as Vehicle))
             }
           />
+
+          <TouchableOpacity 
+            style={styles.settingItem} 
+            disabled={isDeleting}
+            onPress={() => {
+              Alert.alert(
+                'Delete Account',
+                'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently removed.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Delete', 
+                    style: 'destructive',
+                    onPress: () => {
+                      // Second confirmation for safety
+                      Alert.alert(
+                        'Final Confirmation',
+                        'This will permanently delete your account, all your journeys, photos, and group memberships. This cannot be undone.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { 
+                            text: 'Delete Forever', 
+                            style: 'destructive',
+                            onPress: handleDeleteAccount
+                          },
+                        ]
+                      );
+                    }
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingContent}>
+              <Text style={styles.deleteAccountTitle}>
+                {isDeleting ? 'Deleting...' : 'Delete Account'}
+              </Text>
+              <Text style={styles.deleteAccountSubtitle}>Permanently remove your account and data</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#DC2626" />
+          </TouchableOpacity>
         </View>
 
         {/* App Preferences */}
@@ -456,6 +513,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
+    fontFamily: 'Inter',
+  },
+  deleteAccountTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#DC2626',
+    fontFamily: 'Inter',
+    marginBottom: 4,
+  },
+  deleteAccountSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#F87171',
     fontFamily: 'Inter',
   },
 });

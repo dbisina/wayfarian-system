@@ -110,7 +110,10 @@ export default function HomeScreen(): React.JSX.Element {
             <Text style={styles.userStats}>
               {convertDistance(normalizeDistance(dashboardData?.user?.totalDistance || 0))} |{" "}
               {formatTime(dashboardData?.user?.totalTime || 0)} |{" "}
-              {achievements.filter((a) => a.unlocked).length} Badges
+              {achievements.filter((a) => 
+                a.unlocked === true || 
+                (a.tiers && Array.isArray(a.tiers) && a.tiers.some(t => t.unlocked === true))
+              ).length} Badges
             </Text>
           </View>
         </TouchableOpacity>
