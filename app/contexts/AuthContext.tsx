@@ -711,7 +711,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       let errorMessage = error?.message || 'Google sign-in failed. Please try again.';
-      if (error.code === 'auth/account-exists-with-different-credential') {
+      
+      // Handle Google Play Services unavailable (Huawei/HMS devices)
+      if (
+        error.code === 'PLAY_SERVICES_NOT_AVAILABLE' ||
+        error.code === 1 ||
+        error.message?.includes('PLAY_SERVICES_NOT_AVAILABLE') ||
+        error.message?.includes('Google Play Services') ||
+        error.message?.includes('play services')
+      ) {
+        errorMessage = 'Google Sign-In is not available on this device. Please use email and password to sign in.';
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
         errorMessage = 'An account already exists with this email address using a different sign-in method.';
       } else if (error.code === 'auth/invalid-credential') {
         errorMessage = 'The credential received is malformed or has expired.';

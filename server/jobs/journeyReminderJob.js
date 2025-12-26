@@ -3,7 +3,7 @@
 
 const cron = require('node-cron');
 const prisma = require('../prisma/client');
-const logger = require('../utils/logger');
+const logger = require('../services/Logger');
 const { sendPushNotification, createReminderMessage } = require('../services/expoPushService');
 
 // Reminder windows in hours before journey start

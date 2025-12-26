@@ -1,9 +1,9 @@
-import { Redirect, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function AuthLayout() {
-  const { isAuthenticated, hasCompletedOnboarding, loading } = useAuth();
+  const { hasCompletedOnboarding, loading } = useAuth();
 
   if (loading) {
     return (
@@ -13,9 +13,8 @@ export default function AuthLayout() {
     );
   }
 
-  if (isAuthenticated) {
-    return <Redirect href="/(tabs)" />;
-  }
+  // Note: Root _layout.tsx handles the auth → tabs switch
+  // so we don't need to redirect here (that caused snap-back flicker)
 
   const initialRouteName = hasCompletedOnboarding ? 'login' : 'index';
 
@@ -29,3 +28,4 @@ export default function AuthLayout() {
     </Stack>
   );
 }
+

@@ -1,7 +1,7 @@
 // server/services/expoPushService.js
 // Service for sending push notifications via Expo's push API
 
-const logger = require('../utils/logger');
+const logger = require('./Logger');
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
