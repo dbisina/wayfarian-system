@@ -163,7 +163,7 @@ export const apiRequest = async (
       headers,
     };
 
-    const shouldAttachBody = payload !== undefined && payload !== null && (method === 'POST' || method === 'PUT' || method === 'PATCH');
+    const shouldAttachBody = payload !== undefined && payload !== null && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE');
 
     if (shouldAttachBody) {
       if (payload instanceof FormData) {
