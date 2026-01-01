@@ -314,6 +314,74 @@ router.delete(
 );
 
 /**
+ * @route DELETE /api/journey/:journeyId
+ * @desc Delete a journey (only completed, cancelled, or planned journeys)
+ * @access Private
+ */
+router.delete(
+  "/:journeyId",
+  [
+    param("journeyId").isString().withMessage("Invalid journey ID"),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { journeyId } = req.params;
+      const userId = req.user.id;
+
+      // Find the journey
+      const journey = await prisma.journey.findFirst({
+        where: {
+          id: journeyId,
+          userId,
+        },
+        include: {
+          photos: true,
+        },
+      });
+
+      if (!journey) {
+        return res.status(404).json({
+          error: 'Journey not found',
+          message: 'Journey not found or does not belong to you',
+        });
+      }
+
+      // Prevent deletion of active journeys
+      if (journey.status === 'ACTIVE') {
+        return res.status(400).json({
+          error: 'Cannot delete active journey',
+          message: 'Please end the journey first before deleting it',
+        });
+      }
+
+      // Delete photos first (to avoid FK constraints)
+      if (journey.photos && journey.photos.length > 0) {
+        await prisma.journeyPhoto.deleteMany({
+          where: { journeyId },
+        });
+      }
+
+      // Delete the journey
+      await prisma.journey.delete({
+        where: { id: journeyId },
+      });
+
+      res.json({
+        success: true,
+        message: 'Journey deleted successfully',
+      });
+    } catch (error) {
+      console.error('Delete journey error:', error);
+      res.status(500).json({
+        error: 'Failed to delete journey',
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
  * @route PATCH /api/journey/:journeyId/preferences
  * @desc Update journey visibility and custom title
  * @access Private

@@ -12,8 +12,8 @@ export const StatsCalculator = {
   calculateAverageSpeed: (distanceKm: number, movingTimeSeconds: number): number => {
     if (!movingTimeSeconds || movingTimeSeconds <= 0) return 0;
     const avgSpeed = (distanceKm / movingTimeSeconds) * 3600;
-    // Cap at 250 km/h to prevent unrealistic values if time is somehow too small
-    return Math.min(avgSpeed, 250);
+    // Return actual calculated speed - no artificial caps for accuracy
+    return avgSpeed;
   },
 
   /**

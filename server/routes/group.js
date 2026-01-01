@@ -160,6 +160,108 @@ router.put(
 );
 
 /**
+ * @route DELETE /api/group/:groupId
+ * @desc Delete a group (Creator only)
+ * @access Private
+ */
+router.delete(
+  '/:groupId',
+  [
+    param('groupId')
+      .isString()
+      .isLength({ min: 20, max: 30 })
+      .withMessage('Invalid group ID'),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      const userId = req.user.id;
+
+      // Check if group exists and user is the creator
+      const group = await prisma.group.findUnique({
+        where: { id: groupId },
+        include: {
+          members: true,
+          _count: { select: { journeys: true } }
+        }
+      });
+
+      if (!group) {
+        return res.status(404).json({
+          error: 'Group not found',
+          message: 'The group does not exist'
+        });
+      }
+
+      if (group.creatorId !== userId) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Only the group creator can delete this group'
+        });
+      }
+
+      // Check for active group journeys
+      const activeJourney = await prisma.groupJourney.findFirst({
+        where: {
+          groupId,
+          status: 'ACTIVE'
+        }
+      });
+
+      if (activeJourney) {
+        return res.status(400).json({
+          error: 'Cannot delete group',
+          message: 'Please end the active group journey before deleting the group'
+        });
+      }
+
+      // Delete all related data in order
+      // 1. Delete ride events for all group journeys
+      await prisma.rideEvent.deleteMany({
+        where: {
+          groupJourney: { groupId }
+        }
+      });
+
+      // 2. Delete journey instances for all group journeys  
+      await prisma.journeyInstance.deleteMany({
+        where: {
+          groupJourney: { groupId }
+        }
+      });
+
+      // 3. Delete all group journeys
+      await prisma.groupJourney.deleteMany({
+        where: { groupId }
+      });
+
+      // 4. Delete all group members
+      await prisma.groupMember.deleteMany({
+        where: { groupId }
+      });
+
+      // 5. Delete the group
+      await prisma.group.delete({
+        where: { id: groupId }
+      });
+
+      res.json({
+        success: true,
+        message: 'Group deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Delete group error:', error);
+      res.status(500).json({
+        error: 'Failed to delete group',
+        message: error.message
+      });
+    }
+  }
+);
+
+/**
  * @route DELETE /api/group/:groupId/leave
  * @desc Leave a group
  * @access Private

@@ -13,6 +13,7 @@ import {
   Platform,
   RefreshControl,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -79,6 +80,13 @@ export default function GroupDetailScreen() {
   const [isStartingJourney, setIsStartingJourney] = useState(false);
   const [isStartingRiding, setIsStartingRiding] = useState(false);
   const lastManualRefreshRef = useRef<number>(0);
+  
+  // Edit/Delete group state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingGroup, setSavingGroup] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Load persisted journey state on mount
@@ -624,6 +632,69 @@ export default function GroupDetailScreen() {
     setPendingCoverUri(null);
   };
 
+  // Open edit modal with current values
+  const handleEditGroup = () => {
+    if (!group) return;
+    setEditName(group.name);
+    setEditDescription(group.description || '');
+    setShowOptionsMenu(false);
+    setShowEditModal(true);
+  };
+
+  // Save group changes
+  const handleSaveGroup = async () => {
+    if (!group || !editName.trim()) {
+      Alert.alert('Error', 'Group name is required');
+      return;
+    }
+    setSavingGroup(true);
+    try {
+      await groupAPI.updateGroup(group.id, {
+        name: editName.trim(),
+        description: editDescription.trim() || undefined,
+      });
+      await loadGroupData(true);
+      setShowEditModal(false);
+      Alert.alert('Success', 'Group updated successfully');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to update group');
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  // Delete group
+  const handleDeleteGroup = () => {
+    if (!group) return;
+    setShowOptionsMenu(false);
+    
+    if (activeGroupJourneyId) {
+      Alert.alert('Cannot Delete', 'Please end the active group journey before deleting the group.');
+      return;
+    }
+    
+    Alert.alert(
+      'Delete Group',
+      `Are you sure you want to permanently delete "${group.name}"? This will remove all group journeys and data. This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await groupAPI.deleteGroup(group.id);
+              Alert.alert('Deleted', 'Group has been deleted');
+              router.back();
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Failed to delete group');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const confirmCoverUpload = async () => {
     if (!group || !pendingCoverUri) return;
     setUploadingCover(true);
@@ -743,6 +814,11 @@ export default function GroupDetailScreen() {
                     <MaterialIcons name="share" size={24} color="#FFFFFF" />
                   </TouchableOpacity>
                 </>
+              )}
+              {isCreator && (
+                <TouchableOpacity style={styles.optionsButton} onPress={() => setShowOptionsMenu(true)}>
+                  <MaterialIcons name="more-vert" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
               )}
             </View>
           </LinearGradient>
@@ -965,6 +1041,88 @@ export default function GroupDetailScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={[styles.coverModalButtonText, { color: '#FFFFFF' }]}>Use photo</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Options Menu Modal */}
+      <Modal
+        visible={showOptionsMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOptionsMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.optionsModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowOptionsMenu(false)}
+        >
+          <View style={styles.optionsMenu}>
+            <TouchableOpacity style={styles.optionItem} onPress={handleEditGroup}>
+              <MaterialIcons name="edit" size={20} color="#111827" />
+              <Text style={styles.optionText}>Edit Group</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.optionItem} onPress={handleUploadCoverPhoto}>
+              <MaterialIcons name="photo-camera" size={20} color="#111827" />
+              <Text style={styles.optionText}>Change Cover</Text>
+            </TouchableOpacity>
+            <View style={styles.optionDivider} />
+            <TouchableOpacity style={styles.optionItem} onPress={handleDeleteGroup}>
+              <MaterialIcons name="delete" size={20} color="#E53935" />
+              <Text style={[styles.optionText, { color: '#E53935' }]}>Delete Group</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Edit Group Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.editModalOverlay}>
+          <View style={styles.editModal}>
+            <Text style={styles.editModalTitle}>Edit Group</Text>
+            <Text style={styles.editModalLabel}>Group Name</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Enter group name"
+              placeholderTextColor="#9CA3AF"
+              maxLength={50}
+            />
+            <Text style={styles.editModalLabel}>Description (optional)</Text>
+            <TextInput
+              style={[styles.editInput, { height: 80, textAlignVertical: 'top' }]}
+              value={editDescription}
+              onChangeText={setEditDescription}
+              placeholder="Enter description"
+              placeholderTextColor="#9CA3AF"
+              maxLength={200}
+              multiline
+            />
+            <View style={styles.editModalActions}>
+              <TouchableOpacity
+                style={styles.editCancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.editCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.editSaveButton}
+                onPress={handleSaveGroup}
+                disabled={savingGroup}
+              >
+                {savingGroup ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.editSaveText}>Save</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1495,5 +1653,118 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Space Grotesk',
     color: '#0F172A',
+  },
+  optionsButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  optionsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsMenu: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 8,
+    width: 220,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '500',
+    fontFamily: 'Space Grotesk',
+  },
+  optionDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 4,
+  },
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  editModal: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+  },
+  editModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  editModalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 8,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+    marginBottom: 16,
+    fontFamily: 'Space Grotesk',
+  },
+  editModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  editCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    fontFamily: 'Space Grotesk',
+  },
+  editSaveButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+  },
+  editSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    fontFamily: 'Space Grotesk',
   },
 });

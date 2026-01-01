@@ -12,7 +12,7 @@ const MIN_MOVE_METERS = 10; // minimum movement to count towards distance
 const STATIONARY_SPEED_THRESHOLD_MPS = 1.2; // below this m/s, treat as stationary (increased to ~4.3 km/h to reduce drift)
 const MAX_ACCURACY_THRESHOLD = 100; // Ignore points with accuracy worse than this
 const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
-const MAX_REASONABLE_SPEED_MPS = 69.5; // 250 km/h in m/s - cap for realistic vehicle speeds
+const MAX_REASONABLE_SPEED_MPS = 139; // 500 km/h in m/s - only filter extreme GPS jitter outliers
 
 export interface LocationPoint {
   latitude: number;
@@ -318,16 +318,13 @@ class LocationService {
       }
     }
 
-    // Use GPS-calculated speed if available and reasonable, otherwise fall back to reported speed
-    // GPS-calculated speed is often more accurate than device-reported speed
+    // Use GPS-calculated speed as primary source - no fallback guessing for accuracy
+    // Only use device-reported speed when GPS accuracy is excellent (<15m)
     const reportedSpeedMps = newPoint.speed || 0;
-    let finalSpeedMps = 0;
+    let finalSpeedMps = calculatedSpeedMps;
 
-    if (calculatedSpeedMps > 0) {
-      // Use GPS-calculated speed as primary source
-      finalSpeedMps = calculatedSpeedMps;
-    } else if (reportedSpeedMps > 0 && reportedSpeedMps < 200) {
-      // Fall back to reported speed if GPS calculation unavailable
+    // Only trust device speed if GPS calculation unavailable AND accuracy is excellent
+    if (finalSpeedMps <= 0 && newPoint.accuracy && newPoint.accuracy < 15 && reportedSpeedMps > 0) {
       finalSpeedMps = reportedSpeedMps;
     }
 
@@ -388,8 +385,8 @@ class LocationService {
     // Calculate average speed based on moving time only
     if (this.stats.movingTime > 0) {
       const calculatedAvgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600; // km/h
-      // Cap at 250 km/h to prevent unrealistic values
-      this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250);
+      // No artificial caps - return actual calculated average
+      this.stats.avgSpeed = calculatedAvgSpeed;
     } else {
       this.stats.avgSpeed = 0;
     }
@@ -541,15 +538,15 @@ class LocationService {
         const additionalMovingMs = now - this.lastMovementTime;
         const currentMovingTime = this.stats.movingTime + Math.floor(additionalMovingMs / 1000);
 
-        // Calculate avg speed based on moving time
+        // Calculate avg speed based on moving time - no artificial caps
         if (currentMovingTime > 0) {
           const calculatedAvgSpeed = (this.stats.totalDistance / currentMovingTime) * 3600;
-          this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250); // Cap at 250 km/h
+          this.stats.avgSpeed = calculatedAvgSpeed;
         }
       } else if (this.stats.movingTime > 0) {
-        // Not currently moving, use stored moving time
+        // Not currently moving, use stored moving time - no artificial caps
         const calculatedAvgSpeed = (this.stats.totalDistance / this.stats.movingTime) * 3600;
-        this.stats.avgSpeed = Math.min(calculatedAvgSpeed, 250); // Cap at 250 km/h
+        this.stats.avgSpeed = calculatedAvgSpeed;
       }
     }
     return { ...this.stats };

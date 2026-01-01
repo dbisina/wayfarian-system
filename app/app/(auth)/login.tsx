@@ -190,6 +190,9 @@ export default function LoginScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   returnKeyType="next"
+                  textContentType="emailAddress"
+                  autoComplete="email"
+                  enablesReturnKeyAutomatically
                 />
               </View>
             </View>
@@ -206,6 +209,9 @@ export default function LoginScreen() {
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   returnKeyType="done"
+                  textContentType="password"
+                  autoComplete="current-password"
+                  enablesReturnKeyAutomatically
                 />
                 <TouchableOpacity
                   style={styles.passwordToggle}

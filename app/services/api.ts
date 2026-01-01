@@ -498,6 +498,10 @@ export const journeyAPI = {
     const queryString = new URLSearchParams(params as any).toString();
     return apiRequest(`/journey/history?${queryString}`, 'GET');
   },
+
+  deleteJourney: async (journeyId: string) => {
+    return apiRequest(`/journey/${journeyId}`, 'DELETE');
+  },
 };
 
 // Group API
@@ -572,6 +576,19 @@ export const groupAPI = {
     // Endpoint not provided on server; no-op fallback
     console.warn('updateGroupMemberLocation endpoint not available on server');
     return { success: false };
+  },
+
+  updateGroup: async (groupId: string, data: {
+    name?: string;
+    description?: string;
+    maxMembers?: number;
+    isPrivate?: boolean;
+  }) => {
+    return apiRequest(`/group/${groupId}`, 'PUT', data);
+  },
+
+  deleteGroup: async (groupId: string) => {
+    return apiRequest(`/group/${groupId}`, 'DELETE');
   },
 
   leaveGroup: async (groupId: string) => {

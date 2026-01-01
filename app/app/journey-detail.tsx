@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,13 @@ import {
   Modal,
   FlatList,
   StatusBar,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { getCurrentApiUrl, journeyAPI } from '../services/api';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { getCurrentApiUrl, journeyAPI, galleryAPI } from '../services/api';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -32,9 +36,10 @@ interface JourneyPhoto {
 interface JourneyDetail {
   id: string;
   title: string;
+  customTitle?: string | null;
   startTime: string;
   endTime?: string;
-  status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'PLANNED';
+  status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'PLANNED' | 'CANCELLED';
   totalDistance: number;
   totalTime: number;
   avgSpeed: number;
@@ -45,6 +50,7 @@ interface JourneyDetail {
   endLatitude?: number;
   endLongitude?: number;
   photos?: JourneyPhoto[];
+  isHidden?: boolean;
 }
 
 const JourneyDetailScreen = (): React.JSX.Element => {
@@ -59,9 +65,15 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const [liveTime, setLiveTime] = useState<number | null>(null);
   const { convertDistance, convertSpeed } = useSettings();
 
+  // Edit state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
   const normalizeDistance = (value: number) => {
     if (!value) return 0;
-    // API returns distance in kilometers, use as-is
     return value;
   };
 
@@ -88,41 +100,39 @@ const JourneyDetailScreen = (): React.JSX.Element => {
     });
   };
 
-  useEffect(() => {
-    const fetchJourneyDetail = async () => {
-      if (!journeyId) {
-        setError('No journey ID provided');
-        setLoading(false);
-        return;
+  const fetchJourneyDetail = useCallback(async () => {
+    if (!journeyId) {
+      setError('No journey ID provided');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await journeyAPI.getJourney(journeyId);
+
+      if (!data?.journey) {
+        throw new Error('Invalid response format - missing journey data');
       }
 
-      try {
-        setLoading(true);
-        setError(null);
-        const apiBase = getCurrentApiUrl();
-        console.log('Fetching journey from:', `${apiBase}/journey/${journeyId}`);
-
-        const data = await journeyAPI.getJourney(journeyId);
-
-        if (!data?.journey) {
-          throw new Error('Invalid response format - missing journey data');
-        }
-
-        setJourney(data.journey);
-      } catch (err: any) {
-        console.error('Error fetching journey details:', err);
-        if (err?.status === 401) {
-          setError('Session expired. Please sign in again.');
-        } else {
+      setJourney(data.journey);
+      setEditTitle(data.journey.customTitle || data.journey.title || '');
+    } catch (err: any) {
+      console.error('Error fetching journey details:', err);
+      if (err?.status === 401) {
+        setError('Session expired. Please sign in again.');
+      } else {
         setError(err.message || 'Failed to load journey details');
-        }
-      } finally {
-        setLoading(false);
       }
-    };
-
-    fetchJourneyDetail();
+    } finally {
+      setLoading(false);
+    }
   }, [journeyId]);
+
+  useEffect(() => {
+    fetchJourneyDetail();
+  }, [fetchJourneyDetail]);
 
   // Live timer for active journeys
   useEffect(() => {
@@ -137,7 +147,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
       setLiveTime(elapsed);
     };
 
-    updateTimer(); // Update immediately
+    updateTimer();
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
@@ -149,6 +159,151 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
   const closePhotoViewer = () => {
     setSelectedPhotoIndex(null);
+  };
+
+  // Edit journey title
+  const handleSaveTitle = async () => {
+    if (!journey) return;
+    
+    setSaving(true);
+    try {
+      await journeyAPI.updateJourneyPreferences(journey.id, {
+        customTitle: editTitle.trim() || null,
+      });
+      
+      setJourney(prev => prev ? { ...prev, customTitle: editTitle.trim() || null, title: editTitle.trim() || prev.title } : null);
+      setShowEditModal(false);
+      Alert.alert('Success', 'Journey title updated');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update title');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Delete journey
+  const handleDeleteJourney = () => {
+    if (!journey) return;
+
+    if (journey.status === 'ACTIVE') {
+      Alert.alert('Cannot Delete', 'Please end the journey first before deleting it.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Journey',
+      'Are you sure you want to permanently delete this journey? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await journeyAPI.deleteJourney(journey.id);
+              Alert.alert('Deleted', 'Journey has been deleted');
+              router.back();
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete journey');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Add photos to completed journey
+  const handleAddPhotos = async () => {
+    if (!journey) return;
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Gallery permission is required to add photos');
+        return;
+      }
+
+      setShowOptionsMenu(false);
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 10,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setUploadingPhoto(true);
+        
+        let successCount = 0;
+        for (const asset of result.assets) {
+          try {
+            await galleryAPI.uploadPhotoWithProgress(
+              asset.uri,
+              journey.id,
+              () => {} // progress callback
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Failed to upload photo:', err);
+          }
+        }
+
+        if (successCount > 0) {
+          Alert.alert('Success', `${successCount} photo${successCount > 1 ? 's' : ''} added to journey`);
+          // Refresh journey to show new photos
+          await fetchJourneyDetail();
+        } else {
+          Alert.alert('Error', 'Failed to upload photos');
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add photos');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  // Take new photo and add to journey
+  const handleTakePhoto = async () => {
+    if (!journey) return;
+
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos');
+        return;
+      }
+
+      setShowOptionsMenu(false);
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setUploadingPhoto(true);
+        
+        try {
+          await galleryAPI.uploadPhotoWithProgress(
+            result.assets[0].uri,
+            journey.id,
+            () => {}
+          );
+          Alert.alert('Success', 'Photo added to journey');
+          await fetchJourneyDetail();
+        } catch (err) {
+          Alert.alert('Error', 'Failed to upload photo');
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to take photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   if (loading) {
@@ -172,6 +327,8 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   }
 
   const journeyPhotos = journey.photos ?? [];
+  const displayTitle = journey.customTitle || journey.title || 'Untitled Journey';
+  const isCompletedOrCancelled = journey.status === 'COMPLETED' || journey.status === 'CANCELLED' || !journey.status;
 
   return (
     <View style={styles.container}>
@@ -184,12 +341,18 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <Text style={styles.backIconText}>←</Text>
+          <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {journey.title || 'Journey Details'}
+          {displayTitle}
         </Text>
-        <View style={styles.headerPlaceholder} />
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={() => setShowOptionsMenu(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="ellipsis-vertical" size={24} color="#000" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -197,7 +360,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
         <View style={styles.infoCard}>
           <View style={styles.infoHeader}>
             <Text style={styles.journeyTitle}>
-              {journey.title || 'Untitled Journey'}
+              {displayTitle}
             </Text>
             <Text style={styles.journeyDate}>{formatDate(journey.startTime)}</Text>
           </View>
@@ -239,6 +402,34 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           )}
         </View>
 
+        {/* Add Photos Button for Completed Journeys */}
+        {isCompletedOrCancelled && (
+          <View style={styles.addPhotosSection}>
+            <TouchableOpacity
+              style={styles.addPhotosButton}
+              onPress={handleAddPhotos}
+              disabled={uploadingPhoto}
+            >
+              {uploadingPhoto ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="images" size={20} color="#fff" />
+                  <Text style={styles.addPhotosButtonText}>Add Photos</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.takePhotoButton}
+              onPress={handleTakePhoto}
+              disabled={uploadingPhoto}
+            >
+              <Ionicons name="camera" size={20} color="#6366f1" />
+              <Text style={styles.takePhotoButtonText}>Take Photo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Photo Timeline */}
         {journeyPhotos.length > 0 && (
           <View style={styles.timelineSection}>
@@ -263,13 +454,11 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
                 return (
                   <View key={photo.id} style={styles.timelineItem}>
-                    {/* Timeline dot and line */}
                     <View style={styles.timelineMarker}>
                       <View style={[styles.timelineDot, index === 0 && styles.firstDot]} />
                       {!isLast && <View style={styles.timelineLine} />}
                     </View>
 
-                    {/* Content */}
                     <View style={styles.timelineContent}>
                       <Text style={styles.timelineTime}>{timeDisplay}</Text>
                       <TouchableOpacity
@@ -309,9 +498,116 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           <View style={styles.emptyPhotos}>
             <Text style={styles.emptyPhotosEmoji}>📷</Text>
             <Text style={styles.emptyPhotosText}>No photos from this journey</Text>
+            {isCompletedOrCancelled && (
+              <Text style={styles.emptyPhotosSubtext}>Add some memories above!</Text>
+            )}
           </View>
         )}
+
+        {/* Bottom spacing */}
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Options Menu Modal */}
+      <Modal
+        visible={showOptionsMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOptionsMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowOptionsMenu(false)}
+        >
+          <View style={styles.optionsMenu}>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                setShowEditModal(true);
+              }}
+            >
+              <Ionicons name="pencil" size={20} color="#000" />
+              <Text style={styles.optionText}>Edit Title</Text>
+            </TouchableOpacity>
+            
+            {isCompletedOrCancelled && (
+              <>
+                <TouchableOpacity
+                  style={styles.optionItem}
+                  onPress={handleAddPhotos}
+                >
+                  <Ionicons name="images" size={20} color="#000" />
+                  <Text style={styles.optionText}>Add Photos</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.optionItem}
+                  onPress={handleTakePhoto}
+                >
+                  <Ionicons name="camera" size={20} color="#000" />
+                  <Text style={styles.optionText}>Take Photo</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            
+            <View style={styles.optionDivider} />
+            
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                handleDeleteJourney();
+              }}
+            >
+              <Ionicons name="trash" size={20} color="#E53935" />
+              <Text style={[styles.optionText, styles.deleteText]}>Delete Journey</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Edit Title Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.editModal}>
+            <Text style={styles.editModalTitle}>Edit Journey Title</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Enter journey title"
+              placeholderTextColor="#999"
+              maxLength={60}
+            />
+            <View style={styles.editModalButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveTitle}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Photo Viewer Modal */}
       {selectedPhotoIndex !== null && journeyPhotos.length > 0 && (
@@ -324,7 +620,6 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           <View style={styles.photoViewerContainer}>
             <StatusBar barStyle="light-content" />
             
-            {/* Close Button */}
             <TouchableOpacity
               style={styles.closeButton}
               onPress={closePhotoViewer}
@@ -333,14 +628,12 @@ const JourneyDetailScreen = (): React.JSX.Element => {
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
 
-            {/* Photo Counter */}
             <View style={styles.photoCounter}>
               <Text style={styles.photoCounterText}>
                 {selectedPhotoIndex + 1} / {journeyPhotos.length}
               </Text>
             </View>
 
-            {/* Swipeable Photo Gallery */}
             <FlatList
               data={journeyPhotos}
               horizontal
@@ -435,9 +728,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backIconText: {
-    fontSize: 24,
-    color: '#000000',
+  menuButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
@@ -447,9 +742,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     marginHorizontal: 8,
-  },
-  headerPlaceholder: {
-    width: 40,
   },
   scrollView: {
     flex: 1,
@@ -528,6 +820,44 @@ const styles = StyleSheet.create({
     color: '#3E4751',
     fontFamily: 'Space Grotesk',
     textTransform: 'capitalize',
+  },
+  addPhotosSection: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  addPhotosButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  addPhotosButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  takePhotoButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#6366f1',
+    gap: 8,
+  },
+  takePhotoButtonText: {
+    color: '#6366f1',
+    fontSize: 16,
+    fontWeight: '600',
   },
   timelineSection: {
     backgroundColor: '#FFFFFF',
@@ -649,6 +979,102 @@ const styles = StyleSheet.create({
     color: '#757575',
     fontFamily: 'Space Grotesk',
     textAlign: 'center',
+  },
+  emptyPhotosSubtext: {
+    fontSize: 14,
+    color: '#6366f1',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsMenu: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 8,
+    width: 220,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#000',
+    fontWeight: '500',
+  },
+  optionDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: 4,
+  },
+  deleteText: {
+    color: '#E53935',
+  },
+  editModal: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    maxWidth: 340,
+  },
+  editModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#000',
+    marginBottom: 24,
+  },
+  editModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  saveButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
   photoViewerContainer: {
     flex: 1,

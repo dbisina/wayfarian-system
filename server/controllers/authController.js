@@ -345,18 +345,66 @@ const deleteAccount = async (req, res) => {
       });
     }
     
-    // Deactivate groups where user is the only member
-    await prisma.group.updateMany({
+    // Get groups where user is the only member (creator with no other members)
+    const groupsToDelete = await prisma.group.findMany({
       where: {
         creatorId: userId,
         isActive: true,
       },
-      data: {
-        isActive: false,
+      include: {
+        _count: {
+          select: { members: true },
+        },
       },
     });
     
-    // Delete user (cascade will handle related records)
+    // Filter to groups with only the user as member
+    const soleOwnerGroups = groupsToDelete.filter(g => g._count.members <= 1);
+    const soleOwnerGroupIds = soleOwnerGroups.map(g => g.id);
+    
+    // Delete related data for groups being deleted to avoid FK constraints
+    if (soleOwnerGroupIds.length > 0) {
+      // Delete group journeys and their instances first
+      const groupJourneys = await prisma.groupJourney.findMany({
+        where: { groupId: { in: soleOwnerGroupIds } },
+        select: { id: true },
+      });
+      const groupJourneyIds = groupJourneys.map(gj => gj.id);
+      
+      if (groupJourneyIds.length > 0) {
+        // Delete ride events tied to group journeys
+        await prisma.rideEvent.deleteMany({
+          where: { groupJourneyId: { in: groupJourneyIds } },
+        });
+        
+        // Delete journey instances
+        await prisma.journeyInstance.deleteMany({
+          where: { groupJourneyId: { in: groupJourneyIds } },
+        });
+        
+        // Delete group journeys
+        await prisma.groupJourney.deleteMany({
+          where: { id: { in: groupJourneyIds } },
+        });
+      }
+      
+      // Delete group members
+      await prisma.groupMember.deleteMany({
+        where: { groupId: { in: soleOwnerGroupIds } },
+      });
+      
+      // Delete journeys associated with these groups
+      await prisma.journey.deleteMany({
+        where: { groupId: { in: soleOwnerGroupIds } },
+      });
+      
+      // Now delete the groups themselves
+      await prisma.group.deleteMany({
+        where: { id: { in: soleOwnerGroupIds } },
+      });
+    }
+    
+    // Delete user (cascade will handle remaining related records)
     await prisma.user.delete({
       where: { id: userId },
     });

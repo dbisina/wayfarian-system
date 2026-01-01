@@ -13,7 +13,7 @@ const BUFFER_SIZE = 10; // Flush every 10 points
 const FLUSH_INTERVAL_MS = 30000; // Or every 30 seconds
 const STATIONARY_SPEED_THRESHOLD = 1.5; // m/s (approx 5.4 km/h)
 const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
-const MAX_REASONABLE_SPEED_MPS = 69.5; // 250 km/h in m/s - cap for realistic vehicle speeds
+const MAX_REASONABLE_SPEED_MPS = 139; // 500 km/h in m/s - only filter extreme GPS jitter outliers
 
 // Calculate distance between two points (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -170,15 +170,13 @@ export function useSmartTracking(isTracking: boolean) {
       }
     }
 
-    // Use GPS-calculated speed as primary, fall back to reported speed
+    // Use GPS-calculated speed as primary source - no fallback guessing for accuracy
+    // Only use device-reported speed when accuracy is excellent
     const reportedSpeedMps = speed || 0;
-    let finalSpeedMps = 0;
+    let finalSpeedMps = calculatedSpeedMps;
 
-    if (calculatedSpeedMps > 0) {
-      // GPS-calculated speed is more accurate
-      finalSpeedMps = calculatedSpeedMps;
-    } else if (reportedSpeedMps > 0 && reportedSpeedMps < 200) {
-      // Fall back to reported speed when GPS calculation unavailable
+    // Only trust device speed if GPS calculation unavailable AND accuracy is excellent
+    if (finalSpeedMps <= 0 && accuracy && accuracy < 15 && reportedSpeedMps > 0) {
       finalSpeedMps = reportedSpeedMps;
     }
 

@@ -186,6 +186,9 @@ const RegisterScreen = () => {
                     value={name}
                     onChangeText={setName}
                     returnKeyType="next"
+                    textContentType="name"
+                    autoComplete="name"
+                    enablesReturnKeyAutomatically
                   />
                 </View>
               </View>
@@ -203,6 +206,9 @@ const RegisterScreen = () => {
                     keyboardType="email-address"
                     autoCapitalize="none"
                     returnKeyType="next"
+                    textContentType="emailAddress"
+                    autoComplete="email"
+                    enablesReturnKeyAutomatically
                   />
                 </View>
               </View>
@@ -220,6 +226,9 @@ const RegisterScreen = () => {
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     returnKeyType="next"
+                    textContentType="newPassword"
+                    autoComplete="new-password"
+                    enablesReturnKeyAutomatically
                   />
                   <TouchableOpacity
                     style={styles.passwordToggle}
@@ -249,6 +258,9 @@ const RegisterScreen = () => {
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
                     returnKeyType="done"
+                    textContentType="newPassword"
+                    autoComplete="new-password"
+                    enablesReturnKeyAutomatically
                   />
                   <TouchableOpacity
                     style={styles.passwordToggle}
