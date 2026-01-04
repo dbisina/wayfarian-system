@@ -4,6 +4,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { Buffer } from 'buffer';
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { makeRedirectUri, fetchDiscoveryAsync, AuthRequest, ResponseType, type AuthSessionResult } from 'expo-auth-session';
 import { 
@@ -264,10 +265,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const syncPromise = (async () => {
       const normalizeUser = (payload: any): User | null => {
-        if (!payload) return null;
+        if (!payload) {
+          console.warn('[AuthContext] normalizeUser: payload is empty');
+          return null;
+        }
+        console.log('[AuthContext] normalizeUser: payload:', JSON.stringify(payload).substring(0, 200));
         const candidate = payload.user ?? payload.data?.user ?? payload.data ?? (payload.success ? payload.user ?? payload.data : payload);
-        if (candidate && typeof candidate === 'object' && 'id' in candidate) {
-          return candidate as User;
+        
+        if (candidate && typeof candidate === 'object') {
+          if ('id' in candidate) {
+               console.log('[AuthContext] normalizeUser: found valid user', candidate.id);
+               return candidate as User;
+          } else {
+               console.warn('[AuthContext] normalizeUser: candidate missing "id" property:', Object.keys(candidate));
+          }
+        } else {
+             console.warn('[AuthContext] normalizeUser: found no candidate object');
         }
         return null;
       };
@@ -299,6 +312,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const isRecoverable = 
           status === 429 || 
           /Too many requests|Network request failed|Failed to fetch|timed out/i.test(message);
+        
+        console.error('[AuthContext] syncUserData error:', message, 'Status:', status);
 
         if (isRecoverable) {
           // Try direct fetch as fallback
@@ -350,8 +365,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
+      console.log('[AuthContext] Setting user state:', srvUser.id);
       setUser(srvUser);
       setIsAuthenticated(true);
+      console.log('[AuthContext] isAuthenticated set to true');
       setUserContext(srvUser);
       
       // Schedule token refresh AFTER successful sync
@@ -535,7 +552,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('Firebase login successful');
       
       await syncUserData(userCredential.user);
-      console.log('Login completed successfully');
+      console.log('Login completed successfully, navigating...');
+      router.replace('/(tabs)');
       
     } catch (error: any) {
       console.error('Login error:', error);
@@ -590,6 +608,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Sync with backend
       await syncUserData(userCredential.user);
       console.log('Registration completed successfully');
+      router.replace('/(tabs)');
       
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -643,6 +662,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         const result = await signInWithPopup(auth, provider);
         await syncUserData(result.user);
+        router.replace('/(tabs)');
         return;
       }
 
@@ -682,6 +702,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const googleCredential = GoogleAuthProvider.credential(idToken);
         const firebaseResult = await signInWithCredential(auth, googleCredential);
         await syncUserData(firebaseResult.user);
+        router.replace('/(tabs)');
         return;
       }
 
@@ -701,6 +722,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const googleCredential = GoogleAuthProvider.credential(idToken);
       const firebaseResult = await signInWithCredential(auth, googleCredential);
       await syncUserData(firebaseResult.user);
+      router.replace('/(tabs)');
         
     } catch (error: any) {
       console.error('Google login error:', error);

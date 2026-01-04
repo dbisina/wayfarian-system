@@ -146,104 +146,109 @@ router.get('/export-data', exportUserData);
 router.get('/dashboard', async (req, res) => {
   try {
     const userId = req.user.id;
-    // Run queries sequentially to work with PgBouncer (connection_limit=1)
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        displayName: true,
-        photoURL: true,
-        totalDistance: true,
-        totalTime: true,
-        topSpeed: true,
-        totalTrips: true,
-        xp: true,
-        level: true,
-      },
-    });
-
-    const activeJourney = await prisma.journey.findFirst({
-      where: { userId, status: 'ACTIVE' },
-      select: {
-        id: true,
-        title: true,
-        startTime: true,
-        totalDistance: true,
-        totalTime: true,
-        topSpeed: true,
-      },
-    });
-
-    const recentJourneysRaw = await prisma.journey.findMany({
-      where: { userId, status: 'COMPLETED' },
-      orderBy: { endTime: 'desc' },
-      take: 3,
-      select: {
-        id: true,
-        title: true,
-        startTime: true,
-        endTime: true,
-        totalDistance: true,
-        totalTime: true,
-        photos: {
-          select: {
-            id: true,
-            filename: true,
-            firebasePath: true,
-            thumbnailPath: true,
-            takenAt: true,
-          },
-          orderBy: { takenAt: 'asc' },
-          take: 3,
+    // Run queries in parallel for better performance
+    const [
+      user,
+      activeJourney,
+      recentJourneysRaw,
+      activeGroupsRaw,
+      recentPhotos,
+      weeklyStats
+    ] = await Promise.all([
+      // 1. User Profile
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          displayName: true,
+          photoURL: true,
+          totalDistance: true,
+          totalTime: true,
+          topSpeed: true,
+          totalTrips: true,
+          xp: true,
+          level: true,
         },
-      },
-    });
-    const recentJourneys = recentJourneysRaw.map((journey) => {
-      const hydratedPhotos = hydratePhotos(journey.photos || []);
-      const { photos, ...rest } = journey;
-      return {
-        ...rest,
-        photos: hydratedPhotos,
-        coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
-      };
-    });
+      }),
 
-    const activeGroupsRaw = await prisma.groupMember.findMany({
-      where: { userId, group: { isActive: true } },
-      take: 3,
-      include: {
-        group: {
-          select: {
-            id: true,
-            name: true,
-            _count: { select: { members: true } },
+      // 2. Active Journey
+      prisma.journey.findFirst({
+        where: { userId, status: 'ACTIVE' },
+        select: {
+          id: true,
+          title: true,
+          startTime: true,
+          totalDistance: true,
+          totalTime: true,
+          topSpeed: true,
+        },
+      }),
+
+      // 3. Recent Journeys (limit 3)
+      prisma.journey.findMany({
+        where: { userId, status: 'COMPLETED' },
+        orderBy: { endTime: 'desc' },
+        take: 3,
+        select: {
+          id: true,
+          title: true,
+          startTime: true,
+          endTime: true,
+          totalDistance: true,
+          totalTime: true,
+          photos: {
+            select: {
+              id: true,
+              filename: true,
+              firebasePath: true,
+              thumbnailPath: true,
+              takenAt: true,
+            },
+            orderBy: { takenAt: 'asc' },
+            take: 3,
           },
         },
-      },
-    });
-    const activeGroups = activeGroupsRaw.map((ag) => ag.group);
+      }),
 
-    const recentPhotos = await prisma.photo.findMany({
-      where: { userId },
-      orderBy: { takenAt: 'desc' },
-      take: 6,
-      select: {
-        id: true,
-        filename: true,
-        firebasePath: true,
-        takenAt: true,
-        journey: { select: { id: true, title: true } },
-      },
-    });
+      // 4. Active Groups (limit 3)
+      prisma.groupMember.findMany({
+        where: { userId, group: { isActive: true } },
+        take: 3,
+        include: {
+          group: {
+            select: {
+              id: true,
+              name: true,
+              _count: { select: { members: true } },
+            },
+          },
+        },
+      }),
 
-    const weeklyStats = await prisma.journey.aggregate({
-      where: {
-        userId,
-        status: 'COMPLETED',
-        startTime: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      _sum: { totalDistance: true, totalTime: true },
-      _count: true,
-    });
+      // 5. Recent Photos (limit 6)
+      prisma.photo.findMany({
+        where: { userId },
+        orderBy: { takenAt: 'desc' },
+        take: 6,
+        select: {
+          id: true,
+          filename: true,
+          firebasePath: true,
+          takenAt: true,
+          journey: { select: { id: true, title: true } },
+        },
+      }),
+
+      // 6. Weekly Stats
+      prisma.journey.aggregate({
+        where: {
+          userId,
+          status: 'COMPLETED',
+          startTime: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        _sum: { totalDistance: true, totalTime: true },
+        _count: true,
+      })
+    ]);
 
     res.json({
       success: true,

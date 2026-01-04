@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "65260446195-cdj2ccqk1ddheoqu60719tugnvesujdc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wayfarian.wayfarianadventures",
+            "certificate_hash": "c05e2b11364f05ff31582957f66a003ff6911c0e"
+          }
+        },
+        {
           "client_id": "65260446195-t7c2tlpjcjh0ogr44dtnjf4oc44oljar.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

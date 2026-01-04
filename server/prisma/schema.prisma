@@ -87,6 +87,10 @@ model Journey {
   reminders JourneyReminder[]
 
   @@map("journeys")
+  @@index([userId])
+  @@index([status])
+  @@index([startTime])
+  @@index([endTime])
 }
 
 model GroupJourney {
@@ -218,6 +222,8 @@ model Photo {
   journey Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
 
   @@map("photos")
+  @@index([userId])
+  @@index([takenAt])
 }
 
 model Group {

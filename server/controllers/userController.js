@@ -302,64 +302,72 @@ const getUserStats = async (req, res) => {
       }
     }
     
-    // Get user's basic stats
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        totalDistance: true,
-        totalTime: true,
-        topSpeed: true,
-        totalTrips: true,
-        createdAt: true,
-      },
-    });
-    
-    // Get timeframe-specific stats
-    const journeyStats = await prisma.journey.aggregate({
-      where: {
-        userId,
-        status: 'COMPLETED',
-        ...dateFilter,
-      },
-      _sum: {
-        totalDistance: true,
-        totalTime: true,
-      },
-      _max: {
-        topSpeed: true,
-      },
-      _count: true,
-    });
-    
-    // Get journey distribution by vehicle type
-    const vehicleDistribution = await prisma.journey.groupBy({
-      by: ['vehicle'],
-      where: {
-        userId,
-        status: 'COMPLETED',
-        ...dateFilter,
-      },
-      _count: true,
-      _sum: {
-        totalDistance: true,
-      },
-    });
-    
-    // Get monthly progress (last 12 months)
-    const monthlyProgress = await prisma.$queryRaw`
-      SELECT 
-        DATE_TRUNC('month', "startTime") as month,
-        COUNT(*)::int as journeys,
-        COALESCE(SUM("totalDistance"), 0)::float as distance,
-        COALESCE(SUM("totalTime"), 0)::int as time
-      FROM journeys 
-      WHERE "userId" = ${userId} 
-        AND status = 'COMPLETED'
-        AND "startTime" >= ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)}
-      GROUP BY DATE_TRUNC('month', "startTime")
-      ORDER BY month DESC
-      LIMIT 12
-    `;
+    // Run queries concurrently
+    const [
+      user,
+      journeyStats,
+      vehicleDistribution,
+      monthlyProgress
+    ] = await Promise.all([
+      // 1. User basic stats
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          totalDistance: true,
+          totalTime: true,
+          topSpeed: true,
+          totalTrips: true,
+          createdAt: true,
+        },
+      }),
+
+      // 2. Journey stats aggregation
+      prisma.journey.aggregate({
+        where: {
+          userId,
+          status: 'COMPLETED',
+          ...dateFilter,
+        },
+        _sum: {
+          totalDistance: true,
+          totalTime: true,
+        },
+        _max: {
+          topSpeed: true,
+        },
+        _count: true,
+      }),
+
+      // 3. Vehicle distribution
+      prisma.journey.groupBy({
+        by: ['vehicle'],
+        where: {
+          userId,
+          status: 'COMPLETED',
+          ...dateFilter,
+        },
+        _count: true,
+        _sum: {
+          totalDistance: true,
+        },
+      }),
+
+      // 4. Monthly progress
+      prisma.$queryRaw`
+        SELECT 
+          DATE_TRUNC('month', "startTime") as month,
+          COUNT(*)::int as journeys,
+          COALESCE(SUM("totalDistance"), 0)::float as distance,
+          COALESCE(SUM("totalTime"), 0)::int as time
+        FROM journeys 
+        WHERE "userId" = ${userId} 
+          AND status = 'COMPLETED'
+          AND "startTime" >= ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)}
+        GROUP BY DATE_TRUNC('month', "startTime")
+        ORDER BY month DESC
+        LIMIT 12
+      `,
+    ]);
     
     // Calculate averages
     const avgDistance = journeyStats._count > 0 ? 
