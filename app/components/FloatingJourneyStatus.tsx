@@ -1,13 +1,15 @@
 // app/components/FloatingJourneyStatus.tsx
-// Minimized journey status overlay that appears on all screens
+// Dynamic Island style journey status pill
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Animated,
+  Dimensions
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useJourney } from '../contexts/JourneyContext';
@@ -15,14 +17,38 @@ import { useSettings } from '../contexts/SettingsContext';
 import { router } from 'expo-router';
 import { useJourneyState, useJourneyStats } from '../hooks/useJourneyState';
 
+const { width } = Dimensions.get('window');
+
 export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?: boolean }) {
   const { maximizeJourney } = useJourney();
   const { isTracking, isMinimized, currentJourney, hydrated } = useJourneyState();
   const stats = useJourneyStats();
   const { convertDistance, convertSpeed } = useSettings();
+  
+  // Pulse animation for 'Live' indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Home-only mode: show whenever there's a current journey (active or paused), after hydration.
-  // Global/default mode: preserve minimized-only behavior to avoid appearing on other screens.
+  useEffect(() => {
+    if (isTracking) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.4,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isTracking]);
+
   const shouldShow = homeOnly
     ? (hydrated && !!currentJourney)
     : (hydrated && isMinimized && (isTracking || (currentJourney && currentJourney.status === 'paused')));
@@ -41,11 +67,9 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
 
   const handlePress = () => {
     maximizeJourney();
-    // If this overlay represents a group journey, navigate with groupJourneyId so the screen can fetch instance
     if (currentJourney?.groupJourneyId) {
       router.push({ pathname: '/journey', params: { groupJourneyId: currentJourney.groupJourneyId } });
     } else if (currentJourney?.groupId) {
-      // Fallback: at least pass groupId to load members overlay
       router.push({ pathname: '/journey', params: { groupId: currentJourney.groupId } });
     } else {
       router.push('/journey');
@@ -53,34 +77,32 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
   };
 
   return (
-    <TouchableOpacity style={styles.container} onPress={handlePress} activeOpacity={0.8}>
-      <View style={styles.content}>
-        {/* Time */}
-        <View style={styles.statItem}>
-          <MaterialIcons name="schedule" size={14} color="#FFFFFF" />
-          <Text style={styles.statText}>{formatTime(Math.floor(stats.totalTime))}</Text>
+    <TouchableOpacity style={styles.container} onPress={handlePress} activeOpacity={0.9}>
+      <View style={styles.island}>
+        {/* Live Indicator */}
+        <View style={styles.indicatorContainer}>
+          {isTracking ? (
+            <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
+          ) : (
+            <MaterialIcons name="pause" size={14} color="#F59E0B" />
+          )}
         </View>
 
-        {/* Speed */}
-        <View style={styles.statItem}>
-          <MaterialIcons name="speed" size={14} color="#FFFFFF" />
+        {/* Stats Content */}
+        <View style={styles.content}>
+          <Text style={styles.timeText}>{formatTime(Math.floor(stats.totalTime))}</Text>
+          
+          <View style={styles.divider} />
+          
+          <Text style={styles.statText}>{convertDistance(stats.totalDistance)}</Text>
+          
+           <View style={styles.divider} />
+           
           <Text style={styles.statText}>{convertSpeed(stats.currentSpeed)}</Text>
         </View>
 
-        {/* Distance */}
-        <View style={styles.statItem}>
-          <MaterialIcons name="straighten" size={14} color="#FFFFFF" />
-          <Text style={styles.statText}>{convertDistance(stats.totalDistance)}</Text>
-        </View>
-
-        {/* If paused, show an indicator */}
-        {!isTracking && currentJourney && currentJourney.status === 'paused' ? (
-          <View style={{ paddingHorizontal: 6 }}>
-            <Text style={[styles.statText, { fontSize: 11 }]}>Paused</Text>
-          </View>
-        ) : (
-          <MaterialIcons name="expand-less" size={16} color="#FFFFFF" />
-        )}
+        {/* Expand Icon */}
+        <MaterialIcons name="keyboard-arrow-down" size={20} color="#6B7280" />
       </View>
     </TouchableOpacity>
   );
@@ -89,36 +111,64 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
+    top: Platform.OS === 'android' ? 42 : 54, // Adjust for safer area/status bar
+    left: 16,
     right: 16,
-    zIndex: 1000,
-    backgroundColor: Platform.OS === 'android' ? '#000000' : 'rgba(0, 0, 0, 0.8)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    zIndex: 2000,
+    alignItems: 'center',
+  },
+  island: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    borderRadius: 32,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minWidth: 200,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    gap: 12,
+  },
+  indicatorContainer: {
+    width: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444', // Red for recording/live
   },
   content: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 12,
   },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
+  timeText: {
+    fontSize: 15,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', // Monospace for timer stability
+    fontVariant: ['tabular-nums'],
   },
   statText: {
-    fontSize: 12,
-    color: '#FFFFFF',
+    fontSize: 14,
+    color: '#D1D5DB',
     fontWeight: '600',
-    fontFamily: 'Poppins',
+    fontFamily: 'Space Grotesk',
+  },
+  divider: {
+    width: 1,
+    height: 14,
+    backgroundColor: '#374151',
   },
 });

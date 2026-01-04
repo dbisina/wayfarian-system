@@ -15,8 +15,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { userAPI, journeyAPI } from '../services/api';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
+import { galleryAPI } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
 
 interface Journey {
   id: string;
@@ -57,6 +59,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
   const [actionsJourney, setActionsJourney] = useState<Journey | null>(null);
   const [renameJourney, setRenameJourney] = useState<Journey | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { convertDistance } = useSettings();
 
   const normalizeDistance = (value: number) => {
@@ -159,6 +162,79 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       ]
     );
     setActionsJourney(null);
+  };
+
+  const confirmDeleteJourney = (journey: Journey) => {
+    Alert.alert(
+      'Delete Permanently?',
+      'This will permanently erase all data for this journey. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+             setActionsJourney(null);
+             try {
+               await journeyAPI.deleteJourney(journey.id);
+               setJourneys(prev => prev.filter(j => j.id !== journey.id));
+               Alert.alert('Deleted', 'Journey has been permanently deleted.');
+             } catch (err: any) {
+               console.error('Delete error:', err);
+               Alert.alert('Error', err.message || 'Failed to delete journey');
+             }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAddPhotos = async (journey: Journey) => {
+    setActionsJourney(null);
+    if (!journey) return;
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Gallery permission is required to add photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 10,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        // Show loading indicator or toast? For now just silent or alert on completion to keep it simple in list view
+        // Ideally we'd show a global loader or toast
+        
+        let successCount = 0;
+        for (const asset of result.assets) {
+          try {
+            await galleryAPI.uploadPhotoWithProgress(
+              asset.uri,
+              journey.id,
+              () => {} 
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Failed to upload photo:', err);
+          }
+        }
+
+        if (successCount > 0) {
+          Alert.alert('Success', `${successCount} photo${successCount > 1 ? 's' : ''} added. Refreshing...`);
+          fetchJourneys(); // Refresh to show new photo count/cover
+        } else {
+          Alert.alert('Error', 'Failed to upload photos');
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add photos');
+    }
   };
 
   const openJourneyActions = (journey: Journey) => {
@@ -386,7 +462,21 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
             onPress={() => actionsJourney && confirmHideJourney(actionsJourney)}
           >
             <MaterialIcons name="archive" size={18} color="#DC2626" />
-            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Remove from list</Text>
+            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Remove from list (Hide)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionSheetButton}
+            onPress={() => actionsJourney && handleAddPhotos(actionsJourney)}
+          >
+             <Ionicons name="images" size={18} color="#111827" />
+             <Text style={styles.actionSheetButtonText}>Add photos</Text>
+          </TouchableOpacity>
+           <TouchableOpacity
+            style={styles.actionSheetButton}
+            onPress={() => actionsJourney && confirmDeleteJourney(actionsJourney)}
+          >
+            <Ionicons name="trash-outline" size={18} color="#DC2626" />
+            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Delete permanently</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionSheetButton, styles.actionSheetCancel]}

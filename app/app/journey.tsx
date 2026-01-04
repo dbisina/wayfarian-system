@@ -25,6 +25,7 @@ import { apiRequest } from '../services/api';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import RideTimeline from '../components/RideTimeline';
 import MessageComposer from '../components/MessageComposer';
+import TrackingOverlay from '../components/TrackingOverlay'; // New import
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import { useGroupJourney } from '../hooks/useGroupJourney';
 import { getSocket } from '../services/socket';
@@ -1141,215 +1142,48 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     color: "#FFFFFF",
   },
-  bottomPanel: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Platform.OS === 'android' ? '#FFFFFF' : 'rgba(255, 251, 251, 0.9)',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingTop: 12,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    height: 215,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 10,
-  },
-  friendsRow: {
-    paddingBottom: 12,
-  },
-  friendsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  destinationPrompt: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 10,
-  },
-  destinationPromptTextContainer: {
-    flex: 1,
-    marginRight: 8,
-  },
-  destinationPromptTitle: {
-    fontFamily: 'Poppins',
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  destinationPromptSubtitle: {
-    fontFamily: 'Poppins',
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 2,
-  },
-  friendAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  addFriendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E0E0E0",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addFriendText: {
-    fontSize: 20,
-    color: "#666666",
-    fontWeight: "300",
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 16,
-  },
-  statItem: {
-    alignItems: "flex-start",
-  },
-  statValue: {
-    fontFamily: "Poppins",
-    fontSize: 26,
-    fontWeight: "600",
-    lineHeight: 39,
-    color: "#000000",
-  },
-  statLabel: {
-    fontFamily: "Poppins",
-    fontSize: 10,
-    lineHeight: 15,
-    color: "#202020",
-  },
-  speedContainer: {
-    flexDirection: "row",
-    alignItems: "baseline",
-  },
-  speedUnit: {
-    fontFamily: "Poppins",
-    fontSize: 12,
-    fontWeight: "500",
-    lineHeight: 18,
-    color: "#000000",
-    marginLeft: 4,
-  },
-  distanceContainer: {
-    flexDirection: "row",
-    alignItems: "baseline",
-  },
-  distanceUnit: {
-    fontFamily: "Poppins",
-    fontSize: 12,
-    fontWeight: "500",
-    lineHeight: 18,
-    color: "#000000",
-    marginLeft: 4,
-  },
-  actionButtonsRow: {
-    flexDirection: "row",
-    gap: 14,
-    paddingTop: 8,
-  },
-  startButton: {
-    backgroundColor: "#BEFFA7",
-    borderRadius: 12,
-    width: 120,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  startButtonDisabled: {
-    opacity: 0.6,
-  },
-  startIcon: {
-    width: 24,
-    height: 24,
-  },
-  shareButton: {
-    backgroundColor: "rgba(255, 251, 251, 0.8)",
-    borderRadius: 12,
-    flex: 1,
-    height: 46,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2.2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  shareIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 12,
-  },
-  shareText: {
-    fontFamily: "Poppins",
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#000000",
-  },
-  stopButton: {
-    backgroundColor: "#ef4444",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 46,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  stopText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  timelineButton: {
-    backgroundColor: "#F5F5F5",
-    borderRadius: 12,
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-  resumeButton: {
-    backgroundColor: "#10b981",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 46,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  resumeText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#FFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: "70%",
-  },
-});
+          {/* Stats & Controls Overlay - Uber Style */}
+          {!isMinimized && (isTracking || currentJourney?.status === 'paused' || gJourneyId) && (
+             <TrackingOverlay 
+                onStop={handleStopJourney}
+                onPause={async () => {
+                  try {
+                    await apiRequest(`/journey/${currentJourney?.id}/pause`, { method: 'POST' });
+                  } catch (e) {
+                    console.warn('Pause error', e);
+                  }
+                }}
+                onResume={async () => {
+                   await handleResumeIfPaused();
+                }}
+                isPaused={currentJourney?.status === 'paused' || myInstance?.status === 'PAUSED'}
+             />
+          )}
+
+          {/* Start Journey Button (Only if NOT tracking and NOT paused) */}
+          {!isTracking && currentJourney?.status !== 'paused' && !gJourneyId && (
+            <View style={styles.startJourneyContainer}>
+              <TouchableOpacity
+                style={styles.startJourneyButton}
+                onPress={handleStartJourney}
+                activeOpacity={0.8}
+                disabled={isStartBusy}
+              >
+                {isStartBusy ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Animated.Image
+                      source={require("../assets/images/2025-09-26/byc45z4XPi.png")}
+                      style={[
+                        styles.startIcon,
+                        { transform: [{ translateX: bikeTranslation }] },
+                      ]}
+                      resizeMode="contain"
+                    />
+                    <Text style={[styles.startJourneyText, { marginLeft: 10 }]}>Start Journey</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}

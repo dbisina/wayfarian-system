@@ -34,6 +34,7 @@ import {
   useJourneyStats,
   useJourneyUploadQueue,
 } from '../hooks/useJourneyState';
+import BackgroundTaskService from '../services/backgroundTaskService';
 
 export type { GroupMember, JourneyData } from '../store/slices/journeySlice';
 
@@ -373,6 +374,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         await ensureGroupJourneySocket(journeyData.groupId, dispatch);
       }
 
+      // Start persistent background tracking notification
+      await BackgroundTaskService.startBackgroundTracking(journeyId, {
+        startLocationName: 'Current Location', // Could reverse geocode here if we had address
+      });
+
       return true;
     } catch (error) {
       console.error('Error starting journey:', error);
@@ -467,6 +473,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'completed' }));
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
+
+      // Stop background tracking
+      await BackgroundTaskService.stopBackgroundTracking();
       
       // Clear stats after a delay to allow UI to show completion
       setTimeout(() => {
@@ -537,6 +546,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(clearJourney());
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
+      
+      // Stop background tracking if running
+      try {
+        await BackgroundTaskService.stopBackgroundTracking();
+      } catch (e) {
+        console.warn('Failed to stop background tracking during clear:', e);
+      }
+
       dispatch(setStats({
         totalDistance: 0,
         totalTime: 0,
