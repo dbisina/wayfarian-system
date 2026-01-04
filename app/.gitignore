@@ -17,6 +17,9 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+*.plist
+*.pem
+google-services.json
 
 # Metro
 .metro-health-check*
@@ -44,6 +47,3 @@ app-example
 
 .npm-cache/
 
-# Google service files
-google-services.json
-GoogleService-Info.plist
