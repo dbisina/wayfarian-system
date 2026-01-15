@@ -224,6 +224,7 @@ struct JourneyProgressView: View {
 }
 
 // MARK: - Preview
+@available(iOS 17.0, *)
 #Preview("Lock Screen", as: .content, using: JourneyWidgetAttributes.preview) {
     JourneyLiveActivity()
 } contentStates: {
