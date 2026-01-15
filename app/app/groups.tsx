@@ -5,6 +5,7 @@ import { Skeleton, SkeletonLine } from '../components/Skeleton';
 import Header from '@/components/ui/Header';
 import GroupCard from '@/components/ui/GroupCard';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { groupAPI } from '../services/api';
 
 interface GroupItem {
@@ -19,6 +20,7 @@ export default function GroupsScreen(): React.JSX.Element {
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState('');
+  const { t } = useTranslation();
 
   const loadGroups = async (silent = false) => {
     try {
@@ -87,17 +89,17 @@ export default function GroupsScreen(): React.JSX.Element {
       setShowJoin(false);
       router.push(`/group-detail?groupId=${gid}`);
     } catch (e: any) {
-      Alert.alert('Join failed', e?.message || 'Invalid or expired code');
+      Alert.alert(t('group.joinFailed'), e?.message || t('group.invalidCode'));
     }
   };
 
   return (
     <View style={styles.container}>
-      <Header title="Groups" />
+      <Header title={t('group.title')} />
       {loading ? (
         <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: 20 }]}> 
           <View style={styles.myGroupsSection}>
-            <Text style={styles.sectionTitle}>My Groups</Text>
+            <Text style={styles.sectionTitle}>{t('group.myGroups')}</Text>
             <View style={styles.groupsList}>
               {Array.from({ length: 3 }).map((_, idx) => (
                 <View key={idx} style={{ marginBottom: 12 }}>
@@ -114,9 +116,9 @@ export default function GroupsScreen(): React.JSX.Element {
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.myGroupsSection}>
-            <Text style={styles.sectionTitle}>My Groups</Text>
+            <Text style={styles.sectionTitle}>{t('group.myGroups')}</Text>
             {groups.length === 0 ? (
-              <Text style={styles.emptyText}>You are not in any groups yet.</Text>
+              <Text style={styles.emptyText}>{t('group.noGroups')}</Text>
             ) : (
               <View style={styles.groupsList}>
                 {groups.map((group) => (
@@ -134,20 +136,20 @@ export default function GroupsScreen(): React.JSX.Element {
           </View>
 
           <View style={styles.createJoinSection}>
-            <Text style={styles.sectionTitle}>Create or Join</Text>
+            <Text style={styles.sectionTitle}>{t('group.createOrJoin')}</Text>
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.createButton} onPress={handleCreateGroup}>
-                <Text style={styles.createButtonText}>Create Group</Text>
+                <Text style={styles.createButtonText}>{t('group.createGroup')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.joinButton} onPress={handleJoinGroup}>
-                <Text style={styles.joinButtonText}>Join Group</Text>
+                <Text style={styles.joinButtonText}>{t('group.joinGroup')}</Text>
               </TouchableOpacity>
             </View>
             {showJoin && (
               <View style={styles.joinInline}>
                 <TextInput
                   style={styles.joinInput}
-                  placeholder="Enter code"
+                  placeholder={t('group.enterCode')}
                   placeholderTextColor="#999999"
                   value={joinCode}
                   onChangeText={setJoinCode}
@@ -158,7 +160,7 @@ export default function GroupsScreen(): React.JSX.Element {
                   onPress={handleSubmitJoin}
                   disabled={!joinCode.trim()}
                 >
-                  <Text style={styles.joinConfirmText}>Join</Text>
+                  <Text style={styles.joinConfirmText}>{t('group.join')}</Text>
                 </TouchableOpacity>
               </View>
             )}

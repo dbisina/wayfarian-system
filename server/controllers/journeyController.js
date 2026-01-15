@@ -2,7 +2,7 @@
 // server/controllers/journeyController.js
 
 const prisma = require('../prisma/client');
-const { calculateDistance, calculateAverageSpeed } = require('../utils/helpers');
+const { calculateDistance, calculateDistanceFiltered, calculateAverageSpeed, validateDistance } = require('../utils/helpers');
 const { hydratePhotos, getCoverPhotoUrl } = require('../utils/photoFormatter');
 
 /**
@@ -87,13 +87,13 @@ const createJourney = async (req, res) => {
         routePoints:
           normalizedStatus === 'ACTIVE'
             ? [
-                {
-                  lat: resolvedLatitude,
-                  lng: resolvedLongitude,
-                  timestamp: new Date().toISOString(),
-                  speed: 0,
-                },
-              ]
+              {
+                lat: resolvedLatitude,
+                lng: resolvedLongitude,
+                timestamp: new Date().toISOString(),
+                speed: 0,
+              },
+            ]
             : [],
         weatherData: notes ? { notes } : undefined,
       },
@@ -133,16 +133,16 @@ const createJourney = async (req, res) => {
  */
 const startJourney = async (req, res) => {
   try {
-    const { 
-      latitude, 
-      longitude, 
-      title, 
-      vehicle, 
-      groupId 
+    const {
+      latitude,
+      longitude,
+      title,
+      vehicle,
+      groupId
     } = req.body;
-    
+
     const userId = req.user.id;
-    
+
     // Check if user has an active journey
     const activeJourney = await prisma.journey.findFirst({
       where: {
@@ -150,7 +150,7 @@ const startJourney = async (req, res) => {
         status: 'ACTIVE',
       },
     });
-    
+
     if (activeJourney) {
       return res.status(400).json({
         error: 'Active journey exists',
@@ -158,7 +158,7 @@ const startJourney = async (req, res) => {
         activeJourney,
       });
     }
-    
+
     // Create new journey
     const journey = await prisma.journey.create({
       data: {
@@ -169,11 +169,11 @@ const startJourney = async (req, res) => {
         startLongitude: longitude,
         vehicle: vehicle || 'car',
         groupId,
-        routePoints: [{ 
-          lat: latitude, 
-          lng: longitude, 
+        routePoints: [{
+          lat: latitude,
+          lng: longitude,
           timestamp: new Date().toISOString(),
-          speed: 0 
+          speed: 0
         }],
         customTitle: null,
         isHidden: false,
@@ -194,13 +194,13 @@ const startJourney = async (req, res) => {
         },
       },
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Journey started successfully',
       journey,
     });
-    
+
   } catch (error) {
     console.error('Start journey error:', error);
     res.status(500).json({
@@ -217,9 +217,9 @@ const updateJourneyProgress = async (req, res) => {
   try {
     const { journeyId } = req.params;
     const { latitude, longitude, speed, timestamp } = req.body;
-    
+
     const userId = req.user.id;
-    
+
     // Get current journey
     const journey = await prisma.journey.findFirst({
       where: {
@@ -228,14 +228,14 @@ const updateJourneyProgress = async (req, res) => {
         status: 'ACTIVE',
       },
     });
-    
+
     if (!journey) {
       return res.status(404).json({
         error: 'Journey not found',
         message: 'Active journey not found for this user',
       });
     }
-    
+
     // Update route points
     const currentRoutePoints = journey.routePoints || [];
     const newRoutePoint = {
@@ -244,19 +244,19 @@ const updateJourneyProgress = async (req, res) => {
       timestamp: timestamp || new Date().toISOString(),
       speed: speed || 0,
     };
-    
+
     const updatedRoutePoints = [...currentRoutePoints, newRoutePoint];
-    
+
     // Calculate updated stats
     const totalDistance = calculateDistance(updatedRoutePoints);
     const totalTime = Math.floor((new Date() - new Date(journey.startTime)) / 1000);
     const avgSpeed = calculateAverageSpeed(totalDistance, totalTime);
-    
+
     // Validate speed before updating topSpeed - cap at 250 km/h to prevent GPS drift issues
     const MAX_REASONABLE_SPEED_KMH = 250;
     const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
     const topSpeed = Math.max(journey.topSpeed, validatedSpeed);
-    
+
     // Update journey
     const updatedJourney = await prisma.journey.update({
       where: { id: journeyId },
@@ -269,7 +269,7 @@ const updateJourneyProgress = async (req, res) => {
         updatedAt: new Date(),
       },
     });
-    
+
     res.json({
       success: true,
       message: 'Journey updated successfully',
@@ -281,7 +281,7 @@ const updateJourneyProgress = async (req, res) => {
         topSpeed,
       },
     });
-    
+
   } catch (error) {
     console.error('Update journey error:', error);
     res.status(500).json({
@@ -297,10 +297,10 @@ const updateJourneyProgress = async (req, res) => {
 const endJourney = async (req, res) => {
   try {
     const { journeyId } = req.params;
-    const { latitude, longitude, totalDistance: clientTotalDistance } = req.body;
-    
+    const { latitude, longitude, totalDistance: clientTotalDistance, totalTime: clientTotalTime } = req.body;
+
     const userId = req.user.id;
-    
+
     // Get current journey
     const journey = await prisma.journey.findFirst({
       where: {
@@ -309,30 +309,58 @@ const endJourney = async (req, res) => {
         status: 'ACTIVE',
       },
     });
-    
+
     if (!journey) {
       return res.status(404).json({
         error: 'Journey not found',
         message: 'Active journey not found for this user',
       });
     }
-    
+
     // CRITICAL: Use client-provided totalDistance if available (from Roads API snapped data)
     // This ensures accurate final distance without phantom data
     // Otherwise fall back to calculating from routePoints
-    let totalDistance;
-    if (clientTotalDistance !== undefined && clientTotalDistance !== null) {
-      // Client provided Roads API snapped distance (in kilometers)
-      totalDistance = clientTotalDistance;
+    const routePoints = journey.routePoints || [];
+    const calculatedDistance = calculateDistanceFiltered(routePoints);
+
+    // Calculate time from journey startTime as fallback
+    const calculatedTime = Math.floor((new Date() - new Date(journey.startTime)) / 1000);
+
+    // Prefer client-provided totalTime (from persistent startTime) if available and reasonable
+    // Validate: client time should be within 10% of calculated time, or use calculated
+    let totalTime;
+    if (clientTotalTime !== undefined && clientTotalTime !== null && clientTotalTime > 0) {
+      const timeDiff = Math.abs(clientTotalTime - calculatedTime);
+      const timeDiffPercent = calculatedTime > 0 ? timeDiff / calculatedTime : 0;
+
+      if (timeDiffPercent <= 0.1 || timeDiff <= 60) {
+        // Within 10% or 1 minute - use client time
+        totalTime = clientTotalTime;
+        console.log(`[Journey ${journeyId}] Using client time: ${totalTime}s (server: ${calculatedTime}s)`);
+      } else {
+        // Significant difference - log and use average
+        console.warn(`[Journey ${journeyId}] Time mismatch: client=${clientTotalTime}s, server=${calculatedTime}s (${(timeDiffPercent * 100).toFixed(1)}% diff)`);
+        totalTime = Math.floor((clientTotalTime + calculatedTime) / 2);
+      }
     } else {
-      // Fallback: Calculate from routePoints (less accurate due to GPS noise)
-      const routePoints = journey.routePoints || [];
-      totalDistance = calculateDistance(routePoints);
+      totalTime = calculatedTime;
     }
-    
-    const totalTime = Math.floor((new Date() - new Date(journey.startTime)) / 1000);
+
+    // Validate client distance against calculated and time constraints
+    const { distance: totalDistance, source: distanceSource, warning } = validateDistance(
+      clientTotalDistance,
+      calculatedDistance,
+      totalTime
+    );
+
+    if (warning) {
+      console.warn(`[Journey ${journeyId}] ${warning}`);
+    }
+
+    console.log(`[Journey ${journeyId}] Final distance: ${totalDistance.toFixed(2)}km (source: ${distanceSource}, calculated: ${calculatedDistance.toFixed(2)}km)`);
+
     const avgSpeed = calculateAverageSpeed(totalDistance, totalTime);
-    
+
     // End journey
     const completedJourney = await prisma.journey.update({
       where: { id: journeyId },
@@ -346,7 +374,7 @@ const endJourney = async (req, res) => {
         avgSpeed,
       },
     });
-    
+
     // Update user total stats
     await prisma.user.update({
       where: { id: userId },
@@ -365,13 +393,13 @@ const endJourney = async (req, res) => {
         },
       },
     });
-    
+
     res.json({
       success: true,
       message: 'Journey completed successfully',
       journey: completedJourney,
     });
-    
+
   } catch (error) {
     console.error('End journey error:', error);
     res.status(500).json({
@@ -388,14 +416,14 @@ const getJourneyHistory = async (req, res) => {
   try {
     const userId = req.user.id;
     const { page = 1, limit = 10, status } = req.query;
-    
+
     const skip = (page - 1) * limit;
-    
+
     const whereClause = {
       userId,
       ...(status && { status }),
     };
-    
+
     const [journeys, total] = await Promise.all([
       prisma.journey.findMany({
         where: whereClause,
@@ -423,7 +451,7 @@ const getJourneyHistory = async (req, res) => {
       }),
       prisma.journey.count({ where: whereClause }),
     ]);
-    
+
     const formattedJourneys = journeys.map((journey) => {
       const hydratedPhotos = hydratePhotos(journey.photos);
       return {
@@ -443,7 +471,7 @@ const getJourneyHistory = async (req, res) => {
         pages: Math.ceil(total / limit),
       },
     });
-    
+
   } catch (error) {
     console.error('Get journey history error:', error);
     res.status(500).json({
@@ -459,7 +487,7 @@ const getJourneyHistory = async (req, res) => {
 const getActiveJourney = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const journey = await prisma.journey.findFirst({
       where: {
         userId,
@@ -476,19 +504,19 @@ const getActiveJourney = async (req, res) => {
         },
       },
     });
-    
+
     if (!journey) {
       return res.status(404).json({
         error: 'No active journey',
         message: 'No active journey found for this user',
       });
     }
-    
+
     res.json({
       success: true,
       journey,
     });
-    
+
   } catch (error) {
     console.error('Get active journey error:', error);
     res.status(500).json({
@@ -567,7 +595,7 @@ module.exports = {
     try {
       const { journeyId } = req.params;
       const userId = req.user.id;
-      
+
       // Find journey regardless of status
       const journey = await prisma.journey.findFirst({
         where: {
@@ -575,30 +603,30 @@ module.exports = {
           userId,
         },
       });
-      
+
       if (!journey) {
         return res.status(404).json({
           error: 'Journey not found',
           message: 'Journey not found for this user',
         });
       }
-      
+
       // Delete the journey completely
       await prisma.journey.delete({
         where: { id: journeyId },
       });
-      
+
       console.log(`Force cleared stuck journey ${journeyId} for user ${userId}`);
-      
-      res.json({ 
-        success: true, 
-        message: 'Journey force-cleared successfully' 
+
+      res.json({
+        success: true,
+        message: 'Journey force-cleared successfully'
       });
     } catch (error) {
       console.error('Force clear journey error:', error);
-      res.status(500).json({ 
-        error: 'Failed to force clear journey', 
-        message: error.message 
+      res.status(500).json({
+        error: 'Failed to force clear journey',
+        message: error.message
       });
     }
   },

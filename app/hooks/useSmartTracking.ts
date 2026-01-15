@@ -12,8 +12,13 @@ const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
 const BUFFER_SIZE = 10; // Flush every 10 points
 const FLUSH_INTERVAL_MS = 30000; // Or every 30 seconds
 const STATIONARY_SPEED_THRESHOLD = 1.5; // m/s (approx 5.4 km/h)
-const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
-const MAX_REASONABLE_SPEED_MPS = 139; // 500 km/h in m/s - only filter extreme GPS jitter outliers
+const MIN_TIME_DELTA_FOR_SPEED_CALC = 1.0; // Minimum 1 second for accurate speed calculation
+const MAX_REASONABLE_SPEED_MPS = 69.4; // 250 km/h in m/s - filter extreme GPS jitter
+const MIN_ACCURACY_FOR_DISTANCE = 30; // Ignore GPS readings with accuracy worse than 30m
+const POSITION_SMOOTHING_FACTOR = 0.3; // Exponential smoothing for position
+const SPEED_SMOOTHING_FACTOR = 0.4; // Exponential smoothing for speed display (higher = more responsive)
+const SPEED_CALC_WINDOW_MS = 5000; // 5 second window for speed calculation (was 3s)
+const MAX_SPEED_SAMPLES_REQUIRED = 2; // Require 2 samples at high speed before updating max
 
 // Calculate distance between two points (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -65,6 +70,15 @@ export function useSmartTracking(isTracking: boolean) {
   const DWELL_THRESHOLD_MS = 5000; // 5 seconds
   const DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
   const [isDwelling, setIsDwelling] = useState<boolean>(false); // True when stationary >5s
+
+  // Smoothed position for reducing GPS jitter
+  const smoothedPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
+
+  // Smoothed speed for consistent display (prevents UI jitter)
+  const smoothedSpeedRef = useRef<number>(0);
+
+  // Track recent high-speed samples for sustained max speed detection
+  const highSpeedSamplesRef = useRef<number[]>([]);
 
   // Flush buffer to Google Roads API
   const flushBufferToRoadsAPI = useCallback(async () => {
@@ -130,7 +144,6 @@ export function useSmartTracking(isTracking: boolean) {
 
   // Track recent points for GPS-based speed calculation
   const recentPointsRef = useRef<{ lat: number; lng: number; timestamp: number }[]>([]);
-  const SPEED_CALC_WINDOW_MS = 3000; // 3 second window for speed calculation
 
   // Handle new location update
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
@@ -138,11 +151,27 @@ export function useSmartTracking(isTracking: boolean) {
     const timestamp = location.timestamp;
     const now = Date.now();
 
-    // Calculate speed from GPS position changes (more accurate)
+    // Filter out low-accuracy GPS readings (likely jitter)
+    if (accuracy && accuracy > MIN_ACCURACY_FOR_DISTANCE) {
+      console.warn(`[SmartTracking] Ignoring low-accuracy GPS reading: ${accuracy.toFixed(1)}m`);
+      return;
+    }
+
+    // Apply exponential smoothing to position to reduce jitter
+    let smoothedLat = latitude;
+    let smoothedLng = longitude;
+
+    if (smoothedPositionRef.current) {
+      smoothedLat = smoothedPositionRef.current.latitude + POSITION_SMOOTHING_FACTOR * (latitude - smoothedPositionRef.current.latitude);
+      smoothedLng = smoothedPositionRef.current.longitude + POSITION_SMOOTHING_FACTOR * (longitude - smoothedPositionRef.current.longitude);
+    }
+    smoothedPositionRef.current = { latitude: smoothedLat, longitude: smoothedLng };
+
+    // Calculate speed from GPS position changes (more accurate than device-reported)
     let calculatedSpeedMps = 0;
 
-    // Add current point to recent points
-    recentPointsRef.current.push({ lat: latitude, lng: longitude, timestamp: now });
+    // Add current point to recent points (use smoothed position)
+    recentPointsRef.current.push({ lat: smoothedLat, lng: smoothedLng, timestamp: now });
 
     // Remove points outside calculation window
     recentPointsRef.current = recentPointsRef.current.filter(
@@ -209,12 +238,25 @@ export function useSmartTracking(isTracking: boolean) {
     const filteredSpeed = finalSpeedMps < STATIONARY_SPEED_THRESHOLD ? 0 : finalSpeedMps;
 
     // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
-    const displaySpeed = isDwelling ? 0 : filteredSpeed;
+    const preSmoothedSpeed = isDwelling ? 0 : filteredSpeed;
+
+    // Apply exponential smoothing to speed for smooth UI display
+    // This prevents jarring speed jumps between readings
+    let displaySpeedMps: number;
+    if (preSmoothedSpeed === 0) {
+      // Quickly drop to 0 when stopped
+      displaySpeedMps = smoothedSpeedRef.current * 0.3; // Decay faster
+      if (displaySpeedMps < 0.5) displaySpeedMps = 0;
+    } else {
+      // Smoothly transition when moving
+      displaySpeedMps = smoothedSpeedRef.current + SPEED_SMOOTHING_FACTOR * (preSmoothedSpeed - smoothedSpeedRef.current);
+    }
+    smoothedSpeedRef.current = displaySpeedMps;
 
     const smartLoc: SmartLocation = {
       latitude,
       longitude,
-      speed: displaySpeed, // Use displaySpeed (dwell-filtered) for UI
+      speed: displaySpeedMps, // Use smoothed speed for UI
       heading: heading || 0,
       timestamp,
       accuracy: accuracy || 0
@@ -223,10 +265,34 @@ export function useSmartTracking(isTracking: boolean) {
     setLiveRawLocation(smartLoc);
     lastLocationRef.current = smartLoc;
 
-    // Update Max Speed - only if actually moving (filtered speed > 0, not displaySpeed)
+    // Update Max Speed with sustained speed detection
+    // Require multiple samples at high speed to prevent single GPS spikes from inflating max
     if (filteredSpeed > 0) {
       const speedKmh = filteredSpeed * 3.6;
-      setMaxSpeed(prev => Math.max(prev, speedKmh));
+
+      // Track high-speed samples
+      if (speedKmh > maxSpeed * 0.9 || speedKmh > 50) {
+        // This is a high reading - track it
+        highSpeedSamplesRef.current.push(speedKmh);
+        // Keep only last 5 samples
+        if (highSpeedSamplesRef.current.length > 5) {
+          highSpeedSamplesRef.current.shift();
+        }
+
+        // Only update max if we have consistent high readings (sustained speed)
+        const recentHighSamples = highSpeedSamplesRef.current.filter(s => s >= speedKmh * 0.85);
+        if (recentHighSamples.length >= MAX_SPEED_SAMPLES_REQUIRED && speedKmh > maxSpeed) {
+          // Use the median of recent samples for stability
+          const sorted = [...recentHighSamples].sort((a, b) => a - b);
+          const medianSpeed = sorted[Math.floor(sorted.length / 2)];
+          setMaxSpeed(Math.max(maxSpeed, medianSpeed));
+        }
+      } else {
+        // Clear high speed samples when speed drops significantly
+        if (highSpeedSamplesRef.current.length > 0 && speedKmh < maxSpeed * 0.5) {
+          highSpeedSamplesRef.current = [];
+        }
+      }
     }
 
     // 3. Moving Time Calculation

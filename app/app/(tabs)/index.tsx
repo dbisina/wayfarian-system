@@ -9,22 +9,26 @@ import {
   RefreshControl,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserData } from '../../hooks/useUserData';
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { router } from 'expo-router';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
+import { useTranslation } from 'react-i18next';
 import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
-import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import { scale, verticalScale, moderateScale } from '../../utils/responsive';
 import { useSettings } from '../../contexts/SettingsContext';
+import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
 
 
 export default function HomeScreen(): React.JSX.Element {
   const { user, isAuthenticated } = useAuth();
   const { dashboardData, achievements, loading, refreshData } = useUserData();
   const { convertDistance, convertSpeed } = useSettings();
+  const { t } = useTranslation();
 
   const normalizeDistance = (value: number) => {
     if (!value) return 0;
@@ -46,7 +50,7 @@ export default function HomeScreen(): React.JSX.Element {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>Please log in to view your dashboard</Text>
+          <Text style={styles.errorText}>{t('home.pleaseLogin')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -75,11 +79,24 @@ export default function HomeScreen(): React.JSX.Element {
 
         {/* Header */}
         <View style={styles.header}>
-          <AnimatedLogoButton
-            containerStyle={styles.logoButtonContainer}
-            imageStyle={styles.profileImage}
-          />
-          <Text style={styles.logo}></Text>
+          {/* User Profile Picture */}
+          <TouchableOpacity 
+            onPress={() => router.push('/profile')}
+            activeOpacity={0.8}
+            style={styles.headerProfileContainer}
+          >
+            <Image
+              source={
+                dashboardData?.user?.photoURL || user?.photoURL
+                  ? { uri: dashboardData?.user?.photoURL || user?.photoURL }
+                  : require("../../assets/images/2025-09-26/i2yG8AHX5c.png")
+              }
+              style={styles.headerProfileImage}
+            />
+          </TouchableOpacity>
+          <Text style={styles.headerUserName} numberOfLines={1}>
+            {dashboardData?.user?.displayName || user?.displayName || "User"}
+          </Text>
           <TouchableOpacity style={styles.notificationContainer} onPress={() => router.push('/settings')}>
             <Image
               source={require("../../assets/images/2025-09-26/dcUiUAEFXH.png")}
@@ -106,14 +123,14 @@ export default function HomeScreen(): React.JSX.Element {
             <Text style={styles.userName}>
               {dashboardData?.user?.displayName || user?.displayName || "User"}
             </Text>
-            <Text style={styles.userRank}>Explorer Rank</Text>
+            <Text style={styles.userRank}>{t('home.explorerRank')}</Text>
             <Text style={styles.userStats}>
               {convertDistance(normalizeDistance(dashboardData?.user?.totalDistance || 0))} |{" "}
               {formatTime(dashboardData?.user?.totalTime || 0)} |{" "}
               {achievements.filter((a) => 
                 a.unlocked === true || 
                 (a.tiers && Array.isArray(a.tiers) && a.tiers.some(t => t.unlocked === true))
-              ).length} Badges
+              ).length} {t('home.badges')}
             </Text>
           </View>
         </TouchableOpacity>
@@ -122,7 +139,7 @@ export default function HomeScreen(): React.JSX.Element {
         <View style={styles.statsContainer}>
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Distance Covered</Text>
+              <Text style={styles.statLabel}>{t('home.distanceCovered')}</Text>
               <Text style={styles.statValue}>
                 {loading ? (
                   <SkeletonLine width={80} height={16} />
@@ -132,7 +149,7 @@ export default function HomeScreen(): React.JSX.Element {
               </Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Time Traveled</Text>
+              <Text style={styles.statLabel}>{t('home.timeTraveled')}</Text>
               <Text style={styles.statValue}>
                 {loading ? (
                   <SkeletonLine width={70} height={16} />
@@ -144,7 +161,7 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Avg. Speed</Text>
+              <Text style={styles.statLabel}>{t('home.avgSpeed')}</Text>
               <Text style={styles.statValue}>
                 {loading ? (
                   <SkeletonLine width={60} height={16} />
@@ -160,7 +177,7 @@ export default function HomeScreen(): React.JSX.Element {
               </Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Max Speed</Text>
+              <Text style={styles.statLabel}>{t('home.maxSpeed')}</Text>
               <Text style={styles.statValue}>
                 {loading ? (
                   <SkeletonLine width={60} height={16} />
@@ -176,10 +193,10 @@ export default function HomeScreen(): React.JSX.Element {
         <View style={styles.xpSection}>
           <View style={styles.xpHeader}>
             <Text style={styles.xpTitle}>
-              Level {dashboardData?.user?.level || 1}
+              {t('home.level')} {dashboardData?.user?.level || 1}
             </Text>
             <Text style={styles.xpValue}>
-              {dashboardData?.user?.xp || 0} XP
+              {dashboardData?.user?.xp || 0} {t('home.xp')}
             </Text>
           </View>
           <View style={styles.progressBarContainer}>
@@ -201,16 +218,17 @@ export default function HomeScreen(): React.JSX.Element {
             {loading ? (
               <SkeletonLine width={160} height={12} />
             ) : (
-              `${100 - ((dashboardData?.user?.xp || 0) % 100)} XP to Level ${
-                (dashboardData?.user?.level || 1) + 1
-              }`
+              t('home.xpToNextLevel', {
+                xp: 100 - ((dashboardData?.user?.xp || 0) % 100),
+                level: (dashboardData?.user?.level || 1) + 1
+              })
             )}
           </Text>
         </View>
 
         {/* Achievements Section */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Achievements</Text>
+          <Text style={styles.sectionTitle}>{t('home.achievements')}</Text>
         </View>
 
         <ScrollView
@@ -283,7 +301,7 @@ export default function HomeScreen(): React.JSX.Element {
                               resizeMode="contain"
                             />
                           ) : (
-                            <Text style={styles.achievementEmoji}>🏆</Text>
+                            <Ionicons name="trophy" size={40} color="#FFD700" />
                           )}
                         </View>
                         <View style={styles.achievementInfo}>
@@ -300,10 +318,10 @@ export default function HomeScreen(): React.JSX.Element {
                 ) : (
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>
-                      No achievements unlocked yet
+                      {t('home.noAchievements')}
                     </Text>
                     <Text style={styles.emptySubtext}>
-                      Start your first journey to unlock achievements!
+                      {t('home.startFirstJourney')}
                     </Text>
                   </View>
                 );
@@ -315,14 +333,14 @@ export default function HomeScreen(): React.JSX.Element {
         {/* Past Journeys Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Past Journeys</Text>
+            <Text style={styles.sectionTitle}>{t('home.pastJourneys')}</Text>
             {dashboardData?.recentJourneys &&
               dashboardData.recentJourneys.length > 0 && (
                 <TouchableOpacity
                   onPress={() => router.push("/PastJourneysScreen")}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.seeAllText}>See All</Text>
+                  <Text style={styles.seeAllText}>{t('home.seeAll')}</Text>
                 </TouchableOpacity>
               )}
           </View>
@@ -368,12 +386,30 @@ export default function HomeScreen(): React.JSX.Element {
                         journey.photos?.[0]?.thumbnailUrl ||
                         journey.photos?.[0]?.imageUrl ||
                         journey.photos?.[0]?.firebasePath;
+                      const journeyTitle = journey.title || `Journey ${index + 1}`;
                       return coverUri ? (
                         <Image source={{ uri: coverUri }} style={styles.journeyImageFull} />
                       ) : (
-                        <Text style={styles.journeyEmoji}>🚗</Text>
+                        <LinearGradient
+                          colors={['#F9A825', '#FF6F00']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.journeyGradientPlaceholder}
+                        >
+                          <Text style={styles.journeyGradientTitle} numberOfLines={2}>
+                            {journeyTitle}
+                          </Text>
+                        </LinearGradient>
                       );
                     })()}
+                    <JourneyCardMenu
+                      journeyId={journey.id}
+                      journeyTitle={journey.title || `Journey ${index + 1}`}
+                      onRename={() => refreshData()}
+                      onDelete={() => refreshData()}
+                      iconColor="#757575"
+                      iconSize={16}
+                    />
                   </View>
                   <View style={styles.journeyInfo}>
                     <Text style={styles.journeyTitle} numberOfLines={1}>
@@ -388,9 +424,9 @@ export default function HomeScreen(): React.JSX.Element {
               ))
             ) : (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No journeys yet</Text>
+                <Text style={styles.emptyText}>{t('home.noJourneys')}</Text>
                 <Text style={styles.emptySubtext}>
-                  Start your first journey to see it here!
+                  {t('home.startJourneyPrompt')}
                 </Text>
               </View>
             )}
@@ -437,6 +473,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
+  },
+  headerProfileContainer: {
+    padding: scale(3),
+    borderRadius: scale(22),
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 1, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  headerProfileImage: {
+    width: scale(38),
+    height: scale(38),
+    borderRadius: scale(19),
+  },
+  headerUserName: {
+    flex: 1,
+    marginLeft: scale(10),
+    fontFamily: 'Space Grotesk',
+    fontSize: moderateScale(16),
+    fontWeight: '600',
+    color: '#000000',
+    lineHeight: verticalScale(22),
   },
   profileImage: {
     width: scale(34),
@@ -800,6 +860,21 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: scale(8),
+  },
+  journeyGradientPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: scale(8),
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: scale(8),
+  },
+  journeyGradientTitle: {
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+    color: '#FFFFFF',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
   },
   journeyEmoji: {
     fontSize: moderateScale(32),

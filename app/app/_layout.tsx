@@ -14,6 +14,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { JourneyProvider } from '../contexts/JourneyContext';
 import { SettingsProvider } from '../contexts/SettingsContext';
+import { AlertProvider } from '../contexts/AlertContext';
+import { LiquidAlert } from '../components/ui/LiquidAlert';
 import GroupJourneyGlobalListener from '../components/GroupJourneyGlobalListener';
 import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
@@ -37,7 +39,7 @@ export const unstable_settings = {
 
 function RootLayoutContent() {
   const colorScheme = useColorScheme();
-  const { isAuthenticated, isInitializing } = useAuth();
+  const { isAuthenticated, isInitializing, hasCompletedProfileSetup, isNewSignUp } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
@@ -58,13 +60,25 @@ function RootLayoutContent() {
 
   const stackScreenOptions = { headerShown: false };
 
+  // Determine which screen to show:
+  // 1. Not authenticated -> (auth) for login/register
+  // 2. Authenticated but new signup needs profile setup -> (auth)/profile-setup
+  // 3. Fully authenticated -> (tabs)
+  const showAuth = !isAuthenticated;
+  const needsProfileSetup = isAuthenticated && (isNewSignUp || !hasCompletedProfileSetup);
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={stackScreenOptions}>
-        {isAuthenticated ? (
-          <Stack.Screen name="(tabs)" />
-        ) : (
+        {showAuth ? (
           <Stack.Screen name="(auth)" />
+        ) : needsProfileSetup ? (
+          <Stack.Screen 
+            name="(auth)" 
+            initialParams={{ screen: 'profile-setup' }}
+          />
+        ) : (
+          <Stack.Screen name="(tabs)" />
         )}
         <Stack.Screen name="group-detail" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="new-group" options={{ presentation: 'modal', headerShown: false }} />
@@ -75,6 +89,7 @@ function RootLayoutContent() {
       
       {/* Global listener for group journey start events */}
       <GroupJourneyGlobalListener />
+      <LiquidAlert />
     </ThemeProvider>
   );
 }
@@ -85,11 +100,13 @@ export default function RootLayout() {
       <Provider store={store}>
         <PersistGate loading={null} persistor={persistor}>
           <AuthProvider>
-            <SettingsProvider>
-              <JourneyProvider>
-                <RootLayoutContent />
-              </JourneyProvider>
-            </SettingsProvider>
+              <AlertProvider>
+                <SettingsProvider>
+                  <JourneyProvider>
+                    <RootLayoutContent />
+                  </JourneyProvider>
+                </SettingsProvider>
+              </AlertProvider>
           </AuthProvider>
         </PersistGate>
       </Provider>

@@ -1,4 +1,5 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text, Image, TouchableOpacity, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, interpolate, Extrapolation } from 'react-native-reanimated';
@@ -136,8 +137,9 @@ export default function TabLayout() {
   }
   
   // Tabs bar config to mimic current style while using Tabs behavior
+  const insets = useSafeAreaInsets();
   const BAR_HEIGHT = 44;
-  const BOTTOM_OFFSET = 20; // similar to example
+  const BOTTOM_OFFSET = 20 + (insets.bottom > 0 ? insets.bottom - 10 : 0); // Add inset, adjust slightly if needed
   const H_MARGIN = 22; // compact but leaves room for labels
   const NOTCH_DIAMETER = 50; // recess size under the FAB
   const NOTCH_RADIUS = NOTCH_DIAMETER / 2;

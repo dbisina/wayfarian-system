@@ -19,6 +19,7 @@ import MapViewDirections from 'react-native-maps-directions';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -56,6 +57,7 @@ export default function GroupJourneyScreen() {
   const { convertDistance } = useSettings();
   const socket = getSocket();
   const googleKey = getGoogleMapsApiKey();
+  const { t } = useTranslation();
 
   const [journeyData, setJourneyData] = useState<GroupJourneyData | null>(null);
   const [manualRouteCoords, setManualRouteCoords] = useState<
@@ -129,17 +131,17 @@ export default function GroupJourneyScreen() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'PHOTO',
-            message: 'Shared a photo',
+            message: t('groupJourney.sharedPhoto'),
             latitude: photoData.latitude,
             longitude: photoData.longitude,
             mediaUrl,
           }),
         });
 
-        Alert.alert('Success', 'Photo shared with group!');
+        Alert.alert(t('alerts.success'), t('groupJourney.photoShared'));
       } catch (error) {
         console.warn('Failed to upload group photo', error);
-        Alert.alert('Error', 'Failed to upload photo');
+        Alert.alert(t('alerts.error'), t('groupJourney.failedToUpload'));
       } finally {
         setShowCamera(false);
       }
@@ -169,7 +171,7 @@ export default function GroupJourneyScreen() {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (!isMounted) return;
         if (status !== 'granted') {
-          setLocationError('Location permission denied');
+          setLocationError(t('groupJourney.locationPermissionDenied'));
           return;
         }
 
@@ -188,7 +190,7 @@ export default function GroupJourneyScreen() {
       } catch (error) {
         if (isMounted) {
           console.warn('Unable to determine current location', error);
-          setLocationError('Unable to determine current location');
+          setLocationError(t('groupJourney.unableToDetermineLocation'));
         }
       } finally {
         if (isMounted) {
@@ -210,7 +212,7 @@ export default function GroupJourneyScreen() {
         method: "GET",
       });
       if (!response?.groupJourney) {
-        throw new Error("Journey not found");
+        throw new Error(t('groupJourney.journeyNotFound'));
       }
       setJourneyData(response.groupJourney);
       const mine = response.groupJourney.instances?.find(
@@ -220,7 +222,7 @@ export default function GroupJourneyScreen() {
         setMyInstance(mine);
       }
     } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to load group journey");
+      Alert.alert(t('alerts.error'), error?.message || t('groupJourney.failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -432,7 +434,7 @@ export default function GroupJourneyScreen() {
 
   const handleStartInstance = async () => {
     if (!groupJourneyId || !userStartLocation) {
-      Alert.alert("Error", "Please select your start location first");
+      Alert.alert(t('alerts.error'), t('groupJourney.selectStartLocation'));
       return;
     }
     setIsStarting(true);
@@ -459,9 +461,9 @@ export default function GroupJourneyScreen() {
       setShowStartLocationModal(false);
     } catch (error: any) {
       console.error('Start instance error:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || "Try again in a moment.";
+      const errorMessage = error?.response?.data?.message || error?.message || t('groupJourney.tryAgain');
       Alert.alert(
-        "Unable to start",
+        t('groupJourney.unableToStart'),
         errorMessage
       );
     } finally {
@@ -494,12 +496,12 @@ export default function GroupJourneyScreen() {
   const handleComplete = () => {
     if (!myInstance) return;
     Alert.alert(
-      "Complete Ride",
-      "Stop sharing your location and mark this group journey complete?",
+      t('groupJourney.completeRide'),
+      t('groupJourney.completeConfirm'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t('common.cancel'), style: "cancel" },
         {
-          text: "Complete",
+          text: t('groupJourney.complete'),
           style: "destructive",
             onPress: async () => {
             setIsCompleting(true);
@@ -529,7 +531,7 @@ export default function GroupJourneyScreen() {
               );
               
               if (!response || !response.success) {
-                throw new Error(response?.error || response?.message || "Failed to complete journey");
+                throw new Error(response?.error || response?.message || t('groupJourney.failedToComplete'));
               }
               
               // Clear all journey state for fresh start
@@ -539,15 +541,17 @@ export default function GroupJourneyScreen() {
               setRegion(null);
               setManualRouteCoords([]);
               
-              Alert.alert("Journey complete", "Great ride!");
+              setManualRouteCoords([]);
+              
+              Alert.alert(t('groupJourney.journeyComplete'), t('groupJourney.greatRide'));
               router.back();
             } catch (error: any) {
               console.error('[GroupJourney] Complete error:', error);
               const errorMessage = error?.response?.data?.message || 
                                  error?.response?.data?.error || 
                                  error?.message || 
-                                 "Unable to complete journey. Please try again.";
-              Alert.alert("Error", errorMessage);
+                                 t('groupJourney.failedToComplete'); // Reuse failedToComplete or create separate message
+              Alert.alert(t('alerts.error'), errorMessage);
             } finally {
               setIsCompleting(false);
             }
@@ -560,12 +564,12 @@ export default function GroupJourneyScreen() {
   if (!groupJourneyId) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Missing group journey ID.</Text>
+        <Text style={styles.errorText}>{t('groupJourney.missingId')}</Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <Text style={styles.backButtonText}>Go back</Text>
+          <Text style={styles.backButtonText}>{t('common.back')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -575,7 +579,7 @@ export default function GroupJourneyScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Loading journey…</Text>
+        <Text style={styles.loadingText}>{t('groupJourney.loading')}</Text>
       </View>
     );
   }
@@ -584,12 +588,12 @@ export default function GroupJourneyScreen() {
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle" size={48} color="#ef4444" />
-        <Text style={styles.errorText}>Journey not found.</Text>
+        <Text style={styles.errorText}>{t('groupJourney.journeyNotFound')}</Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <Text style={styles.backButtonText}>Go back</Text>
+          <Text style={styles.backButtonText}>{t('common.back')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -599,10 +603,11 @@ export default function GroupJourneyScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color="#6366f1" />
         <Text style={styles.loadingText}>
           {isLocatingUser
-            ? 'Getting your location…'
-            : locationError || 'Preparing map…'}
+            ? t('groupJourney.gettingLocation')
+            : locationError || t('groupJourney.preparingMap')}
         </Text>
       </View>
     );
@@ -678,7 +683,7 @@ export default function GroupJourneyScreen() {
               latitude: journeyData.endLatitude,
               longitude: journeyData.endLongitude,
             }}
-            title="Destination"
+            title={t('groupJourney.destination')}
             pinColor="red"
           />
         )}
@@ -730,13 +735,13 @@ export default function GroupJourneyScreen() {
       <View style={styles.topPanel}>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Progress</Text>
+            <Text style={styles.statLabel}>{t('groupJourney.progress')}</Text>
             <Text style={styles.statValue}>
               {completedCount}/{totalMembers}
             </Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Your distance</Text>
+            <Text style={styles.statLabel}>{t('groupJourney.yourDistance')}</Text>
             <Text style={styles.statValue}>
               {convertDistance(
                 myLocation
@@ -746,9 +751,9 @@ export default function GroupJourneyScreen() {
             </Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Status</Text>
+            <Text style={styles.statLabel}>{t('groupJourney.status')}</Text>
             <Text style={[styles.statValue, styles.statusValue]}>
-              {myInstance?.status || "NOT STARTED"}
+              {myInstance?.status || t('journey.notStarted')}
             </Text>
           </View>
         </View>
@@ -785,7 +790,7 @@ export default function GroupJourneyScreen() {
           style={styles.startButton}
           onPress={() => setShowStartLocationModal(true)}
         >
-          <Text style={styles.startButtonText}>Set Start Location</Text>
+          <Text style={styles.startButtonText}>{t('groupJourney.setStartLocation')}</Text>
         </TouchableOpacity>
       )}
 

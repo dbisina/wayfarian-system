@@ -70,6 +70,12 @@
             "enableProguardInReleaseBuilds": false
           }
         }
+      ],
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "KJWN27VC5D"
+        }
       ]
     ],
     "ios": {

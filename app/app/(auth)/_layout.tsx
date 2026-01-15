@@ -25,6 +25,7 @@ export default function AuthLayout() {
       <Stack.Screen name="step3" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
+      <Stack.Screen name="profile-setup" />
     </Stack>
   );
 }

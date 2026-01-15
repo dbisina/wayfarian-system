@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useRef, useCallback} from 'react';
 import TermsAndConditionsModal from '../../components/TermsAndConditionsModal';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import {
@@ -10,7 +10,6 @@ import {
   TextInput,
   ImageBackground,
   StatusBar,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +18,8 @@ import {
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAlert } from '../../contexts/AlertContext';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
@@ -31,12 +32,33 @@ export default function LoginScreen() {
   const [showTerms, setShowTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login, loginWithGoogle, loginWithApple, resetPassword } = useAuth();
+  const { showAlert } = useAlert();
+  const { t } = useTranslation();
   const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
   const isBusy = loading || resettingPassword;
+  
+  // Refs to preserve form values during auth state changes
+  const emailRef = useRef(email);
+  const passwordRef = useRef(password);
+  
+  // Keep refs in sync with state
+  const handleEmailChange = useCallback((text: string) => {
+    emailRef.current = text;
+    setEmail(text);
+  }, []);
+  
+  const handlePasswordChange = useCallback((text: string) => {
+    passwordRef.current = text;
+    setPassword(text);
+  }, []);
 
   const handleSignIn = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
+      showAlert({
+        title: t('auth.login.alerts.error'),
+        message: t('auth.login.alerts.enterBoth'),
+        type: 'error',
+      });
       return;
     }
 
@@ -44,7 +66,11 @@ export default function LoginScreen() {
       setLoading(true);
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      showAlert({
+        title: t('auth.login.alerts.loginFailed'),
+        message: error.message || t('auth.alerts.error'),
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -56,7 +82,11 @@ export default function LoginScreen() {
       await loginWithGoogle();
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
-        Alert.alert('Google Sign-In Failed', error.message);
+        showAlert({
+          title: t('auth.login.alerts.googleFailed'), 
+          message: error.message,
+          type: 'error',
+        });
       }
     } finally {
       setLoading(false);
@@ -69,7 +99,11 @@ export default function LoginScreen() {
       await loginWithApple();
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
-        Alert.alert('Apple Sign-In Failed', error.message);
+        showAlert({
+          title: t('auth.login.alerts.appleFailed'),
+          message: error.message,
+          type: 'error',
+        });
       }
     } finally {
       setLoading(false);
@@ -82,19 +116,28 @@ export default function LoginScreen() {
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Reset Password', 'Please enter your email address first.');
+      showAlert({
+        title: t('auth.login.alerts.resetPassword'),
+        message: t('auth.login.alerts.enterEmailFirst'),
+        type: 'warning',
+      });
       return;
     }
 
     try {
       setResettingPassword(true);
       await resetPassword(email.trim());
-      Alert.alert(
-        'Check Your Email',
-        'If an account exists for this email, we sent password reset instructions.'
-      );
+      showAlert({
+        title: t('auth.login.alerts.checkEmail'),
+        message: t('auth.login.alerts.resetSent'),
+        type: 'success',
+      });
     } catch (error: any) {
-      Alert.alert('Reset Password Failed', error.message || 'Could not send reset email. Please try again.');
+      showAlert({
+        title: t('auth.login.alerts.resetFailed'),
+        message: error.message || t('auth.login.alerts.error'),
+        type: 'error',
+      });
     } finally {
       setResettingPassword(false);
     }
@@ -152,7 +195,7 @@ export default function LoginScreen() {
           >
             <View style={styles.formContainer}>
             <AnimatedLogoButton containerStyle={styles.logoButton} />
-            <Text style={styles.title}>Sign into your account</Text>
+            <Text style={styles.title}>{t('auth.login.title')}</Text>
             {/* Google Sign In Button */}
             <TouchableOpacity 
               style={[styles.socialButton, isBusy && styles.disabledButton]} 
@@ -160,7 +203,7 @@ export default function LoginScreen() {
               disabled={isBusy}
             >
               <GoogleIcon />
-              <Text style={styles.socialButtonText}>Sign in with Google</Text>
+              <Text style={styles.socialButtonText}>{t('auth.login.signInGoogle')}</Text>
             </TouchableOpacity>
             {/* Apple Sign In Button */}
             <TouchableOpacity 
@@ -169,12 +212,12 @@ export default function LoginScreen() {
               disabled={isBusy}
             >
               <AppleIcon />
-              <Text style={styles.socialButtonText}>Sign in with Apple</Text>
+              <Text style={styles.socialButtonText}>{t('auth.login.signInApple')}</Text>
             </TouchableOpacity>
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>Or continue with</Text>
+              <Text style={styles.dividerText}>{t('auth.login.orContinue')}</Text>
               <View style={styles.dividerLine} />
             </View>
             {/* Email Field */}
@@ -183,10 +226,10 @@ export default function LoginScreen() {
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter your Email Address"
+                  placeholder={t('auth.login.emailPlaceholder')}
                   placeholderTextColor="rgba(0, 0, 0, 0.5)"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={handleEmailChange}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   returnKeyType="next"
@@ -202,10 +245,10 @@ export default function LoginScreen() {
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter Your Password"
+                  placeholder={t('auth.login.passwordPlaceholder')}
                   placeholderTextColor="rgba(0, 0, 0, 0.5)"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   returnKeyType="done"
@@ -234,7 +277,7 @@ export default function LoginScreen() {
               disabled={resettingPassword}
             >
               <Text style={styles.forgotPasswordText}>
-                {resettingPassword ? 'Sending reset link…' : 'Forgot password?'}
+                {resettingPassword ? t('auth.login.sendingReset') : t('auth.login.forgotPassword')}
               </Text>
             </TouchableOpacity>
             {/* Sign In Button */}
@@ -246,21 +289,21 @@ export default function LoginScreen() {
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.signInButtonText}>Sign in</Text>
+                <Text style={styles.signInButtonText}>{t('auth.login.signIn')}</Text>
               )}
             </TouchableOpacity>
             {/* Sign Up Link and Terms */}
             <View style={styles.signUpContainer}>
-              <Text style={styles.signUpText}>Don&apos;t Have an account? </Text>
+              <Text style={styles.signUpText}>{t('auth.login.noAccount')}</Text>
               <TouchableOpacity onPress={handleSignUp}>
-                <Text style={styles.signUpLink}>SignUp</Text>
+                <Text style={styles.signUpLink}>{t('auth.login.signUp')}</Text>
               </TouchableOpacity>
             </View>
             <View style={{alignItems: 'center', marginTop: 8}}>
               <Text style={{fontSize: 10, color: 'rgba(255,255,255,0.7)', textAlign: 'center'}}>
-                By signing in, you accept our{' '}
+                {t('auth.login.termsAccept')}
                 <Text style={{color: '#2196F3', textDecorationLine: 'underline'}} onPress={handleShowTerms}>
-                  Terms and Conditions
+                  {t('auth.login.termsLink')}
                 </Text>.
               </Text>
             </View>

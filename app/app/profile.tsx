@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -14,6 +15,7 @@ export default function ProfileScreen() {
   const { user, refreshUser } = useAuth();
   const { dashboardData, achievements, refreshData } = useUserData();
   const { convertDistance } = useSettings();
+  const { t } = useTranslation();
   const [uploading, setUploading] = useState(false);
 
   const normalizeDistance = (value: number) => {
@@ -34,7 +36,7 @@ export default function ProfileScreen() {
 
   const runDiagnostics = async () => {
     try {
-      Alert.alert('Running Diagnostics', 'Testing API connection...');
+      Alert.alert(t('profile.diagnostics.title'), t('profile.diagnostics.message'));
       const results = await testApiConnection();
       const allPassed = printDiagnostics(results);
       
@@ -43,12 +45,12 @@ export default function ProfileScreen() {
       ).join('\n\n');
       
       Alert.alert(
-        allPassed ? 'All Tests Passed' : 'Some Tests Failed',
+        allPassed ? t('profile.diagnostics.success') : t('profile.diagnostics.fail'),
         `API URL: ${results.apiUrl}\n\n${message}`,
-        [{ text: 'OK' }]
+        [{ text: t('common.ok') }]
       );
     } catch (error: any) {
-      Alert.alert('Diagnostic Error', error.message);
+      Alert.alert(t('common.error'), error.message);
     }
   };
 
@@ -57,7 +59,7 @@ export default function ProfileScreen() {
       // Request permission
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant camera roll permission to change your profile photo');
+        Alert.alert(t('profile.photo.permissionTitle'), t('profile.photo.permissionMsg'));
         return;
       }
 
@@ -116,35 +118,35 @@ export default function ProfileScreen() {
         console.log('[Profile] Upload response:', response);
 
         if (response.success) {
-          Alert.alert('Success', 'Profile photo updated successfully!');
+          Alert.alert(t('profile.photo.success'), t('profile.photo.success'));
           await refreshUser?.(response.user);
           await refreshData();
         } else {
-          throw new Error(response.message || response.error || 'Upload failed');
+          throw new Error(response.message || response.error || t('profile.photo.uploadFailed'));
         }
       }
     } catch (error: any) {
       console.error('[Profile] Photo upload error:', error);
       
-      let errorMessage = error.message || 'Could not update profile photo.';
+      let errorMessage = error.message || t('profile.photo.uploadFailed');
       
       // Add helpful hints based on error type
       if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
-        errorMessage += '\n\n📱 Network Issue:\n' +
+        errorMessage += `\n\n📱 ${t('profile.photo.networkError')}:\n` +
           '• Make sure your device and computer are on the same Wi-Fi network\n' +
           '• Check if the server is running (npm start in server folder)\n' +
-          '• Try the "Test API Connection" button above for diagnostics';
+          `• Try the "${t('profile.diagnostics.testApi')}" button above for diagnostics`;
       } else if (error.message?.includes('401')) {
-        errorMessage += '\n\n🔐 Authentication Issue:\n' +
+        errorMessage += `\n\n🔐 ${t('profile.photo.authError')}:\n` +
           '• Your session may have expired\n' +
           '• Try logging out and back in';
       } else if (error.message?.includes('413')) {
-        errorMessage += '\n\n📦 File Too Large:\n' +
+        errorMessage += `\n\n📦 ${t('profile.photo.sizeError')}:\n` +
           '• Image exceeds 5MB limit\n' +
           '• Try selecting a smaller image';
       }
       
-      Alert.alert('Upload Failed', errorMessage);
+      Alert.alert(t('profile.photo.uploadFailed'), errorMessage);
     } finally {
       setUploading(false);
     }
@@ -157,7 +159,7 @@ export default function ProfileScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
           <Image source={require('../assets/images/2025-09-26/Q6avvC9L6S.png')} style={styles.headerIcon} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={styles.headerTitle}>{t('profile.myProfile')}</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} style={styles.headerButton}>
           <Image source={require('../assets/images/2025-09-26/itjep5JQ04.png')} style={styles.headerIcon} />
         </TouchableOpacity>
@@ -190,11 +192,11 @@ export default function ProfileScreen() {
           <Text style={styles.name}>
             {dashboardData?.user?.displayName || user?.displayName || 'User'}
           </Text>
-          <Text style={styles.rank}>Explorer Rank</Text>
+          <Text style={styles.rank}>{t('home.explorerRank')}</Text>
 
           <View style={styles.editRow}>
             <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/settings')}>
-              <Text style={styles.editBtnText}>Edit Profile</Text>
+              <Text style={styles.editBtnText}>{t('profile.edit')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -202,22 +204,22 @@ export default function ProfileScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Distance</Text>
+            <Text style={styles.statLabel}>{t('common.distance')}</Text>
             <Text style={styles.statValue}>{formatDistance(dashboardData?.user?.totalDistance || 0)}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Time</Text>
+            <Text style={styles.statLabel}>{t('common.time')}</Text>
             <Text style={styles.statValue}>{formatTime(dashboardData?.user?.totalTime || 0)}</Text>
           </View>
         </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Top Speed</Text>
-            <Text style={styles.statValue}>{(dashboardData?.user?.topSpeed || 0).toFixed(0)} km/h</Text>
+            <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
+            <Text style={styles.statValue}>{(dashboardData?.user?.topSpeed || 0).toFixed(0)} {t('units.kmh')}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Badges</Text>
+            <Text style={styles.statLabel}>{t('home.badges')}</Text>
             <Text style={styles.statValue}>{(achievements || []).filter(a => a.unlocked).length}</Text>
           </View>
         </View>
@@ -227,19 +229,19 @@ export default function ProfileScreen() {
           {/* Debug: API Connection Test */}
           {__DEV__ && (
             <TouchableOpacity style={[styles.actionItem, { backgroundColor: '#FFF3CD', borderColor: '#FFC107' }]} onPress={runDiagnostics}>
-              <Text style={[styles.actionTitle, { color: '#856404' }]}>🔧 Test API Connection</Text>
-              <Text style={[styles.actionSubtitle, { color: '#856404' }]}>Debug network issues</Text>
+              <Text style={[styles.actionTitle, { color: '#856404' }]}>🔧 {t('profile.diagnostics.testApi')}</Text>
+              <Text style={[styles.actionSubtitle, { color: '#856404' }]}>{t('profile.diagnostics.debugSub')}</Text>
             </TouchableOpacity>
           )}
           
           <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/(tabs)/log')}>
-            <Text style={styles.actionTitle}>Ride History</Text>
-            <Text style={styles.actionSubtitle}>See your past journeys</Text>
+            <Text style={styles.actionTitle}>{t('profile.rideHistory')}</Text>
+            <Text style={styles.actionSubtitle}>{t('profile.rideHistorySub')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/(tabs)/leaderboard')}>
-            <Text style={styles.actionTitle}>Leaderboard</Text>
-            <Text style={styles.actionSubtitle}>Compare with friends</Text>
+            <Text style={styles.actionTitle}>{t('leaderboard.title')}</Text>
+            <Text style={styles.actionSubtitle}>{t('profile.leaderboardSub')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

@@ -11,6 +11,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 type FacingDirection = 'back' | 'front';
 
@@ -27,6 +28,7 @@ export default function JourneyCamera({
   onPhotoTaken,
   onClose,
 }: JourneyCameraProps) {
+  const { t } = useTranslation();
   const [facing, setFacing] = useState<FacingDirection>('back');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
@@ -48,8 +50,8 @@ export default function JourneyCamera({
   const ensureLocationPermission = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Location permission is needed to tag photos.');
-      throw new Error('Location permission denied');
+      Alert.alert(t('components.journeyCamera.permissionRequired'), t('components.journeyCamera.locationNeeded'));
+      throw new Error(t('components.journeyCamera.locationDenied'));
     }
   }, []);
 
@@ -74,14 +76,14 @@ export default function JourneyCamera({
       });
 
       if (!capture?.uri) {
-        throw new Error('Failed to capture photo');
+        throw new Error(t('components.journeyCamera.failedCapture'));
       }
 
       setCapturedPhoto(capture.uri);
       saveToLibraryIfAllowed(capture.uri);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to take picture';
-      Alert.alert('Camera error', message);
+      const message = error instanceof Error ? error.message : t('components.journeyCamera.failedCapture');
+      Alert.alert(t('components.journeyCamera.cameraError'), message);
     }
   }, [saveToLibraryIfAllowed]);
 
@@ -98,8 +100,8 @@ export default function JourneyCamera({
         longitude: location.coords.longitude,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to process photo';
-      Alert.alert('Error', message);
+      const message = error instanceof Error ? error.message : t('components.journeyCamera.failedProcess');
+      Alert.alert(t('components.journeyCamera.error'), message);
     }
   }, [capturedPhoto, ensureLocationPermission, onPhotoTaken]);
 
@@ -110,9 +112,9 @@ export default function JourneyCamera({
   if (!cameraPermission.granted) {
     return (
       <View style={styles.permissionContainer} testID={`journey-camera-permissions-${journeyId}`}>
-        <Text style={styles.permissionText}>Camera permission required</Text>
+        <Text style={styles.permissionText}>{t('components.journeyCamera.cameraPermissionRequired')}</Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestCameraPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+          <Text style={styles.permissionButtonText}>{t('components.journeyCamera.grantPermission')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -125,11 +127,11 @@ export default function JourneyCamera({
         <View style={styles.previewControls}>
           <TouchableOpacity style={styles.previewButton} onPress={() => setCapturedPhoto(null)}>
             <Ionicons name="refresh" size={24} color="#fff" />
-            <Text style={styles.previewButtonText}>Retake</Text>
+            <Text style={styles.previewButtonText}>{t('components.journeyCamera.retake')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.previewButton} onPress={handleConfirmPhoto}>
             <Ionicons name="checkmark" size={24} color="#fff" />
-            <Text style={styles.previewButtonText}>Use Photo</Text>
+            <Text style={styles.previewButtonText}>{t('components.journeyCamera.usePhoto')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -146,7 +148,7 @@ export default function JourneyCamera({
         <TouchableOpacity
           style={styles.captureButton}
           onPress={takePicture}
-          accessibilityLabel={`Capture ${journeyType} journey photo`}
+          accessibilityLabel={t('components.journeyCamera.captureLabel', { type: journeyType })}
         >
           <View style={styles.captureInner} />
         </TouchableOpacity>

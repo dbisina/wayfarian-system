@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image } from 'react
 import { getEvents, subscribe, formatEvent, RecentEvent, relativeTime } from '../utils/recentEvents';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   groupId: string;
@@ -11,6 +12,7 @@ interface Props {
 
 export default function RecentEventsPanel({ groupId, groupJourneyId }: Props) {
   const [events, setEvents] = useState<RecentEvent[]>([]);
+  const { t } = useTranslation();
 
   useEffect(() => {
     let mounted = true;
@@ -33,9 +35,9 @@ export default function RecentEventsPanel({ groupId, groupJourneyId }: Props) {
     return (
       <View style={styles.card}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Recent Activity</Text>
+          <Text style={styles.title}>{t('components.recentEvents.title')}</Text>
         </View>
-  <Text style={styles.emptyText}>No recent activity yet. It will appear here, even when you&apos;re offline.</Text>
+  <Text style={styles.emptyText}>{t('components.recentEvents.empty')}</Text>
       </View>
     );
   }
@@ -43,10 +45,10 @@ export default function RecentEventsPanel({ groupId, groupJourneyId }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Recent Activity</Text>
+        <Text style={styles.title}>{t('components.recentEvents.title')}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <TouchableOpacity onPress={() => router.push({ pathname: '/group-events', params: { groupId, groupJourneyId } })}>
-            <Text style={styles.link}>View all</Text>
+            <Text style={styles.link}>{t('components.recentEvents.viewAll')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={async () => setEvents(await getEvents(groupId))}>
             <MaterialIcons name="refresh" size={18} color="#6B7280" />

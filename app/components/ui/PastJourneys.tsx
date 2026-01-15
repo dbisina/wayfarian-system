@@ -8,12 +8,14 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import JourneyCard from './JourneyCard';
+import { useTranslation } from 'react-i18next';
 
 interface PastJourneysProps {
   onSeeAllPress?: () => void;
 }
 
 const PastJourneys = ({ onSeeAllPress }: PastJourneysProps): React.JSX.Element => {
+  const { t } = useTranslation();
   const journeys = [
     {
       id: '1',
@@ -47,7 +49,7 @@ const PastJourneys = ({ onSeeAllPress }: PastJourneysProps): React.JSX.Element =
           onPress={onSeeAllPress}
           activeOpacity={0.7}
         >
-          <Text style={styles.seeAllText}>See all</Text>
+          <Text style={styles.seeAllText}>{t('components.pastJourneys.seeAll')}</Text>
           <Text style={styles.seeAllArrow}>→</Text>
         </TouchableOpacity>
       </View>

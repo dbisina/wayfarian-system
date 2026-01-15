@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import { useJourney } from '../contexts/JourneyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../services/api';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import RideTimeline from '../components/RideTimeline';
@@ -69,6 +70,7 @@ export default function JourneyScreen(): React.JSX.Element {
     loadGroupMembers,
     currentLocation,
   } = useJourney();
+  const { t } = useTranslation();
   const { currentJourney, isTracking, isMinimized } = useJourneyState();
   const stats = useJourneyStats();
   const groupMembers = useJourneyMembers();
@@ -243,7 +245,11 @@ export default function JourneyScreen(): React.JSX.Element {
       router.push(`/group-detail?groupId=${targetGroupId}`);
       return;
     }
-    Alert.alert('Set a destination', 'Pick a destination from your group screen before starting this ride.');
+    if (targetGroupId) {
+      router.push(`/group-detail?groupId=${targetGroupId}`);
+      return;
+    }
+    Alert.alert(t('alerts.destinationNeeded'), t('alerts.pickDestinationFirst'));
   };
 
   // Update map region when journey starts or route changes
@@ -333,11 +339,11 @@ export default function JourneyScreen(): React.JSX.Element {
 
     if (needsDestinationPrompt) {
       Alert.alert(
-        'Destination needed',
-        'Pick a destination before starting this group ride.',
+        t('alerts.destinationNeeded'),
+        t('alerts.pickDestinationFirst'),
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Set destination', onPress: handleDestinationPrompt },
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('alerts.setDestination'), onPress: handleDestinationPrompt },
         ]
       );
       return;
@@ -356,12 +362,12 @@ export default function JourneyScreen(): React.JSX.Element {
     setIsStartBusy(true);
     try {
       const success = await startJourney({
-        title: 'My Journey',
+        title: t('journey.defaultTitle') || 'My Journey',
         vehicle: 'car',
         groupId: currentJourney?.groupId,
       });
       if (!success) {
-        Alert.alert('Error', 'Failed to start journey tracking');
+        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
       }
     } finally {
       setIsStartBusy(false);
@@ -382,7 +388,7 @@ export default function JourneyScreen(): React.JSX.Element {
       // Request permissions first
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to take photos');
+        Alert.alert(t('alerts.photoPermission'), t('alerts.cameraNeeded'));
         return;
       }
 
@@ -404,16 +410,16 @@ export default function JourneyScreen(): React.JSX.Element {
         // User canceled, no error needed
         return;
       } else {
-        throw new Error('No photo captured');
+        throw new Error(t('alerts.noPhotoCaptured'));
       }
     } catch (err: any) {
       console.error('Error taking photo:', err);
       // Handle ActivityResultLauncher error specifically
       if (err?.message?.includes('ActivityResultLauncher') || err?.message?.includes('unregistered')) {
-        Alert.alert('Camera Error', 'Please try again. If the issue persists, restart the app.');
+        Alert.alert(t('alerts.cameraError'), t('alerts.takePhotoAgain'));
       } else {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to take photo';
-        Alert.alert('Error', errorMessage === 'No photo captured' ? 'Please try taking the photo again' : errorMessage);
+        const errorMessage = err instanceof Error ? err.message : t('alerts.uploadFailed');
+        Alert.alert(t('alerts.error'), errorMessage === t('alerts.noPhotoCaptured') ? t('alerts.takePhotoAgain') : errorMessage);
       }
     }
   };
@@ -440,11 +446,11 @@ export default function JourneyScreen(): React.JSX.Element {
       if (currentJourney?.status === 'paused') {
         await resumeJourney();
       } else {
-        Alert.alert('Resume', 'No paused journey to resume.');
+        Alert.alert(t('common.resume'), t('alerts.resumeMsg'));
       }
     } catch (e) {
       console.warn('Failed to resume journey:', e);
-      Alert.alert('Error', 'Failed to resume. Please try again.');
+      Alert.alert(t('alerts.error'), t('alerts.resumeError') || 'Failed to resume. Please try again.');
     }
   };
 
@@ -461,11 +467,11 @@ export default function JourneyScreen(): React.JSX.Element {
       // Group journey instance complete
       if (gJourneyId && myInstance?.id && (myInstance.status === 'ACTIVE' || myInstance.status === 'PAUSED')) {
         Alert.alert(
-          'Stop Journey',
-          'Are you sure you want to stop and complete your group journey?',
+          t('alerts.stopJourneyConfirm'),
+          t('alerts.stopGroupConfirm'),
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Stop', style: 'destructive', onPress: async () => {
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('common.stop'), style: 'destructive', onPress: async () => {
               try {
                 // Stop location tracking first
                 stopLocationTracking();
@@ -506,8 +512,8 @@ export default function JourneyScreen(): React.JSX.Element {
                 const errorMessage = error?.response?.data?.message || 
                                    error?.response?.data?.error || 
                                    error?.message || 
-                                   'Failed to stop group journey. Please try again.';
-                Alert.alert('Error', errorMessage);
+                                   t('alerts.failedStopGroup');
+                Alert.alert(t('alerts.error'), errorMessage);
               }
             }}
           ]
@@ -518,11 +524,11 @@ export default function JourneyScreen(): React.JSX.Element {
       // Solo journey complete
       if (isTracking || currentJourney?.status === 'paused') {
         Alert.alert(
-          'Stop Journey',
-          'Are you sure you want to stop your journey?',
+          t('alerts.stopJourneyConfirm'),
+          t('alerts.stopSoloConfirm'),
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Stop', style: 'destructive', onPress: async () => {
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('common.stop'), style: 'destructive', onPress: async () => {
               await endJourney();
               try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
             }}
@@ -531,28 +537,28 @@ export default function JourneyScreen(): React.JSX.Element {
         return;
       }
 
-      Alert.alert('Stop Journey', 'No active or paused journey to stop.');
+      Alert.alert(t('alerts.stopJourneyConfirm'), t('alerts.noActiveStop'));
     } catch {
-      Alert.alert('Error', 'Failed to stop journey.');
+      Alert.alert(t('alerts.error'), t('alerts.failedStop'));
     }
   };
 
   const handleClearStuckJourney = () => {
     Alert.alert(
-      'Clear Stuck Journey',
-      'This will force-clear the current journey and all its data. Use this only if your journey is stuck. Continue?',
+      t('alerts.clearStuckJourneyTitle'),
+      t('alerts.clearStuckJourneyMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear',
+          text: t('alerts.clear'),
           style: 'destructive',
           onPress: async () => {
             try {
               await clearStuckJourney();
-              Alert.alert('Success', 'Journey cleared. You can now start a new journey.');
+              Alert.alert(t('alerts.success'), t('alerts.journeyCleared'));
               router.back();
             } catch {
-              Alert.alert('Error', 'Failed to clear journey. Please restart the app.');
+              Alert.alert(t('alerts.error'), t('alerts.failedToClear'));
             }
           },
         },
@@ -718,7 +724,7 @@ export default function JourneyScreen(): React.JSX.Element {
                     currentJourney?.startLocation?.longitude ??
                     groupView!.start!.longitude,
                 }}
-                title="Start Location"
+                title={t('group.startLocation')}
                 pinColor="green"
               />
             )}
@@ -733,7 +739,7 @@ export default function JourneyScreen(): React.JSX.Element {
                     currentJourney?.endLocation?.longitude ??
                     groupView!.end!.longitude,
                 }}
-                title="Destination"
+                title={t('group.destination')}
                 pinColor="red"
               />
             )}
@@ -840,7 +846,7 @@ export default function JourneyScreen(): React.JSX.Element {
               source={require("../assets/images/2025-09-26/cGkBkJPGTf.png")}
               style={styles.sosBackground}
             />
-            <Text style={styles.sosText}>SOS</Text>
+            <Text style={styles.sosText}>{t('journey.sos')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -848,7 +854,7 @@ export default function JourneyScreen(): React.JSX.Element {
             style={styles.clearButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.clearButtonText}>Clear Stuck Journey</Text>
+            <Text style={styles.clearButtonText}>{t('journey.clearStuckJourney')}</Text>
           </TouchableOpacity>
 
           {/* Bottom Panel */}
@@ -889,9 +895,9 @@ export default function JourneyScreen(): React.JSX.Element {
               >
                 <MaterialIcons name="flag" size={20} color="#0F172A" style={{ marginRight: 12 }} />
                 <View style={styles.destinationPromptTextContainer}>
-                  <Text style={styles.destinationPromptTitle}>Destination required</Text>
+                  <Text style={styles.destinationPromptTitle}>{t('journey.destinationRequired')}</Text>
                   <Text style={styles.destinationPromptSubtitle} numberOfLines={2}>
-                    Tell everyone where this ride is headed before tracking starts.
+                    {t('journey.destinationRequiredSub')}
                   </Text>
                 </View>
                 <MaterialIcons name="chevron-right" size={22} color="#0F172A" />
@@ -906,7 +912,7 @@ export default function JourneyScreen(): React.JSX.Element {
                     ? formatTime(Math.floor(stats.totalTime))
                     : "00:00"}
                 </Text>
-                <Text style={styles.statLabel}>Time</Text>
+                <Text style={styles.statLabel}>{t('journey.time')}</Text>
               </View>
               <View style={styles.statItem}>
                 <View style={styles.speedContainer}>
@@ -915,7 +921,7 @@ export default function JourneyScreen(): React.JSX.Element {
                   </Text>
                   <Text style={styles.speedUnit}>{speedMeasurement.unit || 'KM/H'}</Text>
                 </View>
-                <Text style={styles.statLabel}>Speed</Text>
+                <Text style={styles.statLabel}>{t('journey.speed')}</Text>
               </View>
               <View style={styles.statItem}>
                 <View style={styles.distanceContainer}>
@@ -924,7 +930,7 @@ export default function JourneyScreen(): React.JSX.Element {
                   </Text>
                   <Text style={styles.distanceUnit}>{distanceMeasurement.unit || 'KM'}</Text>
                 </View>
-                <Text style={styles.statLabel}>Distance</Text>
+                <Text style={styles.statLabel}>{t('journey.distance')}</Text>
               </View>
             </View>
 
@@ -934,8 +940,8 @@ export default function JourneyScreen(): React.JSX.Element {
                 style={[styles.startButton, isStartBusy && styles.startButtonDisabled]}
                 onPress={handleStartJourney}
                 disabled={isStartBusy}
-                accessibilityLabel="Toggle journey recording"
-                accessibilityHint={isTracking ? 'Stop recording your journey' : 'Start recording your journey'}
+                accessibilityLabel={t('journey.toggleRecording')}
+                accessibilityHint={isTracking ? t('journey.stopRecording') : t('journey.startRecording')}
               >
                 {isStartBusy ? (
                   <ActivityIndicator color="#000" />
@@ -955,7 +961,7 @@ export default function JourneyScreen(): React.JSX.Element {
                   source={require("../assets/images/2025-09-26/oaseCkwYnL.png")}
                   style={styles.shareIcon}
                 />
-                <Text style={styles.shareText}>Share live location</Text>
+                <Text style={styles.shareText}>{t('journey.shareLiveLocation')}</Text>
               </TouchableOpacity>
               {gJourneyId && (
                 <TouchableOpacity
@@ -1018,7 +1024,7 @@ export default function JourneyScreen(): React.JSX.Element {
                       ]}
                       resizeMode="contain"
                     />
-                    <Text style={[styles.startJourneyText, { marginLeft: 10 }]}>Start Journey</Text>
+                    <Text style={[styles.startJourneyText, { marginLeft: 10 }]}>{t('journey.startJourney')}</Text>
                   </>
                 )}
               </TouchableOpacity>

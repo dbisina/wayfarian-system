@@ -6,13 +6,15 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useTranslation } from 'react-i18next';
 
 const StartJourneyButton = (): React.JSX.Element => {
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.button}>
         <Icon name="play-arrow" size={24} color="#FFFFFF" />
-        <Text style={styles.buttonText}>Start Journey</Text>
+        <Text style={styles.buttonText}>{t('components.startJourneyButton.start')}</Text>
       </TouchableOpacity>
     </View>
   );

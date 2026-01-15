@@ -11,13 +11,31 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BackHandler } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 
 export default function OnboardingScreen3() {
   const { completeOnboarding } = useAuth();
+  const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        router.back();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   const completeAndContinue = async () => {
     await completeOnboarding();
-    router.replace('/(auth)/login');
+    router.replace('/(auth)/register');
   };
 
   const handleGetStarted = () => {
@@ -42,7 +60,7 @@ export default function OnboardingScreen3() {
       >
         <LinearGradient
           colors={["rgba(0, 0, 0, 0.3)", "rgba(0, 0, 0, 0.8)"]}
-          style={styles.overlay}
+          style={[styles.overlay, { paddingBottom: insets.bottom }]}
         >
           {/* Header */}
           <View style={styles.header}>

@@ -10,10 +10,30 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BackHandler } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 
 export default function OnboardingScreen2() {
   const { completeOnboarding } = useAuth();
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        router.back();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   const handleNext = () => {
     router.push('/step3');
@@ -36,21 +56,21 @@ export default function OnboardingScreen2() {
       >
         <LinearGradient
           colors={['rgba(0, 0, 0, 0.3)', 'rgba(0, 0, 0, 0.8)']}
-          style={styles.overlay}
+          style={[styles.overlay, { paddingBottom: insets.bottom }]}
         >
           {/* Header */}
           <View style={styles.header}>
             <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
             <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
-              <Text style={styles.skipText}>Skip</Text>
+              <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Main Content */}
           <View style={styles.content}>
-            <Text style={styles.mainTitle}>The Thrill Unfolds.</Text>
+            <Text style={styles.mainTitle}>{t('onboarding.step2.title')}</Text>
             <Text style={styles.description}>
-              Track speed, distance & time. Dominate leaderboards locally and globally.
+              {t('onboarding.step2.description')}
             </Text>
           </View>
 
@@ -64,7 +84,7 @@ export default function OnboardingScreen2() {
 
             {/* Next Button */}
             <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextText}>Next</Text>
+              <Text style={styles.nextText}>{t('onboarding.next')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>

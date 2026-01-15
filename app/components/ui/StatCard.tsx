@@ -8,10 +8,11 @@ import {
 interface StatCardProps {
   title: string;
   value: string;
+  subtitle?: string;
   valueStyle: 'digital' | 'orbitron' | 'vt323' | 'shareTech';
 }
 
-const StatCard = ({ title, value, valueStyle }: StatCardProps): React.JSX.Element => {
+const StatCard = ({ title, value, subtitle, valueStyle }: StatCardProps): React.JSX.Element => {
   const getValueTextStyle = () => {
     switch (valueStyle) {
       case 'digital':
@@ -31,6 +32,7 @@ const StatCard = ({ title, value, valueStyle }: StatCardProps): React.JSX.Elemen
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
       <Text style={[styles.value, getValueTextStyle()]}>{value}</Text>
+      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
 };
@@ -80,6 +82,14 @@ const styles = StyleSheet.create({
   shareTechValue: {
     fontFamily: 'Share Tech Mono',
     fontWeight: '400',
+  },
+  subtitle: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#666666',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+    marginTop: -4,
   },
 });
 

@@ -1,0 +1,17 @@
+{
+    "$schema": "https://raw.githubusercontent.com/EvanBacon/apple-targets/main/schema/expo-target.schema.json",
+    "type": "widget",
+    "name": "JourneyWidget",
+    "bundleIdentifier": ".JourneyWidget",
+    "deploymentTarget": "16.1",
+    "entitlements": {
+        "com.apple.security.application-groups": [
+            "group.com.wayfarian.wayfarianadventures"
+        ]
+    },
+    "frameworks": [
+        "ActivityKit",
+        "WidgetKit",
+        "SwiftUI"
+    ]
+}

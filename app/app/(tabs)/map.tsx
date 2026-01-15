@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { placesAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 import { Feather } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ interface Place {
 
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
+  const { t } = useTranslation();
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -33,12 +35,12 @@ export default function MapScreen(): React.JSX.Element {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filterTypes = useMemo(() => [
-    { key: 'gas', serverType: 'gas_station', label: 'Gas' },
-    { key: 'lodging', serverType: 'lodging', label: 'Hotel' },
-    { key: 'restaurant', serverType: 'restaurant', label: 'Restaurant' },
-    { key: 'tourist_attraction', serverType: 'tourist_attraction', label: 'Attractions' },
-    { key: 'shopping_mall', serverType: 'shopping_mall', label: 'Shopping' },
-  ], []);
+    { key: 'gas', serverType: 'gas_station', label: t('map.filters.gas') },
+    { key: 'lodging', serverType: 'lodging', label: t('map.filters.hotel') },
+    { key: 'restaurant', serverType: 'restaurant', label: t('map.filters.restaurant') },
+    { key: 'tourist_attraction', serverType: 'tourist_attraction', label: t('map.filters.attractions') },
+    { key: 'shopping_mall', serverType: 'shopping_mall', label: t('map.filters.shopping') },
+  ], [t]);
 
   const getMockPlaces = useCallback((filter?: string): Place[] => {
     if (!location) return [];
@@ -92,7 +94,7 @@ export default function MapScreen(): React.JSX.Element {
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
-        setError('Location permission denied');
+        setError(t('map.locationPermDenied'));
         return;
       }
 
@@ -102,7 +104,7 @@ export default function MapScreen(): React.JSX.Element {
       
       setLocation(currentLocation);
     } catch (error: any) {
-      setError('Failed to get current location');
+      setError(t('map.failedLocation'));
       console.error('Location error:', error);
     } finally {
       setLoading(false);
@@ -184,7 +186,7 @@ export default function MapScreen(): React.JSX.Element {
 
   const handleStartJourney = () => {
     if (!isAuthenticated) {
-      Alert.alert('Authentication Required', 'Please log in to start a journey');
+      Alert.alert(t('map.authRequired'), t('map.loginToStart'));
       return;
     }
     router.push('/new-journey');
@@ -219,10 +221,10 @@ export default function MapScreen(): React.JSX.Element {
         setDestination({ latitude: lat, longitude: lng, name: result?.result?.formattedAddress || trimmed });
         animateToRegion(region);
       } else {
-        Alert.alert('Not found', 'Could not locate that destination.');
+        Alert.alert(t('map.notFound'), t('map.destNotFound'));
       }
     } catch {
-      Alert.alert('Error', 'Failed to search location.');
+      Alert.alert(t('alerts.error'), t('map.searchError'));
     } finally {
       setLoading(false);
     }
@@ -269,7 +271,7 @@ export default function MapScreen(): React.JSX.Element {
         setQuery(description);
       }
     } catch {
-      Alert.alert('Error', 'Failed to load place details');
+      Alert.alert(t('alerts.error'), t('map.placeDetailsError'));
     } finally {
       setLoading(false);
     }
@@ -279,7 +281,7 @@ export default function MapScreen(): React.JSX.Element {
     return (
       <View style={styles.container}>
         <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>Please log in to view the map</Text>
+          <Text style={styles.errorText}>{t('map.loginToView')}</Text>
         </View>
       </View>
     );
@@ -291,7 +293,7 @@ export default function MapScreen(): React.JSX.Element {
         <View style={styles.centerContainer}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={getCurrentLocation}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{t('map.retry')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -329,7 +331,7 @@ export default function MapScreen(): React.JSX.Element {
           {destination && (
             <Marker
               coordinate={{ latitude: destination.latitude, longitude: destination.longitude }}
-              title={destination.name || 'Destination'}
+              title={destination.name || t('map.destination')}
               pinColor="#F9A825"
             />
           )}
@@ -359,7 +361,7 @@ export default function MapScreen(): React.JSX.Element {
           value={query}
           onChangeText={onChangeQuery}
           onSubmitEditing={handleSearchSubmit}
-          placeholder="Search destination..."
+          placeholder={t('map.searchPlaceholder')}
           returnKeyType="search"
           style={styles.searchInput}
           placeholderTextColor="#666"

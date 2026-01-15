@@ -17,8 +17,10 @@ import { useRouter } from 'expo-router';
 import { userAPI, journeyAPI } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
+import { useTranslation } from 'react-i18next';
 import { galleryAPI } from '../services/api';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface Journey {
   id: string;
@@ -61,6 +63,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
   const [renameValue, setRenameValue] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { convertDistance } = useSettings();
+  const { t } = useTranslation();
 
   const normalizeDistance = (value: number) => {
     if (!value) return 0;
@@ -100,7 +103,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       setJourneys(response.journeys || []);
     } catch (err: any) {
       console.error('Error fetching journeys:', err);
-      setError(err.message || 'Failed to load journeys');
+      setError(err.message || t('history.failedToLoad'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -141,21 +144,21 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     try {
       await journeyAPI.updateJourneyPreferences(journeyId, { isHidden: true });
       updateJourneyState(journeyId, { isHidden: true, hiddenAt: new Date().toISOString() });
-      Alert.alert('Removed', 'This journey was hidden from your list.');
+      Alert.alert(t('history.hidden'), t('history.hiddenMsg'));
     } catch (hideError: any) {
       console.error('Hide journey error:', hideError);
-      Alert.alert('Failed to hide', hideError?.message || 'Could not update this journey.');
+      Alert.alert(t('alerts.error'), hideError?.message || t('history.failedToHide'));
     }
   };
 
   const confirmHideJourney = (journey: Journey) => {
     Alert.alert(
-      'Hide this journey?',
-      'It will disappear from this list but remain safely stored.',
+      t('history.hideConfirm'),
+      t('history.hideConfirmSub'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Hide',
+          text: t('history.hide'),
           style: 'destructive',
           onPress: () => handleHideJourney(journey.id),
         },
@@ -166,22 +169,22 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
 
   const confirmDeleteJourney = (journey: Journey) => {
     Alert.alert(
-      'Delete Permanently?',
-      'This will permanently erase all data for this journey. This action cannot be undone.',
+      t('history.deleteConfirm'),
+      t('history.deleteConfirmSub'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
              setActionsJourney(null);
              try {
                await journeyAPI.deleteJourney(journey.id);
                setJourneys(prev => prev.filter(j => j.id !== journey.id));
-               Alert.alert('Deleted', 'Journey has been permanently deleted.');
+               Alert.alert(t('history.deleted'), t('history.deletedMsg'));
              } catch (err: any) {
                console.error('Delete error:', err);
-               Alert.alert('Error', err.message || 'Failed to delete journey');
+               Alert.alert(t('alerts.error'), err.message || t('alerts.error'));
              }
           },
         },
@@ -196,7 +199,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Gallery permission is required to add photos');
+        Alert.alert(t('journeyDetail.alerts.photoPermission'), t('journeyDetail.alerts.galleryNeeded'));
         return;
       }
 
@@ -226,14 +229,14 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
         }
 
         if (successCount > 0) {
-          Alert.alert('Success', `${successCount} photo${successCount > 1 ? 's' : ''} added. Refreshing...`);
+          Alert.alert(t('alerts.success'), `${successCount} ${t('history.photoSuccess')}`);
           fetchJourneys(); // Refresh to show new photo count/cover
         } else {
-          Alert.alert('Error', 'Failed to upload photos');
+          Alert.alert(t('alerts.error'), t('journeyDetail.alerts.uploadFailed'));
         }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to add photos');
+      Alert.alert(t('alerts.error'), err.message || t('journeyDetail.alerts.uploadFailed'));
     }
   };
 
@@ -256,7 +259,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     if (!renameJourney) return;
     const trimmed = renameValue.trim();
     if (!trimmed) {
-      Alert.alert('Name required', 'Give this journey a short title.');
+      Alert.alert(t('history.nameRequired'), t('history.shortTitle'));
       return;
     }
     try {
@@ -265,7 +268,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       cancelRename();
     } catch (renameError: any) {
       console.error('Rename journey error:', renameError);
-      Alert.alert('Rename failed', renameError?.message || 'Could not rename this journey.');
+      Alert.alert(t('history.renameFailed'), renameError?.message || t('history.renameFailed'));
     }
   };
 
@@ -275,10 +278,10 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       if (result?.restored) {
         setJourneys((prev) => prev.map((journey) => ({ ...journey, isHidden: false, hiddenAt: null })));
       }
-      Alert.alert('Done', result?.message || 'Hidden journeys are visible again.');
+      Alert.alert(t('history.done'), result?.message || t('history.restoredMsg'));
     } catch (restoreError: any) {
       console.error('Restore hidden journeys error:', restoreError);
-      Alert.alert('Restore failed', restoreError?.message || 'Could not restore hidden journeys.');
+      Alert.alert(t('alerts.error'), restoreError?.message || 'Could not restore hidden journeys.');
     }
   };
 
@@ -288,10 +291,10 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       if (result?.cleared) {
         setJourneys((prev) => prev.map((journey) => ({ ...journey, customTitle: null })));
       }
-      Alert.alert('Done', result?.message || 'Custom names removed.');
+      Alert.alert(t('history.done'), result?.message || t('history.clearedMsg'));
     } catch (clearError: any) {
       console.error('Clear custom titles error:', clearError);
-      Alert.alert('Clear failed', clearError?.message || 'Could not clear custom names.');
+      Alert.alert(t('alerts.error'), clearError?.message || 'Could not clear custom names.');
     }
   };
 
@@ -301,13 +304,13 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
   const handleHeaderOptions = () => {
     const options: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }[] = [];
     if (hasHiddenJourneys) {
-      options.push({ text: 'Restore hidden journeys', onPress: restoreHiddenJourneys });
+      options.push({ text: t('history.restoreHidden'), onPress: restoreHiddenJourneys });
     }
     if (hasCustomTitles) {
-      options.push({ text: 'Clear custom names', onPress: clearCustomTitles });
+      options.push({ text: t('history.clearCustomNames'), onPress: clearCustomTitles });
     }
-    options.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert('History options', 'Manage how your rides appear.', options);
+    options.push({ text: t('common.cancel'), style: 'cancel' });
+    Alert.alert(t('history.options'), t('history.optionsSub'), options);
   };
 
   const BackIcon = () => (
@@ -334,7 +337,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#3E4751" />
-        <Text style={styles.loadingText}>Loading journeys...</Text>
+        <Text style={styles.loadingText}>{t('history.loading')}</Text>
       </View>
     );
   }
@@ -344,7 +347,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       <View style={[styles.container, styles.centerContent]}>
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchJourneys}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
+          <Text style={styles.retryButtonText}>{t('history.tryAgain')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -360,7 +363,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
         >
           <BackIcon />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Your Journeys</Text>
+        <Text style={styles.headerTitle}>{t('history.title')}</Text>
         <TouchableOpacity style={styles.moreButton} activeOpacity={0.7} onPress={handleHeaderOptions}>
           <MoreIcon />
         </TouchableOpacity>
@@ -376,9 +379,9 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
         {visibleJourneys.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateEmoji}>🚗</Text>
-            <Text style={styles.emptyStateTitle}>No Journeys Yet</Text>
+            <Text style={styles.emptyStateTitle}>{t('history.noJourneys')}</Text>
             <Text style={styles.emptyStateText}>
-              Start your first journey to see it here
+              {t('history.startFirstJourney')}
             </Text>
           </View>
         ) : (
@@ -405,11 +408,16 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                       style={styles.journeyImage} 
                     />
                   ) : (
-                    <View style={styles.journeyImagePlaceholder}>
-                      <Text style={styles.journeyImageEmoji}>
-                        {journey.vehicle === 'bike' ? '🚴' : journey.vehicle === 'car' ? '🚗' : '🏃'}
+                    <LinearGradient
+                      colors={['#F9A825', '#FF6F00']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.journeyImage, styles.gradientPlaceholder]}
+                    >
+                      <Text style={styles.gradientTitle} numberOfLines={2}>
+                        {journey.title || t('history.defaultTitle')}
                       </Text>
-                    </View>
+                    </LinearGradient>
                   )}
                   {photoCount > 0 && (
                     <View style={styles.photoBadge}>
@@ -418,7 +426,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                   )}
                   <View style={styles.journeyInfo}>
                     <Text style={styles.journeyTitle} numberOfLines={1}>
-                      {journey.title || `Journey ${index + 1}`}
+                      {journey.title || t('history.defaultTitle')}
                     </Text>
                     <Text style={styles.journeyDate}>
                       {formatDate(journey.startTime)}
@@ -455,34 +463,34 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
             onPress={() => actionsJourney && beginRenameJourney(actionsJourney)}
           >
             <MaterialIcons name="edit" size={18} color="#111827" />
-            <Text style={styles.actionSheetButtonText}>Rename journey</Text>
+            <Text style={styles.actionSheetButtonText}>{t('history.rename')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionSheetButton}
             onPress={() => actionsJourney && confirmHideJourney(actionsJourney)}
           >
             <MaterialIcons name="archive" size={18} color="#DC2626" />
-            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Remove from list (Hide)</Text>
+            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>{t('history.hide')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionSheetButton}
             onPress={() => actionsJourney && handleAddPhotos(actionsJourney)}
           >
              <Ionicons name="images" size={18} color="#111827" />
-             <Text style={styles.actionSheetButtonText}>Add photos</Text>
+             <Text style={styles.actionSheetButtonText}>{t('history.addPhotos')}</Text>
           </TouchableOpacity>
            <TouchableOpacity
             style={styles.actionSheetButton}
             onPress={() => actionsJourney && confirmDeleteJourney(actionsJourney)}
           >
             <Ionicons name="trash-outline" size={18} color="#DC2626" />
-            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>Delete permanently</Text>
+            <Text style={[styles.actionSheetButtonText, { color: '#DC2626' }]}>{t('history.delete')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionSheetButton, styles.actionSheetCancel]}
             onPress={() => setActionsJourney(null)}
           >
-            <Text style={styles.actionSheetCancelText}>Cancel</Text>
+            <Text style={styles.actionSheetCancelText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -490,21 +498,21 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       <Modal visible={!!renameJourney} transparent animationType="fade" onRequestClose={cancelRename}>
         <View style={styles.renameModalBackdrop}>
           <View style={styles.renameModalCard}>
-            <Text style={styles.renameModalTitle}>Rename journey</Text>
+            <Text style={styles.renameModalTitle}>{t('history.rename')}</Text>
             <TextInput
               style={styles.renameInput}
               value={renameValue}
               onChangeText={setRenameValue}
-              placeholder="Morning ride"
+              placeholder={t('history.defaultTitle')}
               placeholderTextColor="#9CA3AF"
               autoFocus
             />
             <View style={styles.renameActions}>
               <TouchableOpacity style={styles.renameCancelButton} onPress={cancelRename}>
-                <Text style={styles.renameCancelText}>Cancel</Text>
+                <Text style={styles.renameCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.renameSaveButton} onPress={saveRenamedJourney}>
-                <Text style={styles.renameSaveText}>Save</Text>
+                <Text style={styles.renameSaveText}>{t('common.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -800,6 +808,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     fontFamily: 'Space Grotesk',
+  },
+  gradientPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  gradientTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
   },
 });
 

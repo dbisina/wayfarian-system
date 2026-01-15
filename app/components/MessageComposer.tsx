@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
+import { useTranslation } from 'react-i18next';
+
 interface MessageComposerProps {
   onSend: (message: string) => void;
   placeholder?: string;
 }
 
-export default function MessageComposer({ onSend, placeholder = 'Send a message...' }: MessageComposerProps) {
+export default function MessageComposer({ onSend, placeholder }: MessageComposerProps) {
+  const { t } = useTranslation();
+  const actualPlaceholder = placeholder || t('components.messageComposer.placeholder');
   const [text, setText] = useState('');
 
   const handleSend = () => {

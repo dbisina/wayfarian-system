@@ -10,6 +10,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { Skeleton } from './Skeleton';
 import { placesAPI } from '../services/api';
+import { useTranslation } from 'react-i18next';
 
 interface LocationSuggestion {
   id: string;
@@ -39,6 +40,7 @@ export default function LocationPicker({
   currentLocation,
   style,
 }: LocationPickerProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -176,7 +178,7 @@ export default function LocationPicker({
 
   const handleUseCurrentLocation = () => {
     if (!currentLocation) return;
-    const address = 'Current Location';
+    const address = t('common.currentLocation');
     setQuery(address);
     setSuggestions([]);
     setShowSuggestions(false);
@@ -228,7 +230,7 @@ export default function LocationPicker({
             >
               <MaterialIcons name="my-location" size={16} color="#007AFF" style={styles.suggestionIcon} />
               <Text numberOfLines={1} style={[styles.suggestionText, styles.currentLocationText]}>
-                Use Current Location
+                {t('common.useCurrentLocation')}
               </Text>
             </TouchableOpacity>
           )}

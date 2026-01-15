@@ -8,6 +8,8 @@ import {
   ImageBackground,
   StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -17,6 +19,8 @@ interface OnboardingScreen3Props {
 }
 
 const OnboardingScreen3 = ({onGetStarted, onSkip}: OnboardingScreen3Props): React.JSX.Element => {
+  const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -27,20 +31,20 @@ const OnboardingScreen3 = ({onGetStarted, onSkip}: OnboardingScreen3Props): Reac
         style={styles.backgroundImage}
         resizeMode="cover"
       >
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, { paddingBottom: 27 + insets.bottom }]}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.logo}>LOGO</Text>
             <TouchableOpacity onPress={onSkip} style={styles.skipButton}>
-              <Text style={styles.skipText}>Skip</Text>
+              <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Main Content */}
           <View style={styles.content}>
-            <Text style={styles.mainTitle}>The Challenge Awaits.</Text>
+            <Text style={styles.mainTitle}>{t('onboarding.title3')}</Text>
             <Text style={styles.description}>
-              Solo rides. Group rides. Extra challenges. Earn rewards as you travel.
+              {t('onboarding.subtitle3')}
             </Text>
           </View>
 
@@ -54,7 +58,7 @@ const OnboardingScreen3 = ({onGetStarted, onSkip}: OnboardingScreen3Props): Reac
 
             {/* Get Started Button */}
             <TouchableOpacity style={styles.getStartedButton} onPress={onGetStarted}>
-              <Text style={styles.getStartedButtonText}>Get Started</Text>
+              <Text style={styles.getStartedButtonText}>{t('onboarding.getStarted')}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -4,7 +4,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { Buffer } from 'buffer';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { makeRedirectUri, fetchDiscoveryAsync, AuthRequest, ResponseType, type AuthSessionResult } from 'expo-auth-session';
 import { 
@@ -116,6 +115,8 @@ interface AuthContextType {
   isInitializing: boolean;
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
+  hasCompletedProfileSetup: boolean;
+  isNewSignUp: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -124,6 +125,7 @@ interface AuthContextType {
   deleteAccount: () => Promise<void>;
   refreshUser: (updatedUser?: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
+  completeProfileSetup: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
 
@@ -171,6 +173,7 @@ interface AuthProviderProps {
 }
 
 const ONBOARDING_KEY = '@wayfarian:onboarding_completed';
+const PROFILE_SETUP_KEY = '@wayfarian:profile_setup_completed';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -178,6 +181,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [hasCompletedProfileSetup, setHasCompletedProfileSetup] = useState(true); // Default true - only false for new signups
+  const [isNewSignUp, setIsNewSignUp] = useState(false);
   const [onboardingStatusChecked, setOnboardingStatusChecked] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const { setUserContext } = useSentryContextBridge();
@@ -428,9 +433,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('[AuthContext] Loading onboarding state from AsyncStorage...');
         const completed = await ReactNativeAsyncStorage.getItem(ONBOARDING_KEY);
         console.log('[AuthContext] Onboarding flag retrieved:', completed);
+        
+        // 2. Load profile setup flag
+        const profileSetupCompleted = await ReactNativeAsyncStorage.getItem(PROFILE_SETUP_KEY);
+        console.log('[AuthContext] Profile setup flag retrieved:', profileSetupCompleted);
+        
         if (mounted) {
           setHasCompletedOnboarding(completed === 'true');
+          // If profile setup is explicitly 'false', user needs to complete it
+          // Otherwise default to true (existing users)
+          setHasCompletedProfileSetup(profileSetupCompleted !== 'false');
           console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
+          console.log('[AuthContext] hasCompletedProfileSetup set to:', profileSetupCompleted !== 'false');
         }
       } catch (error) {
         console.error('[AuthContext] Failed to load onboarding state:', error);
@@ -552,8 +566,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('Firebase login successful');
       
       await syncUserData(userCredential.user);
-      console.log('Login completed successfully, navigating...');
-      router.replace('/(tabs)');
+      console.log('Login completed successfully');
       
     } catch (error: any) {
       console.error('Login error:', error);
@@ -605,10 +618,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
       console.log('Firebase profile updated');
       
+      // Mark as new signup - needs to complete profile setup
+      setIsNewSignUp(true);
+      setHasCompletedProfileSetup(false);
+      await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
+      
       // Sync with backend
       await syncUserData(userCredential.user);
       console.log('Registration completed successfully');
-      router.replace('/(tabs)');
       
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -662,7 +679,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         const result = await signInWithPopup(auth, provider);
         await syncUserData(result.user);
-        router.replace('/(tabs)');
         return;
       }
 
@@ -701,8 +717,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         const googleCredential = GoogleAuthProvider.credential(idToken);
         const firebaseResult = await signInWithCredential(auth, googleCredential);
+        
+        // Check if this is a new user (first-time signup with Google)
+        const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser || 
+          (firebaseResult.user.metadata.creationTime === firebaseResult.user.metadata.lastSignInTime);
+        if (isNewUser) {
+          setIsNewSignUp(true);
+          setHasCompletedProfileSetup(false);
+          await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
+        }
+        
         await syncUserData(firebaseResult.user);
-        router.replace('/(tabs)');
         return;
       }
 
@@ -721,8 +746,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const googleCredential = GoogleAuthProvider.credential(idToken);
       const firebaseResult = await signInWithCredential(auth, googleCredential);
+      
+      // Check if this is a new user (first-time signup with Google)
+      const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser || 
+        (firebaseResult.user.metadata.creationTime === firebaseResult.user.metadata.lastSignInTime);
+      if (isNewUser) {
+        setIsNewSignUp(true);
+        setHasCompletedProfileSetup(false);
+        await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
+      }
+      
       await syncUserData(firebaseResult.user);
-      router.replace('/(tabs)');
         
     } catch (error: any) {
       console.error('Google login error:', error);
@@ -823,6 +857,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Sign in with Firebase
       const userCredential = await signInWithCredential(auth, appleCredential);
+      
+      // Check if this is a new user (first-time signup with Apple)
+      const isNewUser = (userCredential as any)._tokenResponse?.isNewUser || 
+        (userCredential.user.metadata.creationTime === userCredential.user.metadata.lastSignInTime);
+      if (isNewUser) {
+        setIsNewSignUp(true);
+        setHasCompletedProfileSetup(false);
+        await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
+      }
       
       // Sync with backend
       await syncUserData(userCredential.user);
@@ -946,6 +989,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Complete profile setup (called after new user finishes profile-setup screen)
+  const completeProfileSetup = async () => {
+    try {
+      console.log('[AuthContext] Marking profile setup complete...');
+      await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'true');
+      setHasCompletedProfileSetup(true);
+      setIsNewSignUp(false);
+      console.log('[AuthContext] Profile setup completed');
+    } catch (error) {
+      console.error('[AuthContext] Failed to save profile setup completion:', error);
+      throw error;
+    }
+  };
+
   // Send password reset email
   const resetPassword = async (email: string) => {
     if (!email) {
@@ -1043,6 +1100,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isInitializing: initializing || !onboardingStatusChecked,
     isAuthenticated,
     hasCompletedOnboarding,
+    hasCompletedProfileSetup,
+    isNewSignUp,
     login,
     register,
     loginWithGoogle,
@@ -1051,6 +1110,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     deleteAccount,
     refreshUser,
     completeOnboarding,
+    completeProfileSetup,
     resetPassword,
   };
 

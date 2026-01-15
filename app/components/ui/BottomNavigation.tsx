@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 
 
@@ -12,6 +13,7 @@ type Props = {
 const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => {
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const router = useRouter();
+  const { t } = useTranslation();
 
   const handleAddButtonPress = () => {
     setIsMenuExpanded(!isMenuExpanded);
@@ -45,14 +47,14 @@ const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => {
                 <View style={styles.menuItemIcon}>
                   <BikeIcon />
                 </View>
-                <Text style={styles.menuItemText}>Add a bike/vehicle</Text>
+                <Text style={styles.menuItemText}>{t('components.bottomNavigation.addVehicle')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItemPress('join-group')}>
                 <View style={styles.menuItemIcon}>
                   <GroupIcon />
                 </View>
-                <Text style={styles.menuItemText}>Join a group ride</Text>
+                <Text style={styles.menuItemText}>{t('components.bottomNavigation.joinGroup')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -94,7 +96,7 @@ const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => {
           <TouchableOpacity style={styles.logButton} onPress={() => onTabPress?.('log')}>
             <View style={[styles.logButtonBackground, activeTab === 'log' && styles.logButtonActive]}>
               <BarChartIcon active={activeTab === 'log'} />
-              <Text style={styles.logText}>Log</Text>
+              <Text style={styles.logText}>{t('components.bottomNavigation.log')}</Text>
             </View>
           </TouchableOpacity>
         </View>

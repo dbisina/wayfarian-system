@@ -11,9 +11,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function OnboardingScreen() {
   const { completeOnboarding } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const handleNext = () => {
     router.push('/step2');
@@ -21,7 +23,7 @@ export default function OnboardingScreen() {
   
   const handleSkip = async () => {
     await completeOnboarding();
-    router.replace('/login');
+    router.replace('/register');
   };
 
   return (
@@ -34,7 +36,7 @@ export default function OnboardingScreen() {
       >
         <LinearGradient
           colors={['rgba(0, 0, 0, 0.3)', 'rgba(0, 0, 0, 0.8)']}
-          style={styles.overlay}
+          style={[styles.overlay, { paddingBottom: insets.bottom }]}
         >
           {/* Header */}
           <View style={styles.header}>

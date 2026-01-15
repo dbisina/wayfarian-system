@@ -6,11 +6,18 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import LiveNotificationService, { JourneyNotificationData } from './liveNotificationService';
 
 // Task name for background location tracking
 const BACKGROUND_LOCATION_TASK = 'WAYFARIAN_BACKGROUND_LOCATION';
 const JOURNEY_STATE_KEY = 'activeJourneyState';
+const SETTINGS_UNITS_KEY = 'settings.units';
 const NOTIFICATION_ID = 'journey-tracking-notification';
+
+// Configuration constants
+const MIN_MOVEMENT_THRESHOLD_M = 10; // Minimum movement to count (meters)
+const MAX_REASONABLE_SPEED_MPS = 69.4; // 250 km/h in m/s
+const MAX_SPEED_FOR_RECORDING_MPS = 0.5; // Speed threshold to count as moving (m/s)
 
 // Journey state interface for persistence
 export interface PersistedJourneyState {
@@ -22,7 +29,16 @@ export interface PersistedJourneyState {
     lastLatitude: number;
     lastLongitude: number;
     lastTimestamp: number;
+    lastSpeed?: number; // Track last valid speed for validation
+    recentHighSpeeds?: number[]; // Track recent high speed readings for sustained detection
     routePoints: Array<{
+        latitude: number;
+        longitude: number;
+        timestamp: number;
+        speed?: number;
+    }>;
+    // Buffered raw points for later Roads API snapping
+    rawPointsBuffer: Array<{
         latitude: number;
         longitude: number;
         timestamp: number;
@@ -65,29 +81,82 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
                         location.coords.longitude
                     );
 
-                    // Only add distance if significant movement (>5m)
-                    if (distanceKm * 1000 > 5) {
+                    const distanceMeters = distanceKm * 1000;
+                    const timeDelta = (location.timestamp - state.lastTimestamp) / 1000;
+                    const reportedSpeed = location.coords.speed || 0;
+
+                    // Calculate implied speed from position change
+                    const impliedSpeedMps = timeDelta > 0 ? distanceMeters / timeDelta : 0;
+
+                    // Validate: Skip if implied speed is impossible (GPS jitter)
+                    const isReasonableSpeed = impliedSpeedMps <= MAX_REASONABLE_SPEED_MPS;
+                    const hasSignificantMovement = distanceMeters > MIN_MOVEMENT_THRESHOLD_M;
+
+                    if (hasSignificantMovement && isReasonableSpeed) {
                         state.totalDistance += distanceKm;
 
-                        // Add to route points
+                        // Add to route points (for polyline display)
                         state.routePoints.push({
                             latitude: location.coords.latitude,
                             longitude: location.coords.longitude,
                             timestamp: location.timestamp,
-                            speed: location.coords.speed || 0,
+                            speed: reportedSpeed,
                         });
 
-                        // Update top speed
-                        const speedKmh = (location.coords.speed || 0) * 3.6;
-                        if (speedKmh > state.topSpeed) {
-                            state.topSpeed = speedKmh;
+                        // Also buffer raw point for later Roads API snapping
+                        if (!state.rawPointsBuffer) {
+                            state.rawPointsBuffer = [];
+                        }
+                        state.rawPointsBuffer.push({
+                            latitude: location.coords.latitude,
+                            longitude: location.coords.longitude,
+                            timestamp: location.timestamp,
+                            speed: reportedSpeed,
+                        });
+
+                        // Update top speed - use the lower of reported and implied (more accurate)
+                        // Sustained speed detection: require 2 consecutive high readings
+                        const validatedSpeedMps = Math.min(Math.max(reportedSpeed, 0), impliedSpeedMps > 0 ? impliedSpeedMps : reportedSpeed);
+                        const speedKmh = Math.abs(validatedSpeedMps) * 3.6;
+
+                        // Initialize recentHighSpeeds if needed
+                        if (!state.recentHighSpeeds) {
+                            state.recentHighSpeeds = [];
                         }
 
-                        // Calculate moving time
-                        const timeDelta = (location.timestamp - state.lastTimestamp) / 1000;
-                        if (location.coords.speed && location.coords.speed > 1.2) {
+                        // Only consider high speeds (above 50% of current max or above 30 km/h)
+                        if (speedKmh > state.topSpeed * 0.5 || speedKmh > 30) {
+                            state.recentHighSpeeds.push(speedKmh);
+                            // Keep only last 3 readings
+                            if (state.recentHighSpeeds.length > 3) {
+                                state.recentHighSpeeds.shift();
+                            }
+
+                            // Update top speed only if we have 2+ consistent high readings
+                            if (state.recentHighSpeeds.length >= 2) {
+                                const minRecent = Math.min(...state.recentHighSpeeds);
+                                const maxRecent = Math.max(...state.recentHighSpeeds);
+                                // Check readings are consistent (within 30% of each other)
+                                if (minRecent > maxRecent * 0.7 && speedKmh > state.topSpeed && speedKmh < 250) {
+                                    // Use median for stability
+                                    const sorted = [...state.recentHighSpeeds].sort((a, b) => a - b);
+                                    const median = sorted[Math.floor(sorted.length / 2)];
+                                    state.topSpeed = Math.max(state.topSpeed, median);
+                                }
+                            }
+                        } else {
+                            // Speed dropped - clear high speed buffer
+                            state.recentHighSpeeds = [];
+                        }
+
+                        // Calculate moving time only if actually moving
+                        if (validatedSpeedMps > MAX_SPEED_FOR_RECORDING_MPS) {
                             state.movingTime += timeDelta;
                         }
+
+                        state.lastSpeed = validatedSpeedMps;
+                    } else if (!isReasonableSpeed) {
+                        console.warn(`[BackgroundTask] Filtered GPS jitter: ${impliedSpeedMps.toFixed(1)} m/s implied from ${distanceMeters.toFixed(1)}m in ${timeDelta.toFixed(1)}s`);
                     }
                 }
 
@@ -147,6 +216,16 @@ function createProgressBar(progress: number): string {
     return '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
 }
 
+// Get units preference from AsyncStorage
+async function getUnitsPreference(): Promise<'km' | 'mi'> {
+    try {
+        const units = await AsyncStorage.getItem(SETTINGS_UNITS_KEY);
+        return units === 'mi' ? 'mi' : 'km';
+    } catch {
+        return 'km';
+    }
+}
+
 // Update the persistent tracking notification with Uber-style progress
 async function updateTrackingNotification(state: PersistedJourneyState) {
     try {
@@ -172,48 +251,52 @@ async function updateTrackingNotification(state: PersistedJourneyState) {
             }
         }
 
-        // Build notification body with Uber-style format
-        let title = '🚗 Journey in Progress';
-        let body = '';
+        // Get units preference for notification display
+        const units = await getUnitsPreference();
 
-        if (state.startLocationName && state.destinationName) {
-            // Uber-style with origin → destination
-            title = `${state.startLocationName} → ${state.destinationName}`;
+        // Use new live notification service for enhanced Android notifications
+        const notificationData: JourneyNotificationData = {
+            journeyId: state.journeyId,
+            startTime: state.startTime,
+            totalDistance: state.totalDistance,
+            currentSpeed: (state.lastSpeed || 0) * 3.6, // Convert m/s to km/h
+            avgSpeed,
+            topSpeed: state.topSpeed,
+            movingTime: state.movingTime,
+            progress,
+            distanceRemaining: distanceRemaining > 0 ? distanceRemaining : undefined,
+            startLocationName: state.startLocationName,
+            destinationName: state.destinationName,
+            currentLatitude: state.lastLatitude,
+            currentLongitude: state.lastLongitude,
+            units,
+        };
 
-            if (distanceRemaining > 0) {
-                const progressBar = createProgressBar(progress);
-                body = `${progressBar}\n📍 ${distanceRemaining.toFixed(1)} km remaining • ${state.totalDistance.toFixed(1)} km traveled`;
-            } else {
-                body = `📍 ${state.totalDistance.toFixed(2)} km traveled`;
-            }
-        } else {
-            // Fallback without destination
-            body = `📍 ${state.totalDistance.toFixed(2)} km • ⏱️ ${formatDuration(elapsed)}`;
-        }
+        await LiveNotificationService.updateNotification(notificationData);
+    } catch (e) {
+        console.warn('[BackgroundTask] Failed to update notification:', e);
+        // Fallback to simple notification if live notification fails
+        await fallbackToSimpleNotification(state);
+    }
+}
 
-        // Add speed info
-        if (avgSpeed > 0) {
-            body += `\n⚡ Avg: ${avgSpeed.toFixed(0)} km/h`;
-        }
-
+// Fallback notification using expo-notifications (simpler format)
+async function fallbackToSimpleNotification(state: PersistedJourneyState) {
+    try {
+        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
         await Notifications.scheduleNotificationAsync({
             identifier: NOTIFICATION_ID,
             content: {
-                title,
-                body,
-                data: {
-                    type: 'JOURNEY_TRACKING',
-                    journeyId: state.journeyId,
-                    progress,
-                    distanceRemaining,
-                },
+                title: 'Journey in Progress',
+                body: `${state.totalDistance.toFixed(2)} km • ${formatDuration(elapsed)}`,
+                data: { type: 'JOURNEY_TRACKING', journeyId: state.journeyId },
                 sticky: true,
                 sound: false,
             },
-            trigger: null, // Show immediately
+            trigger: null,
         });
     } catch (e) {
-        console.warn('[BackgroundTask] Failed to update notification:', e);
+        console.warn('[BackgroundTask] Fallback notification also failed:', e);
     }
 }
 
@@ -259,6 +342,13 @@ export async function startBackgroundTracking(
                 timestamp: currentLocation.timestamp,
                 speed: 0,
             }],
+            // Buffer for raw points to snap to roads later
+            rawPointsBuffer: [{
+                latitude: currentLocation.coords.latitude,
+                longitude: currentLocation.coords.longitude,
+                timestamp: currentLocation.timestamp,
+                speed: 0,
+            }],
             // Include destination info if provided
             startLocationName: options?.startLocationName,
             destinationName: options?.destinationName,
@@ -270,41 +360,30 @@ export async function startBackgroundTracking(
         // Persist initial state
         await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(initialState));
 
-        // Create notification channel on Android
-        if (Platform.OS === 'android') {
-            await Notifications.setNotificationChannelAsync('journey-tracking', {
-                name: 'Journey Tracking',
-                importance: Notifications.AndroidImportance.LOW,
-                lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-                sound: null,
-                vibrationPattern: null,
-                enableVibrate: false,
-            });
-        }
+        // Initialize notification channel (for notifee on Android)
+        await LiveNotificationService.initializeChannel();
 
-        // Build initial notification
-        let initialTitle = '🚗 Journey Started';
-        let initialBody = 'Tracking your journey in the background...';
+        // Get units preference
+        const units = await getUnitsPreference();
 
-        if (options?.startLocationName && options?.destinationName) {
-            initialTitle = `${options.startLocationName} → ${options.destinationName}`;
-            if (options.estimatedTotalDistance) {
-                initialBody = `📍 ${options.estimatedTotalDistance.toFixed(1)} km journey • Starting...`;
-            }
-        }
-
-        // Show initial notification
-        await Notifications.scheduleNotificationAsync({
-            identifier: NOTIFICATION_ID,
-            content: {
-                title: initialTitle,
-                body: initialBody,
-                data: { type: 'JOURNEY_TRACKING', journeyId },
-                sticky: true,
-                sound: false,
-            },
-            trigger: null,
-        });
+        // Show initial notification via live notification service
+        const initialNotificationData: JourneyNotificationData = {
+            journeyId,
+            startTime: initialState.startTime,
+            totalDistance: 0,
+            currentSpeed: 0,
+            avgSpeed: 0,
+            topSpeed: 0,
+            movingTime: 0,
+            progress: 0,
+            distanceRemaining: options?.estimatedTotalDistance,
+            startLocationName: options?.startLocationName,
+            destinationName: options?.destinationName,
+            currentLatitude: initialState.lastLatitude,
+            currentLongitude: initialState.lastLongitude,
+            units,
+        };
+        await LiveNotificationService.updateNotification(initialNotificationData);
 
         // Start background location updates
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
@@ -341,8 +420,10 @@ export async function stopBackgroundTracking(): Promise<PersistedJourneyState | 
             await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         }
 
-        // Cancel notification
-        await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID);
+        // Dismiss notification via live notification service
+        await LiveNotificationService.dismissNotification();
+        // Also try to cancel any expo-notifications fallback
+        await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID).catch(() => { });
 
         // Get persisted state
         const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
@@ -397,11 +478,48 @@ export async function recoverJourneyState(): Promise<PersistedJourneyState | nul
     return state;
 }
 
+// Get buffered raw points from background tracking for Roads API snapping
+export async function getBufferedBackgroundPoints(): Promise<Array<{ latitude: number; longitude: number; timestamp: number; speed?: number }>> {
+    try {
+        const state = await getPersistedJourneyState();
+        return state?.rawPointsBuffer || [];
+    } catch {
+        return [];
+    }
+}
+
+// Clear the background buffer after processing (call after snapping to Roads API)
+export async function clearBackgroundBuffer(): Promise<void> {
+    try {
+        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (!stateJson) return;
+
+        const state: PersistedJourneyState = JSON.parse(stateJson);
+        state.rawPointsBuffer = [];
+        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(state));
+    } catch (e) {
+        console.warn('[BackgroundTask] Failed to clear buffer:', e);
+    }
+}
+
+// Get current background distance (for merging with foreground)
+export async function getBackgroundDistance(): Promise<number> {
+    try {
+        const state = await getPersistedJourneyState();
+        return state?.totalDistance || 0;
+    } catch {
+        return 0;
+    }
+}
+
 export default {
     startBackgroundTracking,
     stopBackgroundTracking,
     isBackgroundTrackingActive,
     getPersistedJourneyState,
     recoverJourneyState,
+    getBufferedBackgroundPoints,
+    clearBackgroundBuffer,
+    getBackgroundDistance,
     BACKGROUND_LOCATION_TASK,
 };

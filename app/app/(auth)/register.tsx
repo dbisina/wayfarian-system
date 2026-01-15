@@ -10,7 +10,6 @@ import {
   TextInput,
   ScrollView,
   StatusBar,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,7 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {Path} from 'react-native-svg';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAlert } from '../../contexts/AlertContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -33,30 +34,50 @@ const RegisterScreen = () => {
   const [showTerms, setShowTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { register, loginWithGoogle, loginWithApple } = useAuth();
+  const { register, loginWithGoogle, loginWithApple, isNewSignUp } = useAuth();
+  const { showAlert } = useAlert();
   const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
+  const { t } = useTranslation();
 
   const handleSignUp = async () => {
     if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert({
+        title: t('alerts.error'),
+        message: t('auth.fillAllFields'),
+        type: 'error',
+      });
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      showAlert({
+        title: t('alerts.error'),
+        message: t('auth.passwordsDoNotMatch'),
+        type: 'error',
+      });
       return;
     }
 
     if (!agreeToTerms) {
-      Alert.alert('Error', 'Please agree to the terms and conditions');
+      showAlert({
+        title: t('alerts.error'),
+        message: t('auth.agreeToTermsError'),
+        type: 'error',
+      });
       return;
     }
 
     try {
       setLoading(true);
       await register(email, password, name);
+      // Navigate to profile setup for new users
+      router.replace('/(auth)/profile-setup');
     } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'An error occurred during registration');
+      showAlert({
+        title: t('auth.registrationFailed'),
+        message: error.message || t('auth.registrationFailed'),
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -66,9 +87,15 @@ const RegisterScreen = () => {
     try {
       setLoading(true);
       await loginWithGoogle();
+      // Check if this was a new signup after the auth state updates
+      // The navigation will be handled by the root layout based on hasCompletedProfileSetup
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
-        Alert.alert('Google Sign-In Failed', error.message);
+        showAlert({
+          title: t('auth.googleSignInFailed'),
+          message: error.message,
+          type: 'error',
+        });
       }
     } finally {
       setLoading(false);
@@ -81,7 +108,11 @@ const RegisterScreen = () => {
       await loginWithApple();
     } catch (error: any) {
       if (error.message && !error.message.includes('canceled')) {
-        Alert.alert('Apple Sign-In Failed', error.message);
+        showAlert({
+          title: t('auth.appleSignInFailed'),
+          message: error.message,
+          type: 'error',
+        });
       }
     } finally {
       setLoading(false);
@@ -146,7 +177,7 @@ const RegisterScreen = () => {
             <View style={styles.formContainer}>
               <AnimatedLogoButton containerStyle={styles.logoButton} />
               
-              <Text style={styles.title}>Create your account</Text>
+              <Text style={styles.title}>{t('auth.createAccount')}</Text>
               
               {/* Google Sign In Button */}
               <TouchableOpacity 
@@ -155,7 +186,7 @@ const RegisterScreen = () => {
                 disabled={loading}
               >
                 <GoogleIcon />
-                <Text style={styles.socialButtonText}>Sign up with Google</Text>
+                <Text style={styles.socialButtonText}>{t('auth.signUpGoogle')}</Text>
               </TouchableOpacity>
               
               {/* Apple Sign In Button */}
@@ -165,23 +196,23 @@ const RegisterScreen = () => {
                 disabled={loading}
               >
                 <AppleIcon />
-                <Text style={styles.socialButtonText}>Sign up with Apple</Text>
+                <Text style={styles.socialButtonText}>{t('auth.signUpApple')}</Text>
               </TouchableOpacity>
               
               {/* Divider */}
               <View style={styles.dividerContainer}>
                 <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>Or continue with</Text>
+                <Text style={styles.dividerText}>{t('auth.orContinueWith')}</Text>
                 <View style={styles.dividerLine} />
               </View>
               
               {/* Name Field */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Name</Text>
+                <Text style={styles.inputLabel}>{t('auth.name')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Enter your Name"
+                    placeholder={t('auth.enterName')}
                     placeholderTextColor="rgba(0, 0, 0, 0.5)"
                     value={name}
                     onChangeText={setName}
@@ -195,11 +226,11 @@ const RegisterScreen = () => {
               
               {/* Email Field */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Email</Text>
+                <Text style={styles.inputLabel}>{t('auth.email')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Enter your email address"
+                    placeholder={t('auth.enterEmail')}
                     placeholderTextColor="rgba(0, 0, 0, 0.5)"
                     value={email}
                     onChangeText={setEmail}
@@ -215,19 +246,19 @@ const RegisterScreen = () => {
               
               {/* Password Field */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Password</Text>
+                <Text style={styles.inputLabel}>{t('auth.password')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Enter your password"
+                    placeholder={t('auth.enterPassword')}
                     placeholderTextColor="rgba(0, 0, 0, 0.5)"
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     returnKeyType="next"
-                    textContentType="newPassword"
-                    autoComplete="new-password"
+                    textContentType="password"
+                    autoComplete="password"
                     enablesReturnKeyAutomatically
                   />
                   <TouchableOpacity
@@ -247,19 +278,19 @@ const RegisterScreen = () => {
               
               {/* Confirm Password Field */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Confirm Password</Text>
+                <Text style={styles.inputLabel}>{t('auth.confirmPassword')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Re-enter password"
+                    placeholder={t('auth.reEnterPassword')}
                     placeholderTextColor="rgba(0, 0, 0, 0.5)"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
                     returnKeyType="done"
-                    textContentType="newPassword"
-                    autoComplete="new-password"
+                    textContentType="password"
+                    autoComplete="password"
                     enablesReturnKeyAutomatically
                   />
                   <TouchableOpacity
@@ -288,9 +319,9 @@ const RegisterScreen = () => {
                   {agreeToTerms && <Ionicons name="checkmark" size={16} color="#0F172A" />}
                 </TouchableOpacity>
                 <Text style={styles.termsText}>
-                  By clicking, I agree to the{' '}
+                  {t('auth.agreeToTerms')}{' '}
                   <Text style={{color: '#2196F3', textDecorationLine: 'underline'}} onPress={handleShowTerms}>
-                    Terms and Conditions
+                    {t('auth.termsAndConditions')}
                   </Text>.
                 </Text>
               </View>
@@ -304,15 +335,15 @@ const RegisterScreen = () => {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.signInButtonText}>Sign up</Text>
+                  <Text style={styles.signInButtonText}>{t('auth.signUp')}</Text>
                 )}
               </TouchableOpacity>
               
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Already Have an account? </Text>
+                <Text style={styles.signUpText}>{t('auth.alreadyHaveAccount')}</Text>
                 <TouchableOpacity onPress={handleSignIn}>
-                  <Text style={styles.signUpLink}>Sign In</Text>
+                  <Text style={styles.signUpLink}>{t('auth.signIn')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -350,7 +381,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     paddingHorizontal: 12,
     paddingVertical: 14,
-    minHeight: 713,
+    // Removed minHeight: 713 to prevent iOS keyboard layout issues
   },
   logoButton: {
     alignSelf: 'center',

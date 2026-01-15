@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 const { height } = Dimensions.get('window');
 
@@ -40,6 +41,7 @@ For questions, contact support@wayfarian.app
 `;
 
 const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = ({ visible, onClose }) => {
+  const { t } = useTranslation();
   return (
     <Modal
       visible={visible}
@@ -51,11 +53,11 @@ const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = ({ visib
         <View style={styles.modalContainer}>
           <View style={styles.handle} />
           <ScrollView contentContainerStyle={styles.contentContainer}>
-            <Text style={styles.title}>Terms and Conditions</Text>
+            <Text style={styles.title}>{t('common.termsTitle')}</Text>
             <Text style={styles.termsText}>{TERMS_TEXT}</Text>
           </ScrollView>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeButtonText}>Close</Text>
+            <Text style={styles.closeButtonText}>{t('common.close')}</Text>
           </TouchableOpacity>
         </View>
       </View>

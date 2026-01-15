@@ -435,7 +435,21 @@ export const journeyAPI = {
       speed: updateData.speed ?? updateData.currentSpeed,
       ...(updateData.timestamp ? { timestamp: updateData.timestamp } : {}),
     };
-    return apiRequest(`/journey/${journeyId}/progress`, 'PUT', payload);
+
+    try {
+      return await apiRequest(`/journey/${journeyId}/progress`, 'PUT', payload);
+    } catch (error: any) {
+      // If network error, queue for later - don't let it stop tracking
+      if (error.message?.includes('Network') || error.message?.includes('fetch')) {
+        console.log('[journeyAPI] Network error, queuing update for later');
+        const { queueRequest } = await import('./offlineQueueService');
+        const endpoint = `${getCurrentApiUrl()}/journey/${journeyId}/progress`;
+        await queueRequest(endpoint, 'PUT', payload, 'normal');
+        // Return success-like response so tracking continues
+        return { queued: true, message: 'Update queued for sync' };
+      }
+      throw error;
+    }
   },
 
   endJourney: async (journeyId: string, endData: {
@@ -444,8 +458,9 @@ export const journeyAPI = {
     latitude?: number;
     longitude?: number;
     totalDistance?: number; // Roads API snapped distance in kilometers
+    totalTime?: number; // Client-calculated total time in seconds
   }) => {
-    // Server expects PUT with latitude/longitude and optionally totalDistance
+    // Server expects PUT with latitude/longitude and optionally totalDistance/totalTime
     const payload: any = {
       latitude: endData.latitude ?? endData.endLatitude,
       longitude: endData.longitude ?? endData.endLongitude,
@@ -453,6 +468,10 @@ export const journeyAPI = {
     // Include totalDistance if provided (from Roads API snapped data)
     if (endData.totalDistance !== undefined) {
       payload.totalDistance = endData.totalDistance;
+    }
+    // Include totalTime if provided (for accurate time tracking)
+    if (endData.totalTime !== undefined) {
+      payload.totalTime = endData.totalTime;
     }
     return apiRequest(`/journey/${journeyId}/end`, 'PUT', payload);
   },

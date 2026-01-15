@@ -49,8 +49,8 @@ export default function SettingsScreen() {
       router.replace('/(auth)/login');
     } catch (error: any) {
       Alert.alert(
-        'Deletion Failed',
-        error.message || 'Failed to delete account. Please try again later.'
+        t('alerts.error'),
+        error.message || t('settings.deleteAccount.deleting')
       );
     } finally {
       setIsDeleting(false);
@@ -68,7 +68,7 @@ export default function SettingsScreen() {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           title,
-          options: [...options, 'Cancel'],
+          options: [...options, t('common.cancel')],
           cancelButtonIndex: options.length,
           userInterfaceStyle: 'light',
         },
@@ -79,7 +79,7 @@ export default function SettingsScreen() {
     } else {
       Alert.alert(title, undefined, [
         ...options.map((label, idx) => ({ text: `${idx === selectedIndex ? '• ' : ''}${label}`, onPress: () => onPick(idx) })),
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ]);
     }
   };
@@ -106,7 +106,7 @@ export default function SettingsScreen() {
         <MaterialIcons name="chevron-right" size={24} color="#757575" />
       ) : (
         <View style={styles.editButton}>
-          <Text style={styles.editButtonText}>Edit</Text>
+          <Text style={styles.editButtonText}>{t('common.edit')}</Text>
         </View>
       ))}
     </TouchableOpacity>
@@ -123,7 +123,7 @@ export default function SettingsScreen() {
         >
           <MaterialIcons name="arrow-back" size={24} color="#000000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -134,19 +134,19 @@ export default function SettingsScreen() {
       >
         {/* Account Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account Settings</Text>
+          <Text style={styles.sectionTitle}>{t('settings.accountSettings')}</Text>
           
           <SettingItem
-            title="Edit Profile"
-            subtitle="Change your name, country, and more"
+            title={t('settings.editProfile')}
+            subtitle={t('settings.changeProfileInfo')}
             onPress={() => router.push('/edit-profile')}
           />
 
           <SettingItem
-            title="Vehicle Type"
-            subtitle={`Current: ${vehicle}`}
+            title={t('settings.vehicleType')}
+            subtitle={`${t('settings.currentLanguage')}: ${t(`settings.${vehicle}`)}`}
             onPress={() =>
-              pickOption('Select vehicle', ['car', 'bike', 'scooter'], ['car','bike','scooter'].indexOf(vehicle), (i) => setVehicle(['car','bike','scooter'][i] as Vehicle))
+              pickOption(t('settings.selectVehicle'), [t('settings.car'), t('settings.bike'), t('settings.scooter')], ['car','bike','scooter'].indexOf(vehicle), (i) => setVehicle(['car','bike','scooter'][i] as Vehicle))
             }
           />
 
@@ -155,28 +155,14 @@ export default function SettingsScreen() {
             disabled={isDeleting}
             onPress={() => {
               Alert.alert(
-                'Delete Account',
-                'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently removed.',
+                t('settings.deleteAccount.confirmTitle'),
+                t('settings.deleteAccount.confirmMsg'),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: t('common.cancel'), style: 'cancel' },
                   { 
-                    text: 'Delete', 
+                    text: t('settings.deleteAccount.button'), 
                     style: 'destructive',
-                    onPress: () => {
-                      // Second confirmation for safety
-                      Alert.alert(
-                        'Final Confirmation',
-                        'This will permanently delete your account, all your journeys, photos, and group memberships. This cannot be undone.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'Delete Forever', 
-                            style: 'destructive',
-                            onPress: handleDeleteAccount
-                          },
-                        ]
-                      );
-                    }
+                    onPress: handleDeleteAccount
                   },
                 ]
               );
@@ -184,9 +170,9 @@ export default function SettingsScreen() {
           >
             <View style={styles.settingContent}>
               <Text style={styles.deleteAccountTitle}>
-                {isDeleting ? 'Deleting...' : 'Delete Account'}
+                {isDeleting ? t('settings.deleteAccount.deleting') : t('settings.deleteAccount.title')}
               </Text>
-              <Text style={styles.deleteAccountSubtitle}>Permanently remove your account and data</Text>
+              <Text style={styles.deleteAccountSubtitle}>{t('settings.deleteAccount.subtitle')}</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#DC2626" />
           </TouchableOpacity>
@@ -194,12 +180,12 @@ export default function SettingsScreen() {
 
         {/* App Preferences */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Preferences</Text>
+          <Text style={styles.sectionTitle}>{t('settings.appPreferences')}</Text>
           
           <View style={styles.settingItem}>
             <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>Notifications</Text>
-              <Text style={styles.settingSubtitle}>Enable or disable notifications</Text>
+              <Text style={styles.settingTitle}>{t('settings.notifications')}</Text>
+              <Text style={styles.settingSubtitle}>{t('settings.enableDisableNotifications')}</Text>
             </View>
             <Switch
               value={notificationsEnabled}
@@ -223,46 +209,46 @@ export default function SettingsScreen() {
           />
 
           <SettingItem
-            title="Map Type"
-            subtitle={`Current: ${mapType}`}
-            onPress={() => pickOption('Select map type', ['standard', 'satellite', 'terrain'], ['standard','satellite','terrain'].indexOf(mapType), (i) => setMapType(['standard','satellite','terrain'][i] as MapType))}
+            title={t('settings.mapType')}
+            subtitle={`${t('settings.currentLanguage')}: ${t(`settings.${mapType}`)}`}
+            onPress={() => pickOption(t('settings.mapType'), [t('settings.standard'), t('settings.satellite'), t('settings.terrain')], ['standard','satellite','terrain'].indexOf(mapType), (i) => setMapType(['standard','satellite','terrain'][i] as MapType))}
           />
         </View>
 
         {/* Privacy Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Privacy Settings</Text>
+          <Text style={styles.sectionTitle}>{t('settings.privacySettings')}</Text>
           
           <SettingItem
-            title="Manage Privacy Settings"
+            title={t('settings.managePrivacySettings')}
             subtitle=""
-            onPress={() => Alert.alert('Privacy', 'Coming soon')}
+            onPress={() => Alert.alert(t('alerts.privacy'), t('alerts.comingSoon'))}
             showArrow={true}
           />
         </View>
 
         {/* Support & About */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support & About</Text>
+          <Text style={styles.sectionTitle}>{t('settings.supportAbout')}</Text>
           
           <SettingItem
-            title="FAQ"
+            title={t('settings.faq')}
             subtitle=""
-            onPress={() => Alert.alert('FAQ', 'Coming soon')}
+            onPress={() => Alert.alert(t('settings.faq'), t('alerts.comingSoon'))}
             showArrow={true}
           />
 
           <SettingItem
-            title="Help Center"
+            title={t('settings.helpCenter')}
             subtitle=""
-            onPress={() => Alert.alert('Help Center', 'Coming soon')}
+            onPress={() => Alert.alert(t('settings.helpCenter'), t('alerts.comingSoon'))}
             showArrow={true}
           />
 
 
           <View style={styles.settingItem}>
             <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>App Version</Text>
+              <Text style={styles.settingTitle}>{t('settings.appVersion')}</Text>
             </View>
             <Text style={styles.versionText}>1.2.3</Text>
           </View>
@@ -281,7 +267,7 @@ export default function SettingsScreen() {
               }
             }}
           >
-            <Text style={styles.logoutText}>Log out</Text>
+            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -293,11 +279,11 @@ export default function SettingsScreen() {
       >
         <View style={styles.unitsModalBackdrop}>
           <View style={styles.unitsModalCard}>
-            <Text style={styles.unitsModalTitle}>Measurement units</Text>
-            <Text style={styles.unitsModalSubtitle}>Choose how we display distance and speed.</Text>
+            <Text style={styles.unitsModalTitle}>{t('settings.measurementUnits')}</Text>
+            <Text style={styles.unitsModalSubtitle}>{t('settings.chooseUnitsDisplay')}</Text>
             {[
-              { label: 'Metric (km + km/h)', value: 'km', description: 'Best for most of the world.' },
-              { label: 'Imperial (mi + mph)', value: 'mi', description: 'Popular in the US & UK.' },
+              { label: t('settings.metricUnits'), value: 'km', description: t('settings.metricDescription') },
+              { label: t('settings.imperialUnits'), value: 'mi', description: t('settings.imperialDescription') },
             ].map((option) => (
               <TouchableOpacity
                 key={option.value}
@@ -320,7 +306,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.unitsModalClose} onPress={() => setShowUnitsModal(false)}>
-              <Text style={styles.unitsModalCloseText}>Done</Text>
+              <Text style={styles.unitsModalCloseText}>{t('common.done')}</Text>
             </TouchableOpacity>
          </View>
         </View>

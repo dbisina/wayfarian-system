@@ -76,7 +76,28 @@ export default function FutureRidesScreen() {
     fetchRides();
   };
 
-  const handleStartJourney = async (journeyId: string) => {
+  const handleStartJourney = async (journeyId: string, isPlanned: boolean = false) => {
+    // If it's a PLANNED journey (not yet READY_TO_START), show confirmation
+    if (isPlanned) {
+      Alert.alert(
+        'Start Journey Early?',
+        'This journey is scheduled for later. Are you sure you want to start it now?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Start Now', 
+            style: 'default',
+            onPress: () => startJourneyNow(journeyId)
+          },
+        ]
+      );
+      return;
+    }
+    
+    await startJourneyNow(journeyId);
+  };
+
+  const startJourneyNow = async (journeyId: string) => {
     try {
       setStartingJourneyId(journeyId);
       
@@ -117,18 +138,25 @@ export default function FutureRidesScreen() {
 
   const renderItem = ({ item }: { item: FutureRide }) => {
     const isReady = item.status === 'READY_TO_START';
+    const isPlanned = item.status === 'PLANNED';
     const isStarting = startingJourneyId === item.id;
     
     return (
       <TouchableOpacity 
         style={[styles.card, isReady && styles.readyCard]}
-        onPress={() => isReady && handleStartJourney(item.id)}
+        onPress={() => handleStartJourney(item.id, isPlanned)}
         disabled={isStarting}
       >
         {isReady && (
           <View style={styles.readyBadge}>
             <Ionicons name="flag" size={12} color="#fff" />
             <Text style={styles.readyBadgeText}>Ready to Start!</Text>
+          </View>
+        )}
+        {isPlanned && (
+          <View style={styles.plannedBadge}>
+            <Ionicons name="calendar-outline" size={12} color="#fff" />
+            <Text style={styles.plannedBadgeText}>Scheduled</Text>
           </View>
         )}
         
@@ -148,7 +176,7 @@ export default function FutureRidesScreen() {
             <Ionicons name="location" size={16} color="#666" />
             <Text style={styles.detailText}>{item.location}</Text>
           </View>
-          {!isReady && (
+          {isPlanned && (
             <View style={styles.detailRow}>
               <Ionicons name="time" size={16} color="#6366f1" />
               <Text style={styles.countdownText}>{getTimeUntil(item.date)}</Text>
@@ -156,10 +184,11 @@ export default function FutureRidesScreen() {
           )}
         </View>
         
+        {/* Start button for READY_TO_START journeys */}
         {isReady && (
           <TouchableOpacity 
             style={styles.startButton}
-            onPress={() => handleStartJourney(item.id)}
+            onPress={() => handleStartJourney(item.id, false)}
             disabled={isStarting}
           >
             {isStarting ? (
@@ -168,6 +197,24 @@ export default function FutureRidesScreen() {
               <>
                 <Ionicons name="play" size={18} color="#fff" />
                 <Text style={styles.startButtonText}>Start Journey</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+        
+        {/* Start Early button for PLANNED journeys */}
+        {isPlanned && (
+          <TouchableOpacity 
+            style={styles.startEarlyButton}
+            onPress={() => handleStartJourney(item.id, true)}
+            disabled={isStarting}
+          >
+            {isStarting ? (
+              <ActivityIndicator size="small" color="#6366f1" />
+            ) : (
+              <>
+                <Ionicons name="play-circle-outline" size={18} color="#6366f1" />
+                <Text style={styles.startEarlyButtonText}>Start Now</Text>
               </>
             )}
           </TouchableOpacity>
@@ -303,6 +350,39 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  startEarlyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f0ff',
+    borderWidth: 1,
+    borderColor: '#6366f1',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 8,
+  },
+  startEarlyButtonText: {
+    color: '#6366f1',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  plannedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    gap: 4,
+  },
+  plannedBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   emptyContainer: {
     padding: 48,

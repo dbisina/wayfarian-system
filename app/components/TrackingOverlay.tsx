@@ -10,6 +10,7 @@ import {
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
 import { useJourneyState, useJourneyStats } from '../hooks/useJourneyState';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +25,7 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
   const { currentJourney } = useJourneyState();
   const stats = useJourneyStats();
   const { convertDistance, convertSpeed } = useSettings();
+  const { t } = useTranslation();
 
   // Parse stats for big display
   const distance = useMemo(() => {
@@ -56,7 +58,7 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
       {/* Main Stats Row */}
       <View style={styles.statsRow}>
         <View style={styles.mainStat}>
-          <Text style={styles.statLabel}>Distance</Text>
+          <Text style={styles.statLabel}>{t('components.trackingOverlay.distance')}</Text>
           <View style={styles.valueContainer}>
             <Text style={styles.statValueBig}>{distance}</Text>
             <Text style={styles.statUnit}>{units}</Text>
@@ -66,7 +68,7 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
         <View style={styles.divider} />
 
         <View style={styles.mainStat}>
-          <Text style={styles.statLabel}>Duration</Text>
+          <Text style={styles.statLabel}>{t('components.trackingOverlay.duration')}</Text>
           <View style={styles.valueContainer}>
             <Text style={styles.statValueBig}>{duration}</Text>
           </View>
@@ -98,13 +100,13 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
         ) : (
              <TouchableOpacity style={styles.resumeButton} onPress={onResume} activeOpacity={0.8}>
                 <Ionicons name="play" size={24} color="#FFFFFF" />
-                <Text style={styles.resumeText}>Resume</Text>
+                <Text style={styles.resumeText}>{t('components.trackingOverlay.resume')}</Text>
             </TouchableOpacity>
         )}
 
         <TouchableOpacity style={styles.stopButton} onPress={onStop} activeOpacity={0.8}>
             <View style={styles.stopIcon} />
-            <Text style={styles.stopText}>End Trip</Text>
+            <Text style={styles.stopText}>{t('components.trackingOverlay.endTrip')}</Text>
         </TouchableOpacity>
       </View>
     </View>

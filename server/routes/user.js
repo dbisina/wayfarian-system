@@ -250,6 +250,19 @@ router.get('/dashboard', async (req, res) => {
       })
     ]);
 
+    // Process recent journeys to add cover photo URLs
+    const recentJourneys = recentJourneysRaw.map((journey) => {
+      const hydratedPhotos = hydratePhotos(journey.photos);
+      return {
+        ...journey,
+        photos: hydratedPhotos,
+        coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
+      };
+    });
+
+    // Process active groups
+    const activeGroups = activeGroupsRaw.map(ag => ag.group);
+
     res.json({
       success: true,
       dashboard: {
@@ -257,7 +270,7 @@ router.get('/dashboard', async (req, res) => {
         activeJourney,
         recentJourneys,
         activeGroups,
-        recentPhotos,
+        recentPhotos: hydratePhotos(recentPhotos),
         weeklyStats: {
           journeys: weeklyStats._count,
           distance: weeklyStats._sum.totalDistance || 0,
@@ -283,7 +296,7 @@ router.get('/achievements', async (req, res) => {
   try {
     const userId = req.user.id;
     const { getAchievementXP, getLevelProgress } = require('../constants/xpSystem');
-    
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -296,7 +309,7 @@ router.get('/achievements', async (req, res) => {
         level: true,
       },
     });
-    
+
     // Define achievements with multiple tiers and XP rewards
     const achievements = [
       {
@@ -430,16 +443,16 @@ router.get('/achievements', async (req, res) => {
         badge: true,
       },
     ];
-    
+
     // Calculate overall progress
     const totalTiers = achievements.reduce((sum, achievement) => sum + achievement.tiers.length, 0);
-    const unlockedTiers = achievements.reduce((sum, achievement) => 
+    const unlockedTiers = achievements.reduce((sum, achievement) =>
       sum + achievement.tiers.filter(tier => tier.unlocked).length, 0
     );
-    
+
     // Get level progress
     const levelProgress = getLevelProgress(user.xp || 0, user.level || 1);
-    
+
     res.json({
       success: true,
       achievements,
@@ -456,7 +469,7 @@ router.get('/achievements', async (req, res) => {
         progress: levelProgress,
       },
     });
-    
+
   } catch (error) {
     if (error?.code === 'P2024' || /connection pool timeout/i.test(error?.message || '')) {
       return res.status(503).json({ error: 'Service Unavailable', message: 'Database busy, please retry shortly' });
@@ -474,8 +487,8 @@ router.get('/achievements', async (req, res) => {
 router.get('/friends', async (req, res) => {
   try {
     const userId = req.user.id;
-    
-    
+
+
     // Get friends through group memberships
     const friends = await prisma.groupMember.findMany({
       where: {
@@ -501,7 +514,7 @@ router.get('/friends', async (req, res) => {
       },
       distinct: ['userId']
     });
-    
+
     // Format friends data
     const friendsList = friends.map(friend => ({
       id: friend.user.id,
@@ -515,12 +528,12 @@ router.get('/friends', async (req, res) => {
         totalTrips: friend.user.totalTrips,
       }
     }));
-    
+
     res.json({
       success: true,
       friends: friendsList,
     });
-    
+
   } catch (error) {
     console.error('Get friends error:', error);
     res.status(500).json({
@@ -539,35 +552,35 @@ router.post('/friends', async (req, res) => {
   try {
     const userId = req.user.id;
     const { friendId } = req.body;
-    
-    
+
+
     if (!friendId) {
       return res.status(400).json({
         error: 'Missing friend ID',
         message: 'friendId is required',
       });
     }
-    
+
     if (friendId === userId) {
       return res.status(400).json({
         error: 'Invalid friend ID',
         message: 'Cannot add yourself as a friend',
       });
     }
-    
+
     // Check if friend exists
     const friend = await prisma.user.findUnique({
       where: { id: friendId },
       select: { id: true, displayName: true }
     });
-    
+
     if (!friend) {
       return res.status(404).json({
         error: 'Friend not found',
         message: 'User with this ID does not exist',
       });
     }
-    
+
     // For now, we'll create a simple "friends" group
     // In a real implementation, you might want a separate friends table
     const group = await prisma.group.create({
@@ -599,13 +612,13 @@ router.post('/friends', async (req, res) => {
         }
       }
     });
-    
+
     res.json({
       success: true,
       message: 'Friend added successfully',
       group,
     });
-    
+
   } catch (error) {
     console.error('Add friend error:', error);
     res.status(500).json({
@@ -624,21 +637,21 @@ router.delete('/profile-picture', async (req, res) => {
   try {
     const userId = req.user.id;
     const { deleteFromStorage } = require('../services/Firebase');
-    
-    
+
+
     // Get current user
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { photoURL: true },
     });
-    
+
     if (!user.photoURL) {
       return res.status(400).json({
         error: 'No profile picture',
         message: 'User does not have a profile picture',
       });
     }
-    
+
     // Delete from Firebase Storage if it's our uploaded image
     if (user.photoURL.includes('profile-pictures/')) {
       try {
@@ -648,7 +661,7 @@ router.delete('/profile-picture', async (req, res) => {
         console.warn('Failed to delete from storage:', deleteError);
       }
     }
-    
+
     // Update user profile
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -662,13 +675,13 @@ router.delete('/profile-picture', async (req, res) => {
         photoURL: true,
       },
     });
-    
+
     res.json({
       success: true,
       message: 'Profile picture removed successfully',
       user: updatedUser,
     });
-    
+
   } catch (error) {
     console.error('Remove profile picture error:', error);
     res.status(500).json({

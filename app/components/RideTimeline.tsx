@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 
 export interface RideEvent {
   id: string;
@@ -30,9 +32,9 @@ function formatRelativeTime(isoDate: string): string {
   const diffMin = Math.floor(diffSec / 60);
   const diffHr = Math.floor(diffMin / 60);
 
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffSec < 60) return i18n.t('components.rideTimeline.justNow');
+  if (diffMin < 60) return i18n.t('components.rideTimeline.minutesAgo', { time: diffMin });
+  if (diffHr < 24) return i18n.t('components.rideTimeline.hoursAgo', { time: diffHr });
   return new Date(isoDate).toLocaleDateString();
 }
 
@@ -49,10 +51,11 @@ function getEventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
 }
 
 export default function RideTimeline({ events, onClose }: RideTimelineProps) {
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Ride Timeline</Text>
+        <Text style={styles.title}>{t('components.rideTimeline.title')}</Text>
         {onClose && (
           <TouchableOpacity onPress={onClose}>
             <MaterialIcons name="close" size={24} color="#333" />
@@ -61,7 +64,7 @@ export default function RideTimeline({ events, onClose }: RideTimelineProps) {
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {events.length === 0 && (
-          <Text style={styles.emptyText}>No events yet. Start the ride to see updates!</Text>
+          <Text style={styles.emptyText}>{t('components.rideTimeline.empty')}</Text>
         )}
         {events.map((evt, index) => (
           <View key={evt.id} style={styles.timelineItem}>
@@ -98,7 +101,7 @@ export default function RideTimeline({ events, onClose }: RideTimelineProps) {
                 <View style={styles.mediaContainer}>
                   <Image source={{ uri: evt.mediaUrl }} style={styles.media} resizeMode="cover" />
                   <View style={styles.captionOverlay}>
-                    <Text style={styles.captionText}>Photo by {evt.user.displayName}</Text>
+                    <Text style={styles.captionText}>{t('components.rideTimeline.photoBy', { name: evt.user.displayName })}</Text>
                   </View>
                 </View>
               )}

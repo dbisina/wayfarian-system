@@ -43,6 +43,27 @@ export const StatsCalculator = {
   },
 
   /**
+   * Formats large durations (> 24 hours) to Xd Xh Xm format.
+   * Falls back to HH:MM:SS for shorter durations.
+   * @param seconds - Duration in seconds.
+   * @returns Formatted string like "2d 5h 30m" or "5:30:15".
+   */
+  formatLargeDuration: (seconds: number): string => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    }
+    // For less than 24 hours, use HH:MM format
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  },
+
+  /**
    * Formats distance in kilometers to a readable string (e.g., "1.2 km").
    * @deprecated Use SettingsContext's convertDistance instead for unit conversion support.
    * @param distanceKm - Distance in kilometers.

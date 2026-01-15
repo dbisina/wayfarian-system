@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { userAPI, leaderboardAPI } from '../../services/api';
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
+import { useTranslation } from 'react-i18next';
+import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
 
 type JourneyItem = {
   id: string;
@@ -35,6 +38,7 @@ export default function RideLogScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
   const [xpProgress, setXpProgress] = useState<number>(0);
@@ -44,56 +48,57 @@ export default function RideLogScreen(): React.JSX.Element {
   const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
   const [, setLoading] = useState(false);
 
-  useEffect(() => {
+  const loadData = React.useCallback(async () => {
     if (!isAuthenticated) return;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const [positionRes, achievementsRes, historyRes] = await Promise.all([
-          leaderboardAPI.getUserPosition(),
-          userAPI.getAchievements(),
-          userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
-        ]);
+    try {
+      setLoading(true);
+      const [positionRes, achievementsRes, historyRes] = await Promise.all([
+        leaderboardAPI.getUserPosition(),
+        userAPI.getAchievements(),
+        userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
+      ]);
 
-        const position = positionRes?.position ?? positionRes?.rank ?? null;
-        if (typeof position === 'number') setRank(position);
+      const position = positionRes?.position ?? positionRes?.rank ?? null;
+      if (typeof position === 'number') setRank(position);
 
-        // XP Progress and next badge
-        const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
-        setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
+      // XP Progress and next badge
+      const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
+      setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
 
-        // Find next locked tier name as next badge
-        let nextName = 'Next milestone';
-        const ach = achievementsRes?.achievements || [];
-        for (const a of ach) {
-          const locked = (a.tiers || []).find((t: any) => !t.unlocked);
-          if (locked) { nextName = locked.name || a.name; break; }
-        }
-        setNextBadge(nextName);
-
-        // Build badges from unlocked tiers (top 4)
-        const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
-        ach.forEach((a: any) => {
-          (a.tiers || []).forEach((t: any) => {
-            if (t.unlocked) unlockedBadges.push({ id: `${a.id}_${t.level}`, title: t.name || a.name, achievementId: a.id });
-          });
-        });
-        setBadges(unlockedBadges.slice(0, 4));
-
-        // Split journeys into solo vs group
-        const journeys: JourneyItem[] = historyRes?.journeys || [];
-        const solo = journeys.filter(j => !j.group);
-        const group = journeys.filter(j => !!j.group);
-        setSoloJourneys(solo);
-        setGroupJourneys(group);
-
-      } catch (e) {
-        console.warn('Log screen data load failed', e);
-      } finally {
-        setLoading(false);
+      // Find next locked tier name as next badge
+      let nextName = t('log.nextMilestone');
+      const ach = achievementsRes?.achievements || [];
+      for (const a of ach) {
+        const locked = (a.tiers || []).find((tier: any) => !tier.unlocked);
+        if (locked) { nextName = locked.name || a.name; break; }
       }
-    };
-    load();
+      setNextBadge(nextName);
+
+      // Build badges from unlocked tiers (top 4)
+      const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
+      ach.forEach((a: any) => {
+        (a.tiers || []).forEach((tier: any) => {
+          if (tier.unlocked) unlockedBadges.push({ id: `${a.id}_${tier.level}`, title: tier.name || a.name, achievementId: a.id });
+        });
+      });
+      setBadges(unlockedBadges.slice(0, 4));
+
+      // Split journeys into solo vs group
+      const journeys: JourneyItem[] = historyRes?.journeys || [];
+      const solo = journeys.filter(j => !j.group);
+      const group = journeys.filter(j => !!j.group);
+      setSoloJourneys(solo);
+      setGroupJourneys(group);
+
+    } catch (e) {
+      console.warn('Log screen data load failed', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated, t]);
+
+  useEffect(() => {
+    loadData();
   }, [isAuthenticated]);
 
   const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
@@ -117,7 +122,7 @@ export default function RideLogScreen(): React.JSX.Element {
   };
   const formatDate = (iso?: string) => {
     if (!iso) return '';
-    return new Date(iso).toLocaleDateString('en-US', {
+    return new Date(iso).toLocaleDateString(i18n.language, {
       month: 'short',
       day: 'numeric',
     });
@@ -127,7 +132,7 @@ export default function RideLogScreen(): React.JSX.Element {
     const sections = new Map<string, { groupName: string; journeys: JourneyItem[] }>();
     groupJourneys.forEach(journey => {
       const key = journey.group?.id || journey.id;
-      const name = journey.group?.name || 'Group ride';
+      const name = journey.group?.name || t('log.groupRideDefault');
       if (!sections.has(key)) {
         sections.set(key, { groupName: name, journeys: [] });
       }
@@ -149,22 +154,22 @@ export default function RideLogScreen(): React.JSX.Element {
         {/* Progress Card with Rank and XP from backend */}
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
-            <Text style={styles.explorerBadge}>{rank ? `Rank #${rank}` : 'Rank —'}</Text>
+            <Text style={styles.explorerBadge}>{rank ? t('log.rank', { rank }) : t('log.rankPlaceholder')}</Text>
           </View>
-          <Text style={styles.progressSubtitle}>The road is your XP — keep going buddy!</Text>
+          <Text style={styles.progressSubtitle}>{t('log.motivation')}</Text>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBarBackground}>
               <View style={[styles.progressBarFill, { width: formattedProgressWidth as any }]} />
             </View>
           </View>
-          <Text style={styles.nextBadgeText}>Next badge: <Text style={styles.trailblazerText}>{nextBadge || '—'}</Text></Text>
+          <Text style={styles.nextBadgeText}>{t('log.nextBadge')} <Text style={styles.trailblazerText}>{nextBadge || '—'}</Text></Text>
         </View>
         
         {/* Badges Section */}
         <View style={styles.badgesSection}>
           <View style={styles.badgesGrid}>
             {badges.length === 0 ? (
-              <Text style={styles.badgeTitle}>No badges yet — start riding!</Text>
+              <Text style={styles.badgeTitle}>{t('log.noBadges')}</Text>
             ) : (
               badges.map((badge) => {
                 const badgeSource = ACHIEVEMENT_BADGES[badge.achievementId as keyof typeof ACHIEVEMENT_BADGES];
@@ -196,7 +201,7 @@ export default function RideLogScreen(): React.JSX.Element {
             onPress={() => setActiveTab('solo')}
           >
             <Text style={[styles.tabText, activeTab === 'solo' && styles.activeTabText]}>
-              Solo rides
+              {t('log.tabSolo')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -204,7 +209,7 @@ export default function RideLogScreen(): React.JSX.Element {
             onPress={() => setActiveTab('group')}
           >
             <Text style={[styles.tabText, activeTab === 'group' && styles.activeTabText]}>
-              Group rides
+              {t('log.tabGroup')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -212,7 +217,7 @@ export default function RideLogScreen(): React.JSX.Element {
             onPress={() => setActiveTab('challenges')}
           >
             <Text style={[styles.tabText, activeTab === 'challenges' && styles.activeTabText]}>
-              My challenges
+              {t('log.tabChallenges')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -221,7 +226,7 @@ export default function RideLogScreen(): React.JSX.Element {
         {activeTab === 'solo' && (
           <View style={styles.challengesSection}>
             {soloJourneys.length === 0 ? (
-              <Text style={styles.badgeTitle}>No solo rides yet</Text>
+              <Text style={styles.badgeTitle}>{t('log.noSoloRides')}</Text>
             ) : (
               soloJourneys.map((j) => {
                 const coverUri =
@@ -244,10 +249,29 @@ export default function RideLogScreen(): React.JSX.Element {
                     {coverUri ? (
                       <Image source={{ uri: coverUri }} style={styles.challengeImage} />
                     ) : (
-                      <Image source={require('../../assets/images/2025-10-15/1bd3DwwpQG.png')} style={styles.challengeImage} />
+                      <LinearGradient
+                        colors={['#F9A825', '#FF6F00']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.challengeImage, styles.gradientPlaceholder]}
+                      >
+                        <Text style={styles.gradientTitle} numberOfLines={2}>
+                          {j.title || t('log.soloRideDefault')}
+                        </Text>
+                      </LinearGradient>
                     )}
+                    <JourneyCardMenu
+                      journeyId={j.id}
+                      journeyTitle={j.title || t('log.soloRideDefault')}
+                      onRename={() => loadData()}
+                      onDelete={() => {
+                        setSoloJourneys(prev => prev.filter(journey => journey.id !== j.id));
+                      }}
+                      iconColor="#757575"
+                      iconSize={16}
+                    />
                     <View style={styles.challengeContent}>
-                      <Text style={styles.challengeTitle}>{j.title || 'Solo Ride'}</Text>
+                      <Text style={styles.challengeTitle}>{j.title || t('log.soloRideDefault')}</Text>
                       <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
                       <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
                       <View style={styles.challengeProgressContainer}>
@@ -264,14 +288,14 @@ export default function RideLogScreen(): React.JSX.Element {
         {activeTab === 'group' && (
           <View style={styles.groupJourneySection}>
             {groupedGroupJourneys.length === 0 ? (
-              <Text style={styles.badgeTitle}>No group rides yet</Text>
+              <Text style={styles.badgeTitle}>{t('log.noGroupRides')}</Text>
             ) : (
               groupedGroupJourneys.map(section => (
                 <View key={section.groupId} style={styles.groupRideCard}>
                   <View style={styles.groupHeaderRow}>
                     <Text style={styles.groupRideTitle}>{section.groupName}</Text>
                     <Text style={styles.groupRideCount}>
-                      {section.journeys.length === 1 ? '1 ride' : `${section.journeys.length} rides`}
+                      {section.journeys.length === 1 ? t('log.oneRide') : `${section.journeys.length} ${t('log.ridesSuffix')}`}
                     </Text>
                   </View>
                   {section.journeys.map((journey, index) => {
@@ -295,14 +319,20 @@ export default function RideLogScreen(): React.JSX.Element {
                           {coverUri ? (
                             <Image source={{ uri: coverUri }} style={styles.groupRideImage} />
                           ) : (
-                            <Image
-                              source={require('../../assets/images/2025-10-15/2B62N8nM0F.png')}
-                              style={styles.groupRideImage}
-                            />
+                            <LinearGradient
+                              colors={['#F9A825', '#FF6F00']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={[styles.groupRideImage, styles.gradientPlaceholder]}
+                            >
+                              <Text style={styles.gradientTitleSmall} numberOfLines={2}>
+                                {journey.title || section.groupName || t('log.groupRideDefault')}
+                              </Text>
+                            </LinearGradient>
                           )}
                           <View style={styles.groupRideContent}>
                             <Text style={styles.groupRideName} numberOfLines={1}>
-                              {journey.title || section.groupName || 'Group ride'}
+                              {journey.title || section.groupName || t('log.groupRideDefault')}
                             </Text>
                             <Text style={styles.groupRideMeta}>
                               {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
@@ -321,7 +351,7 @@ export default function RideLogScreen(): React.JSX.Element {
 
         {activeTab === 'challenges' && (
           <View style={[styles.challengesSection, { alignItems: 'center' }]}>
-            <Text style={styles.challengeTitle}>Coming soon</Text>
+            <Text style={styles.challengeTitle}>{t('log.comingSoon')}</Text>
           </View>
         )}
       </ScrollView>
@@ -581,6 +611,25 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#000000',
     fontFamily: 'Poppins',
+  },
+  gradientPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  gradientTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+  },
+  gradientTitleSmall: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
   },
 });
 

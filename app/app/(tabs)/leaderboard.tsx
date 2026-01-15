@@ -14,6 +14,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
 import { getCountryByCode } from '../../constants/countries';
 
@@ -21,6 +22,7 @@ import { getCountryByCode } from '../../constants/countries';
 
 export default function LeaderboardScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
+  const { t } = useTranslation();
   const { friendsData, globalData, loading, error, refreshLeaderboard } = useLeaderboard();
   const { convertDistance, convertSpeed } = useSettings();
   const [activeTab, setActiveTab] = useState<'friends' | 'global'>('friends');
@@ -47,7 +49,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
       case 'topSpeed':
         return convertSpeed(user.topSpeed || 0);
       case 'totalTrips':
-        return `${user.totalTrips || 0} trips`;
+        return `${user.totalTrips || 0} ${t('leaderboard.trips')}`;
       default:
         return convertDistance(normalizeDistance(user.totalDistance || 0));
     }
@@ -61,7 +63,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
   const renderLeaderboardItem = (item: any, isCurrentUser = false) => {
     // Use photoURL if available, otherwise generate avatar with user's initials
-    const displayName = item.displayName || item.name || 'User';
+    const displayName = item.displayName || item.name || t('leaderboard.user');
     const avatarUri = item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=128&background=F9A825&color=fff&bold=true&rounded=true`;
     
     return (
@@ -73,7 +75,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
         <View style={styles.userInfo}>
           <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
             {displayName}
-            {isCurrentUser && ' (You)'}
+            {isCurrentUser && ` (${t('leaderboard.you')})`}
           </Text>
           <View style={styles.countryContainer}>
             {item.countryCode ? (
@@ -82,14 +84,14 @@ export default function LeaderboardScreen(): React.JSX.Element {
                   const country = getCountryByCode(item.countryCode);
                   return country ? <Image source={country.flag} style={styles.flagIcon} /> : null;
                 })()}
-                <Text style={styles.countryText}>{item.country || 'Unknown'}</Text>
+                <Text style={styles.countryText}>{item.country || t('leaderboard.unknown')}</Text>
               </>
             ) : (
-              <Text style={styles.countryText}>Unknown</Text>
+              <Text style={styles.countryText}>{t('leaderboard.unknown')}</Text>
             )}
           </View>
         </View>
-        <Text style={styles.rank}>#{item.rank || item.position || 'N/A'}</Text>
+        <Text style={styles.rank}>#{item.rank || item.position || t('leaderboard.na')}</Text>
         <Text style={styles.distance}>{getDisplayValue(item)}</Text>
       </View>
     );
@@ -99,7 +101,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
     return (
       <View style={styles.container}>
         <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>Please log in to view leaderboard</Text>
+          <Text style={styles.errorText}>{t('leaderboard.loginToView')}</Text>
         </View>
       </View>
     );
@@ -115,7 +117,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
           source={require('../../assets/images/2025-09-26/Q6avvC9L6S.png')}
           style={styles.backButton}
         />
-        <Text style={styles.headerTitle}>Leaderboard</Text>
+        <Text style={styles.headerTitle}>{t('leaderboard.title')}</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
           <Image
             source={require('../../assets/images/2025-09-26/itjep5JQ04.png')}
@@ -135,7 +137,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
             }}
           >
             <Text style={activeTab === 'friends' ? styles.activeTabText : styles.inactiveTabText}>
-              Friends
+              {t('leaderboard.friendsTab')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -146,7 +148,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
             }}
           >
             <Text style={activeTab === 'global' ? styles.activeTabText : styles.inactiveTabText}>
-              Global
+              {t('leaderboard.globalTab')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -188,7 +190,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
-              <Text style={styles.retryButtonText}>Retry</Text>
+              <Text style={styles.retryButtonText}>{t('leaderboard.retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : currentData ? (
@@ -198,7 +200,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
             {/* Top Section */}
             <Text style={styles.sectionTitle}>
-              {activeTab === 'friends' ? 'Friends Leaderboard' : 'Global Leaderboard'}
+              {activeTab === 'friends' ? t('leaderboard.friendsTitle') : t('leaderboard.globalTitle')}
             </Text>
 
             {/* Leaderboard List */}
@@ -208,14 +210,14 @@ export default function LeaderboardScreen(): React.JSX.Element {
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>
                   {activeTab === 'friends' 
-                    ? 'No friends to compare with yet' 
-                    : 'No global data available'
+                    ? t('leaderboard.noFriends') 
+                    : t('leaderboard.noGlobal')
                   }
                 </Text>
                 <Text style={styles.emptySubtext}>
                   {activeTab === 'friends' 
-                    ? 'Join groups to see friends on the leaderboard' 
-                    : 'Be the first to appear on the global leaderboard!'
+                    ? t('leaderboard.joinFriends')
+                    : t('leaderboard.beFirst')
                   }
                 </Text>
               </View>

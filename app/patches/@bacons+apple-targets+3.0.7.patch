@@ -1,0 +1,79 @@
+diff --git a/node_modules/@bacons/apple-targets/build/config-plugin.js b/node_modules/@bacons/apple-targets/build/config-plugin.js
+index bcc8520..9d05348 100644
+--- a/node_modules/@bacons/apple-targets/build/config-plugin.js
++++ b/node_modules/@bacons/apple-targets/build/config-plugin.js
+@@ -11,13 +11,14 @@ const with_pod_target_extension_1 = require("./with-pod-target-extension");
+ const with_widget_1 = __importDefault(require("./with-widget"));
+ const with_bacons_xcode_1 = require("./with-bacons-xcode");
+ const util_1 = require("./util");
++const { createRunOncePlugin } = require("@expo/config-plugins");
+ const withTargetsDir = (config, _props) => {
+     var _a;
+     let { appleTeamId = (_a = config === null || config === void 0 ? void 0 : config.ios) === null || _a === void 0 ? void 0 : _a.appleTeamId } = _props || {};
+     const { root = "./targets", match = "*" } = _props || {};
+     const projectRoot = config._internal.projectRoot;
+     if (!appleTeamId) {
+-        (0, util_1.warnOnce)((0, chalk_1.default) `{yellow [bacons/apple-targets]} Expo config is missing required {cyan ios.appleTeamId} property. Find this in Xcode and add to the Expo Config to correct. iOS builds may fail until this is corrected.`);
++        (0, util_1.warnOnce)((0, chalk_1.default)`{yellow [bacons/apple-targets]} Expo config is missing required {cyan ios.appleTeamId} property. Find this in Xcode and add to the Expo Config to correct. iOS builds may fail until this is corrected.`);
+     }
+     const targets = (0, glob_1.globSync)(`${root}/${match}/expo-target.config.@(json|js)`, {
+         // const targets = globSync(`./targets/action/expo-target.config.@(json|js)`, {
+@@ -51,5 +52,5 @@ const withTargetsDir = (config, _props) => {
+     (0, with_bacons_xcode_1.withXcodeProjectBetaBaseMod)(config);
+     return config;
+ };
+-exports.withTargetsDir = withTargetsDir;
++exports.withTargetsDir = createRunOncePlugin(withTargetsDir, "withTargetsDir");
+ module.exports = exports.withTargetsDir;
+diff --git a/node_modules/@bacons/apple-targets/build/with-bacons-xcode.js b/node_modules/@bacons/apple-targets/build/with-bacons-xcode.js
+index 5bb7650..f847303 100644
+--- a/node_modules/@bacons/apple-targets/build/with-bacons-xcode.js
++++ b/node_modules/@bacons/apple-targets/build/with-bacons-xcode.js
+@@ -1,18 +1,18 @@
+ "use strict";
+-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
++var __createBinding = (this && this.__createBinding) || (Object.create ? (function (o, m, k, k2) {
+     if (k2 === undefined) k2 = k;
+     var desc = Object.getOwnPropertyDescriptor(m, k);
+     if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+-      desc = { enumerable: true, get: function() { return m[k]; } };
++        desc = { enumerable: true, get: function () { return m[k]; } };
+     }
+     Object.defineProperty(o, k2, desc);
+-}) : (function(o, m, k, k2) {
++}) : (function (o, m, k, k2) {
+     if (k2 === undefined) k2 = k;
+     o[k2] = m[k];
+ }));
+-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
++var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function (o, v) {
+     Object.defineProperty(o, "default", { enumerable: true, value: v });
+-}) : function(o, v) {
++}) : function (o, v) {
+     o["default"] = v;
+ });
+ var __importStar = (this && this.__importStar) || function (mod) {
+@@ -30,6 +30,7 @@ exports.withXcodeProjectBetaBaseMod = exports.withXcodeProjectBeta = void 0;
+ const xcode_1 = require("@bacons/xcode");
+ const xcodeParse = __importStar(require("@bacons/xcode/json"));
+ const config_plugins_1 = require("@expo/config-plugins");
++const createBaseMod_1 = require("@expo/config-plugins/build/plugins/createBaseMod");
+ const fs_1 = __importDefault(require("fs"));
+ const customModName = "xcodeProjectBeta2";
+ const withXcodeProjectBeta = (config, action) => {
+@@ -41,13 +42,13 @@ const withXcodeProjectBeta = (config, action) => {
+ };
+ exports.withXcodeProjectBeta = withXcodeProjectBeta;
+ const withXcodeProjectBetaBaseModInternal = (config) => {
+-    return config_plugins_1.BaseMods.withGeneratedBaseMods(config, {
++    return (0, createBaseMod_1.withGeneratedBaseMods)(config, {
+         platform: "ios",
+         saveToInternal: true,
+         skipEmptyMod: false,
+         providers: {
+             // Append a custom rule to supply AppDelegate header data to mods on `mods.ios.AppClipInfoPlist`
+-            [customModName]: config_plugins_1.BaseMods.provider({
++            [customModName]: (0, createBaseMod_1.provider)({
+                 isIntrospective: false,
+                 // isIntrospective: true,
+                 async getFilePath({ modRequest, _internal }) {

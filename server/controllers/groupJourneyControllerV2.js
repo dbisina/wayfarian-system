@@ -6,6 +6,7 @@ const redisService = require('../services/RedisService');
 const logger = require('../services/Logger');
 const jobQueue = require('../services/JobQueue');
 const { fetchInstanceWithUser } = require('../services/JourneyInstanceService');
+const { isReasonableDistance } = require('../utils/helpers');
 
 /**
  * FIXED: Start a group journey
@@ -16,9 +17,9 @@ const { fetchInstanceWithUser } = require('../services/JourneyInstanceService');
 const startGroupJourney = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { 
-      groupId, 
-      title, 
+    const {
+      groupId,
+      title,
       description,
       endLatitude,
       endLongitude,
@@ -43,7 +44,7 @@ const startGroupJourney = async (req, res) => {
     // Check cache first
     const cacheKey = redisService.key('group', groupId);
     let group = await redisService.get(cacheKey);
-    
+
     if (!group) {
       // Load from database
       group = await prisma.group.findUnique({
@@ -62,11 +63,11 @@ const startGroupJourney = async (req, res) => {
           }
         }
       });
-      
+
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      
+
       // Cache group data
       await redisService.set(cacheKey, group, redisService.TTL.MEDIUM);
     }
@@ -93,7 +94,7 @@ const startGroupJourney = async (req, res) => {
     // Check if group already has an active journey
     const activeJourneyCacheKey = redisService.key('group', groupId, 'active-journey');
     let existingJourney = await redisService.get(activeJourneyCacheKey);
-    
+
     if (!existingJourney) {
       existingJourney = await prisma.groupJourney.findFirst({
         where: {
@@ -168,7 +169,7 @@ const startGroupJourney = async (req, res) => {
           timestamp: new Date().toISOString(),
         });
       });
-      
+
       logger.info(`[GroupJourney] Emitted start event to ${memberUserIds.length} members`);
     }
 
@@ -260,7 +261,7 @@ const startMyInstance = async (req, res) => {
 
     // Check cache first
     let groupJourney = await redisService.get(redisService.key('group-journey', groupJourneyId));
-    
+
     if (!groupJourney) {
       groupJourney = await prisma.groupJourney.findUnique({
         where: { id: groupJourneyId },
@@ -322,7 +323,7 @@ const startMyInstance = async (req, res) => {
         // Force complete the solo journey
         await prisma.journey.update({
           where: { id: activeSoloJourney.id },
-          data: { 
+          data: {
             status: 'COMPLETED',
             endTime: new Date(),
           }
@@ -356,7 +357,7 @@ const startMyInstance = async (req, res) => {
       // The original code just continued to create a new instance which might fail unique constraint 
       // or it relied on the check above. 
       // Let's assume we update the existing one to ACTIVE if it exists but is not active.
-      
+
       instance = await prisma.journeyInstance.update({
         where: { id: instance.id },
         data: {
@@ -506,7 +507,7 @@ const finishGroupJourney = async (groupJourneyId, io) => {
         groupId: groupJourney.groupId,
         timestamp: new Date().toISOString(),
       });
-      
+
       io.to(`group-${groupJourney.groupId}`).emit('group-journey:completed', {
         groupJourneyId,
         groupId: groupJourney.groupId,
@@ -527,13 +528,13 @@ const finishGroupJourney = async (groupJourneyId, io) => {
         });
 
         if (io) {
-           io.to(`group-${groupJourney.groupId}`).emit('group:archived', {
-             groupId: groupJourney.groupId
-           });
+          io.to(`group-${groupJourney.groupId}`).emit('group:archived', {
+            groupId: groupJourney.groupId
+          });
         }
-        
+
         logger.info(`[GroupJourney] Group ${groupJourney.groupId} automatically archived (soft deleted).`);
-        
+
       } catch (e) {
         logger.error(`[GroupJourney] Failed to auto-delete group ${groupJourney.groupId}`, e);
       }
@@ -662,7 +663,7 @@ const updateInstanceLocation = async (req, res) => {
 
     // Get instance from cache or DB
     let instance = await redisService.get(redisService.key('instance', id));
-    
+
     if (!instance) {
       instance = await prisma.journeyInstance.findUnique({
         where: { id },
@@ -687,8 +688,24 @@ const updateInstanceLocation = async (req, res) => {
     // Calculate stats
     const now = new Date();
     const elapsedSeconds = Math.floor((now - new Date(instance.startTime)) / 1000);
-    const newDistance = (instance.totalDistance || 0) + (distance || 0);
-    
+
+    // Validate incremental distance - cap at 10km per update (prevents large GPS jumps)
+    const MAX_INCREMENT_KM = 10;
+    const validatedDistance = Math.min(Math.max(distance || 0, 0), MAX_INCREMENT_KM);
+
+    // Check if this increment is reasonable based on time since last update
+    const lastUpdateTime = instance.lastLocationUpdate ? new Date(instance.lastLocationUpdate).getTime() : null;
+    const timeSinceLastUpdate = lastUpdateTime ? (now.getTime() - lastUpdateTime) / 1000 : 60; // Default 60s if no previous
+
+    let finalDistanceIncrement = validatedDistance;
+    if (!isReasonableDistance(validatedDistance, timeSinceLastUpdate)) {
+      const maxReasonable = (timeSinceLastUpdate / 3600) * 250; // Max at 250 km/h
+      finalDistanceIncrement = Math.min(validatedDistance, maxReasonable);
+      logger.warn(`[Instance ${id}] Distance increment capped: ${validatedDistance.toFixed(3)}km -> ${finalDistanceIncrement.toFixed(3)}km (${timeSinceLastUpdate.toFixed(1)}s elapsed)`);
+    }
+
+    const newDistance = (instance.totalDistance || 0) + finalDistanceIncrement;
+
     // Validate speed before updating topSpeed - cap at 250 km/h to prevent GPS drift issues
     const MAX_REASONABLE_SPEED_KMH = 250;
     const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
@@ -830,8 +847,8 @@ const completeInstance = async (req, res) => {
     const { endLatitude, endLongitude } = req.body;
 
     // Calculate final stats
-    const duration = instance.startTime 
-      ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000) 
+    const duration = instance.startTime
+      ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
       : 0;
 
     const updatedInstance = await prisma.journeyInstance.update({
@@ -898,7 +915,7 @@ const completeInstance = async (req, res) => {
     if (instance.groupJourney?.group) {
       try {
         const groupName = instance.groupJourney.group.name;
-        
+
         // Extract start location from routePoints or use current location
         let startLat = 0;
         let startLng = 0;
@@ -907,13 +924,13 @@ const completeInstance = async (req, res) => {
           startLat = firstPoint.latitude || firstPoint.lat || 0;
           startLng = firstPoint.longitude || firstPoint.lng || firstPoint.lon || 0;
         }
-        
+
         // Fallback to current location if routePoints don't have start
         if (startLat === 0 && startLng === 0) {
           startLat = instance.currentLatitude || 0;
           startLng = instance.currentLongitude || 0;
         }
-        
+
         await prisma.journey.create({
           data: {
             userId: instance.userId,
@@ -944,7 +961,7 @@ const completeInstance = async (req, res) => {
     // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
     // AND if all group members have created an instance (optional, maybe just check active ones)
     // Better logic: Check if any instance is still ACTIVE/PAUSED. If not, close the journey.
-    
+
     const activeInstancesCount = await prisma.journeyInstance.count({
       where: {
         groupJourneyId: instance.groupJourneyId,
@@ -965,7 +982,7 @@ const completeInstance = async (req, res) => {
       // The prompt says "can end the journey where ever you want other users will see where you end... once the journey ends for everyone the group should be deleted".
       // This implies an automatic trigger.
       // Let's stick to: If NO active instances remain, we mark the group journey as completed.
-      
+
       await finishGroupJourney(instance.groupJourneyId, io);
     }
 
@@ -1165,15 +1182,15 @@ const getActiveForGroup = async (req, res) => {
       }
     }
 
-    res.json({ 
+    res.json({
       success: true,
-      groupJourney: journey 
+      groupJourney: journey
     });
   } catch (error) {
     logger.error('[GroupJourney] Error getting active journey:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Failed to get active journey' 
+      error: 'Failed to get active journey'
     });
   }
 };
@@ -1195,8 +1212,8 @@ const joinGroupJourney = async (req, res) => {
     });
 
     if (existingInstance) {
-      return res.json({ 
-        success: true, 
+      return res.json({
+        success: true,
         instance: existingInstance,
         message: 'Already joined'
       });
