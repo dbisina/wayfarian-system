@@ -10,17 +10,17 @@ const { verifyIdToken, createCustomToken } = require('../services/Firebase');
 const authenticateUser = async (req, res) => {
   try {
     const { idToken, phoneNumber, displayName, photoURL } = req.body;
-    
+
     if (!idToken) {
       return res.status(400).json({
         error: 'ID token required',
         message: 'Firebase ID token is required',
       });
     }
-    
+
     // Verify Firebase token
     const decodedToken = await verifyIdToken(idToken);
-    
+
     // Upsert user atomically to avoid race/unique errors
     const now = new Date();
     const inferredDisplayName = (() => {
@@ -53,25 +53,54 @@ const authenticateUser = async (req, res) => {
       ...(photoURL || decodedToken.picture ? { photoURL: photoURL || decodedToken.picture } : {}),
     };
 
-    const user = await prisma.user.upsert({
-      where: { firebaseUid: decodedToken.uid },
-      create: createData,
-      update: updateData,
-    });
-    
+    let user;
+    try {
+      user = await prisma.user.upsert({
+        where: { firebaseUid: decodedToken.uid },
+        create: createData,
+        update: updateData,
+      });
+    } catch (upsertError) {
+      // Handle P2002 unique constraint error (race condition on email)
+      if (upsertError.code === 'P2002') {
+        // Another request created the user - try to find by firebaseUid
+        user = await prisma.user.findUnique({
+          where: { firebaseUid: decodedToken.uid },
+        });
+
+        if (!user && decodedToken.email) {
+          // User might exist with same email but different firebaseUid
+          // Update the existing user's firebaseUid
+          user = await prisma.user.update({
+            where: { email: decodedToken.email },
+            data: {
+              firebaseUid: decodedToken.uid,
+              ...updateData,
+            },
+          });
+        }
+
+        if (!user) {
+          throw upsertError; // Re-throw if we still can't find/update the user
+        }
+      } else {
+        throw upsertError;
+      }
+    }
+
     // Remove sensitive data
     const { firebaseUid, ...userData } = user;
-    
+
     res.json({
       success: true,
-      message: user.createdAt === user.updatedAt ? 'User registered successfully' : 'User authenticated successfully',
+      message: user.createdAt.getTime() === user.updatedAt.getTime() ? 'User registered successfully' : 'User authenticated successfully',
       user: userData,
-      isNewUser: user.createdAt === user.updatedAt,
+      isNewUser: user.createdAt.getTime() === user.updatedAt.getTime(),
     });
-    
+
   } catch (error) {
     console.error('Authenticate user error:', error);
-    
+
     if (error.message === 'Invalid Firebase token') {
       return res.status(401).json({
         error: 'Invalid token',
@@ -85,7 +114,7 @@ const authenticateUser = async (req, res) => {
         message: 'Database is temporarily unavailable. Please try again shortly.',
       });
     }
-    
+
     res.status(500).json({
       error: 'Authentication failed',
       message: error.message,
@@ -99,33 +128,33 @@ const authenticateUser = async (req, res) => {
 const refreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-    
+
     if (!refreshToken) {
       return res.status(400).json({
         error: 'Refresh token required',
         message: 'Refresh token is required',
       });
     }
-    
+
     // Note: In a real app, you might want to implement custom refresh logic
     // For now, we'll just verify the current token
     const decodedToken = await verifyIdToken(refreshToken);
-    
+
     // Get user from database
     const user = await prisma.user.findUnique({
       where: { firebaseUid: decodedToken.uid },
     });
-    
+
     if (!user) {
       return res.status(404).json({
         error: 'User not found',
         message: 'User not found in database',
       });
     }
-    
+
     // Create new custom token if needed
     const customToken = await createCustomToken(decodedToken.uid);
-    
+
     res.json({
       success: true,
       message: 'Token refreshed successfully',
@@ -137,7 +166,7 @@ const refreshToken = async (req, res) => {
         photoURL: user.photoURL,
       },
     });
-    
+
   } catch (error) {
     console.error('Refresh token error:', error);
     res.status(401).json({
@@ -153,7 +182,7 @@ const refreshToken = async (req, res) => {
 const logout = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     // Update user's last seen and clear any active sessions
     await prisma.user.update({
       where: { id: userId },
@@ -161,7 +190,7 @@ const logout = async (req, res) => {
         updatedAt: new Date(),
       },
     });
-    
+
     // Clear any active location sharing in groups
     await prisma.groupMember.updateMany({
       where: {
@@ -173,12 +202,12 @@ const logout = async (req, res) => {
         lastSeen: new Date(),
       },
     });
-    
+
     res.json({
       success: true,
       message: 'Logged out successfully',
     });
-    
+
   } catch (error) {
     console.error('Logout error:', error);
     res.status(500).json({
@@ -194,7 +223,7 @@ const logout = async (req, res) => {
 const getCurrentUser = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -211,14 +240,14 @@ const getCurrentUser = async (req, res) => {
         updatedAt: true,
       },
     });
-    
+
     if (!user) {
       return res.status(404).json({
         error: 'User not found',
         message: 'User profile not found',
       });
     }
-    
+
     // Get user's active journey if any
     const activeJourney = await prisma.journey.findFirst({
       where: {
@@ -234,7 +263,7 @@ const getCurrentUser = async (req, res) => {
         topSpeed: true,
       },
     });
-    
+
     // Get user's groups count
     const groupsCount = await prisma.groupMember.count({
       where: {
@@ -242,7 +271,7 @@ const getCurrentUser = async (req, res) => {
         group: { isActive: true },
       },
     });
-    
+
     res.json({
       success: true,
       user: {
@@ -251,7 +280,7 @@ const getCurrentUser = async (req, res) => {
         groupsCount,
       },
     });
-    
+
   } catch (error) {
     console.error('Get current user error:', error);
     res.status(500).json({
@@ -268,7 +297,7 @@ const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const { displayName, phoneNumber } = req.body;
-    
+
     // Update user profile
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -290,13 +319,13 @@ const updateProfile = async (req, res) => {
         updatedAt: true,
       },
     });
-    
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
       user: updatedUser,
     });
-    
+
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({
@@ -313,14 +342,14 @@ const deleteAccount = async (req, res) => {
   try {
     const userId = req.user.id;
     const { confirmDelete } = req.body;
-    
+
     if (!confirmDelete) {
       return res.status(400).json({
         error: 'Confirmation required',
         message: 'Please confirm account deletion by setting confirmDelete to true',
       });
     }
-    
+
     // Get user's active groups where they are creators
     const createdGroups = await prisma.group.findMany({
       where: {
@@ -333,10 +362,10 @@ const deleteAccount = async (req, res) => {
         },
       },
     });
-    
+
     // Check if user is creator of groups with other members
     const groupsWithMembers = createdGroups.filter(group => group._count.members > 1);
-    
+
     if (groupsWithMembers.length > 0) {
       return res.status(400).json({
         error: 'Cannot delete account',
@@ -344,7 +373,7 @@ const deleteAccount = async (req, res) => {
         groupsWithMembers: groupsWithMembers.map(g => ({ id: g.id, name: g.name, memberCount: g._count.members })),
       });
     }
-    
+
     // Get groups where user is the only member (creator with no other members)
     const groupsToDelete = await prisma.group.findMany({
       where: {
@@ -357,11 +386,11 @@ const deleteAccount = async (req, res) => {
         },
       },
     });
-    
+
     // Filter to groups with only the user as member
     const soleOwnerGroups = groupsToDelete.filter(g => g._count.members <= 1);
     const soleOwnerGroupIds = soleOwnerGroups.map(g => g.id);
-    
+
     // Delete related data for groups being deleted to avoid FK constraints
     if (soleOwnerGroupIds.length > 0) {
       // Delete group journeys and their instances first
@@ -370,50 +399,50 @@ const deleteAccount = async (req, res) => {
         select: { id: true },
       });
       const groupJourneyIds = groupJourneys.map(gj => gj.id);
-      
+
       if (groupJourneyIds.length > 0) {
         // Delete ride events tied to group journeys
         await prisma.rideEvent.deleteMany({
           where: { groupJourneyId: { in: groupJourneyIds } },
         });
-        
+
         // Delete journey instances
         await prisma.journeyInstance.deleteMany({
           where: { groupJourneyId: { in: groupJourneyIds } },
         });
-        
+
         // Delete group journeys
         await prisma.groupJourney.deleteMany({
           where: { id: { in: groupJourneyIds } },
         });
       }
-      
+
       // Delete group members
       await prisma.groupMember.deleteMany({
         where: { groupId: { in: soleOwnerGroupIds } },
       });
-      
+
       // Delete journeys associated with these groups
       await prisma.journey.deleteMany({
         where: { groupId: { in: soleOwnerGroupIds } },
       });
-      
+
       // Now delete the groups themselves
       await prisma.group.deleteMany({
         where: { id: { in: soleOwnerGroupIds } },
       });
     }
-    
+
     // Delete user (cascade will handle remaining related records)
     await prisma.user.delete({
       where: { id: userId },
     });
-    
+
     res.json({
       success: true,
       message: 'Account deleted successfully',
     });
-    
+
   } catch (error) {
     console.error('Delete account error:', error);
     res.status(500).json({
@@ -429,16 +458,16 @@ const deleteAccount = async (req, res) => {
 const checkAvailability = async (req, res) => {
   try {
     const { email, phoneNumber } = req.query;
-    
+
     if (!email && !phoneNumber) {
       return res.status(400).json({
         error: 'Invalid request',
         message: 'Please provide email or phoneNumber to check',
       });
     }
-    
+
     const checks = {};
-    
+
     if (email) {
       const emailExists = await prisma.user.findUnique({
         where: { email },
@@ -449,7 +478,7 @@ const checkAvailability = async (req, res) => {
         available: !emailExists,
       };
     }
-    
+
     if (phoneNumber) {
       const phoneExists = await prisma.user.findUnique({
         where: { phoneNumber },
@@ -460,12 +489,12 @@ const checkAvailability = async (req, res) => {
         available: !phoneExists,
       };
     }
-    
+
     res.json({
       success: true,
       checks,
     });
-    
+
   } catch (error) {
     console.error('Check availability error:', error);
     res.status(500).json({

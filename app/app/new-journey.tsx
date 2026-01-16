@@ -292,13 +292,20 @@ export default function NewJourneyScreen() {
         </TouchableOpacity>
 
         {Platform.OS === 'ios' && showDatePicker && (
-          <DateTimePicker
-            value={startDateTime}
-            mode="datetime"
-            display="spinner"
-            onChange={onDateChange}
-            minimumDate={new Date()}
-          />
+          <View style={styles.datePickerContainer}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.datePickerDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={startDateTime}
+              mode="datetime"
+              display="spinner"
+              onChange={onDateChange}
+              minimumDate={new Date()}
+            />
+          </View>
         )}
 
         {/* Notes/Description */}
@@ -492,5 +499,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins',
     marginLeft: 4,
     fontWeight: '500',
+  },
+  datePickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+  },
+  datePickerDone: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F4A020',
+    fontFamily: 'Poppins',
   },
 });

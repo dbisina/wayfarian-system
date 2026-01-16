@@ -19,7 +19,10 @@
         "ok": "OK",
         "back": "Back",
         "next": "Next",
-        "close": "Close"
+        "close": "Close",
+        "termsTitle": "Terms and Conditions",
+        "useCurrentLocation": "Use Current Location",
+        "currentLocation": "Current Location"
     },
     "navigation": {
         "map": "Map",
@@ -329,7 +332,7 @@
         }
     },
     "auth": {
-        "login": "Log In",
+        "loginButton": "Log In",
         "signup": "Sign Up",
         "email": "Email",
         "password": "Password",
@@ -422,13 +425,6 @@
         "searchCountries": "Search countries...",
         "continue": "Continue",
         "skip": "Skip for now"
-    },
-    "common": {
-        "loading": "Loading...",
-        "close": "Close",
-        "termsTitle": "Terms and Conditions",
-        "useCurrentLocation": "Use Current Location",
-        "currentLocation": "Current Location"
     },
     "groupJourney": {
         "sharedPhoto": "Shared a photo",
