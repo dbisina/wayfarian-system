@@ -64,7 +64,7 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "ccacheEnabled": true
+            "ccacheEnabled": false
           },
           "android": {
             "enableProguardInReleaseBuilds": false
