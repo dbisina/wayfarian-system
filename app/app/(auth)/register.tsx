@@ -444,7 +444,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '300',
     color: '#000000',
-    lineHeight: 18,
   },
   inputWrapper: {
     backgroundColor: '#EEEEEE',

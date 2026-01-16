@@ -423,7 +423,6 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: '#000000',
     fontFamily: 'Poppins',
-    lineHeight: 18,
   },
   passwordToggle: {
     paddingLeft: 8,

@@ -142,7 +142,7 @@ export const useAuth = () => {
 const useSentryContextBridge = () => {
   const lastUserIdRef = useRef<string | null>(null);
 
-  const setUserContext = (user: User | null) => {
+  const setUserContext = useCallback((user: User | null) => {
     try {
       const nextId = user?.id ?? null;
       if (nextId === lastUserIdRef.current) {
@@ -163,7 +163,7 @@ const useSentryContextBridge = () => {
       const normalized = error instanceof Error ? error : new Error(String(error));
       captureException(normalized);
     }
-  };
+  }, []);
 
   return { setUserContext };
 };

@@ -271,7 +271,7 @@ export default function TabLayout() {
       />
 
       {/* Floating Center Button overlay */}
-      <View style={styles.floatingButtonContainerTabs} pointerEvents="box-none">
+      <View style={[styles.floatingButtonContainerTabs, { bottom: BOTTOM_OFFSET + 27 }]} pointerEvents="box-none">
         <TouchableOpacity
           style={styles.floatingButton}
           onPress={() => setActivityModalVisible(true)}
