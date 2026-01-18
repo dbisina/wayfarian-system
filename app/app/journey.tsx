@@ -157,6 +157,22 @@ export default function JourneyScreen(): React.JSX.Element {
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status === 'granted') {
+            // Try cache first for speed
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown) {
+               const cachedRegion = {
+                latitude: lastKnown.coords.latitude,
+                longitude: lastKnown.coords.longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              };
+              setRegion(cachedRegion);
+              if (mapRef.current) {
+                try { mapRef.current.animateToRegion(cachedRegion, 800); } catch {}
+              }
+            }
+
+            // Then fetch fresh location
             const location = await Location.getCurrentPositionAsync({});
             const newRegion = {
               latitude: location.coords.latitude,
@@ -200,7 +216,7 @@ export default function JourneyScreen(): React.JSX.Element {
         if (instanceRes?.instance) {
           const instance = instanceRes.instance;
           setMyInstance(instance); // Update the hook's instance state
-          console.log('📍 Loaded my group journey instance:', instance);
+          console.log(' Loaded my group journey instance:', instance);
           
           // If instance is ACTIVE, start location tracking immediately
           if (instance.status === 'ACTIVE' && !isGroupTracking) {

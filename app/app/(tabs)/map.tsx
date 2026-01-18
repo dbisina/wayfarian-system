@@ -89,8 +89,8 @@ export default function MapScreen(): React.JSX.Element {
   }, []);
 
   const getCurrentLocation = async () => {
+    let hasLocation = false;
     try {
-      setLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
@@ -98,16 +98,25 @@ export default function MapScreen(): React.JSX.Element {
         return;
       }
 
+      // Try to get cached location first for speed
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (lastKnown) {
+        setLocation(lastKnown);
+        hasLocation = true;
+      }
+
+      // Then fetch fresh high-accuracy location
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
       
       setLocation(currentLocation);
     } catch (error: any) {
-      setError(t('map.failedLocation'));
+      // Only show error if we have no location at all
+      if (!hasLocation && !location) {
+        setError(t('map.failedLocation'));
+      }
       console.error('Location error:', error);
-    } finally {
-      setLoading(false);
     }
   };
 

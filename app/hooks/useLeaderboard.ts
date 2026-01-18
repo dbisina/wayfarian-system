@@ -31,6 +31,7 @@ export const useLeaderboard = () => {
   const [globalData, setGlobalData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy] = useState<'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime'>('totalDistance');
 
   const fetchFriendsLeaderboard = useCallback(async (sortBy: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' = 'totalDistance') => {
     if (!isAuthenticated) return;
@@ -106,7 +107,11 @@ export const useLeaderboard = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchFriendsLeaderboard();
+      // Parallel fetch for speed
+      Promise.all([
+        fetchFriendsLeaderboard(sortBy), // Default sorting
+        fetchUserPosition(sortBy)
+      ]).catch(err => console.error('Initial leaderboard fetch failed:', err));
     } else {
       setFriendsData(null);
       setGlobalData(null);

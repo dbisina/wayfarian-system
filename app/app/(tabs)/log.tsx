@@ -34,11 +34,19 @@ type JourneyItem = {
   }[];
 };
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ... existing imports ...
+
+// Key for caching log data
+const CACHE_KEY_LOG_DATA = 'wayfarian_log_screen_data';
+
 export default function RideLogScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { t, i18n } = useTranslation();
+  
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
   const [xpProgress, setXpProgress] = useState<number>(0);
@@ -46,59 +54,91 @@ export default function RideLogScreen(): React.JSX.Element {
   const [badges, setBadges] = useState<{ id: string; title: string; achievementId: string }[]>([]);
   const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
   const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
-  const [, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const loadData = React.useCallback(async () => {
+  // Separate function to process and set data to state
+  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
+    const position = positionRes?.position ?? positionRes?.rank ?? null;
+    if (typeof position === 'number') setRank(position);
+
+    // XP Progress and next badge
+    const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
+    setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
+
+    // Find next locked tier name as next badge
+    let nextName = t('log.nextMilestone');
+    const ach = achievementsRes?.achievements || [];
+    for (const a of ach) {
+      const locked = (a.tiers || []).find((tier: any) => !tier.unlocked);
+      if (locked) { nextName = locked.name || a.name; break; }
+    }
+    setNextBadge(nextName);
+
+    // Build badges from unlocked tiers (top 4)
+    const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
+    ach.forEach((a: any) => {
+      (a.tiers || []).forEach((tier: any) => {
+        if (tier.unlocked) unlockedBadges.push({ id: `${a.id}_${tier.level}`, title: tier.name || a.name, achievementId: a.id });
+      });
+    });
+    setBadges(unlockedBadges.slice(0, 4));
+
+    // Split journeys into solo vs group
+    const journeys: JourneyItem[] = historyRes?.journeys || [];
+    const solo = journeys.filter(j => !j.group);
+    const group = journeys.filter(j => !!j.group);
+    setSoloJourneys(solo);
+    setGroupJourneys(group);
+  }, [t]);
+
+  const loadData = React.useCallback(async (useCache = true) => {
     if (!isAuthenticated) return;
+    
+    // 1. Try to load from cache first for instant render
+    if (useCache) {
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY_LOG_DATA);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes);
+        }
+      } catch (e) {
+        console.warn('Failed to load log cache', e);
+      }
+    }
+
     try {
-      setLoading(true);
+      if (!soloJourneys.length && !groupJourneys.length) {
+         setLoading(true);
+      }
+      
+      // 2. Fetch fresh data
       const [positionRes, achievementsRes, historyRes] = await Promise.all([
         leaderboardAPI.getUserPosition(),
         userAPI.getAchievements(),
         userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
       ]);
 
-      const position = positionRes?.position ?? positionRes?.rank ?? null;
-      if (typeof position === 'number') setRank(position);
+      // 3. Update state with fresh data
+      processAndSetData(positionRes, achievementsRes, historyRes);
 
-      // XP Progress and next badge
-      const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
-      setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
-
-      // Find next locked tier name as next badge
-      let nextName = t('log.nextMilestone');
-      const ach = achievementsRes?.achievements || [];
-      for (const a of ach) {
-        const locked = (a.tiers || []).find((tier: any) => !tier.unlocked);
-        if (locked) { nextName = locked.name || a.name; break; }
-      }
-      setNextBadge(nextName);
-
-      // Build badges from unlocked tiers (top 4)
-      const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
-      ach.forEach((a: any) => {
-        (a.tiers || []).forEach((tier: any) => {
-          if (tier.unlocked) unlockedBadges.push({ id: `${a.id}_${tier.level}`, title: tier.name || a.name, achievementId: a.id });
-        });
-      });
-      setBadges(unlockedBadges.slice(0, 4));
-
-      // Split journeys into solo vs group
-      const journeys: JourneyItem[] = historyRes?.journeys || [];
-      const solo = journeys.filter(j => !j.group);
-      const group = journeys.filter(j => !!j.group);
-      setSoloJourneys(solo);
-      setGroupJourneys(group);
+      // 4. Update cache
+      AsyncStorage.setItem(CACHE_KEY_LOG_DATA, JSON.stringify({
+        positionRes,
+        achievementsRes,
+        historyRes,
+        timestamp: Date.now()
+      })).catch(e => console.warn('Failed to save log cache', e));
 
     } catch (e) {
       console.warn('Log screen data load failed', e);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, t]);
+  }, [isAuthenticated, soloJourneys.length, groupJourneys.length, processAndSetData]);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, [isAuthenticated]);
 
   const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
