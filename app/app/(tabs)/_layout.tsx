@@ -113,6 +113,7 @@ export default function TabLayout() {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const insets = useSafeAreaInsets(); // Must be called before any early returns
   // Subtle screen transition value (overlay removed to avoid dual loaders)
   const transition = useSharedValue(0);
 
@@ -137,7 +138,6 @@ export default function TabLayout() {
   }
   
   // Tabs bar config to mimic current style while using Tabs behavior
-  const insets = useSafeAreaInsets();
   const BAR_HEIGHT = 44;
   const BOTTOM_OFFSET = 20 + (insets.bottom > 0 ? insets.bottom - 10 : 0); // Add inset, adjust slightly if needed
   const H_MARGIN = 22; // compact but leaves room for labels

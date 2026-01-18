@@ -43,6 +43,7 @@ function RootLayoutContent() {
   const { isAuthenticated, isInitializing, hasCompletedProfileSetup, isNewSignUp } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
   const [isI18nReady, setIsI18nReady] = useState(false);
+  const router = useRouter(); // Must be called before any early returns
 
   const [fontsLoaded] = useFonts({
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
@@ -60,21 +61,9 @@ function RootLayoutContent() {
     }
   }, [fontsLoaded, isInitializing, isI18nReady]);
 
-  // Show splash while loading fonts, auth state, or i18n
-  if (!fontsLoaded || isInitializing || !navigationReady || !isI18nReady) {
-    return null;
-  }
-
-  const stackScreenOptions = { headerShown: false };
-
-  // Determine which screen to show:
-  // 1. Not authenticated -> (auth) for login/register
-  // 2. Authenticated but new signup needs profile setup -> (auth)/profile-setup
-  // 3. Fully authenticated -> (tabs)
+  // Determine navigation state
   const showAuth = !isAuthenticated;
   const needsProfileSetup = isAuthenticated && (isNewSignUp || !hasCompletedProfileSetup);
-
-  const router = useRouter();
 
   // Handle redirection to profile-setup when needed
   // This is required because just updating initialParams on an existing stack
@@ -83,7 +72,14 @@ function RootLayoutContent() {
     if (navigationReady && isAuthenticated && needsProfileSetup) {
       router.replace('/profile-setup' as any);
     }
-  }, [navigationReady, isAuthenticated, needsProfileSetup]);
+  }, [navigationReady, isAuthenticated, needsProfileSetup, router]);
+
+  // Show splash while loading fonts, auth state, or i18n
+  if (!fontsLoaded || isInitializing || !navigationReady || !isI18nReady) {
+    return null;
+  }
+
+  const stackScreenOptions = { headerShown: false };
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

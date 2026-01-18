@@ -6,22 +6,33 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { apiRequest } from './api';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-    }),
-});
+// Configure notification behavior - called lazily to avoid startup crashes
+let notificationHandlerConfigured = false;
+
+export function initNotificationHandler(): void {
+    if (notificationHandlerConfigured) return;
+    notificationHandlerConfigured = true;
+
+    Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            // Set to false for iOS compatibility - these can cause crashes on some iOS versions
+            shouldShowBanner: false,
+            shouldShowList: false,
+        }),
+    });
+}
 
 /**
  * Register for push notifications and get Expo push token
  * @returns Expo push token or null if registration fails
  */
 export const registerForPushNotifications = async (): Promise<string | null> => {
+    // Ensure notification handler is configured
+    initNotificationHandler();
+
     try {
         // Check if running on a physical device
         if (!Device.isDevice) {
