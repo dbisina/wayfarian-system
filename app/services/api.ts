@@ -345,6 +345,10 @@ export const userAPI = {
     return result;
   },
 
+  getDashboardStats: async () => {
+    return apiRequest('/user/dashboard-stats', 'GET');
+  },
+
   getAchievements: async () => {
     return apiRequest('/user/achievements', 'GET');
   },

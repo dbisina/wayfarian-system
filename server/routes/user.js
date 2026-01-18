@@ -146,14 +146,11 @@ router.get('/export-data', exportUserData);
 router.get('/dashboard', async (req, res) => {
   try {
     const userId = req.user.id;
-    // Run queries in parallel for better performance
+    // CRITICAL DATA ONLY: Profile + Active Journey
+    // This loads instantly so the home screen can render essential info
     const [
       user,
       activeJourney,
-      recentJourneysRaw,
-      activeGroupsRaw,
-      recentPhotos,
-      weeklyStats
     ] = await Promise.all([
       // 1. User Profile
       prisma.user.findUnique({
@@ -182,8 +179,40 @@ router.get('/dashboard', async (req, res) => {
           topSpeed: true,
         },
       }),
+    ]);
 
-      // 3. Recent Journeys (limit 3)
+    res.json({
+      success: true,
+      dashboard: {
+        user,
+        activeJourney,
+      },
+    });
+  } catch (error) {
+    if (error?.code === 'P2024' || /connection pool timeout/i.test(error?.message || '')) {
+      return res.status(503).json({ error: 'Service Unavailable', message: 'Database busy, please retry shortly' });
+    }
+    console.error('Get dashboard error:', error);
+    res.status(500).json({ error: 'Failed to get dashboard data', message: error.message });
+  }
+});
+
+
+/**
+ * @route GET /api/user/dashboard-stats
+ * @desc Get dashboard heavy stats (deferred loading)
+ * @access Private
+ */
+router.get('/dashboard-stats', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [
+      recentJourneysRaw,
+      activeGroupsRaw,
+      recentPhotos,
+      weeklyStats
+    ] = await Promise.all([
+      // 1. Recent Journeys (limit 3)
       prisma.journey.findMany({
         where: { userId, status: 'COMPLETED' },
         orderBy: { endTime: 'desc' },
@@ -209,7 +238,7 @@ router.get('/dashboard', async (req, res) => {
         },
       }),
 
-      // 4. Active Groups (limit 3)
+      // 2. Active Groups (limit 3)
       prisma.groupMember.findMany({
         where: { userId, group: { isActive: true } },
         take: 3,
@@ -224,7 +253,7 @@ router.get('/dashboard', async (req, res) => {
         },
       }),
 
-      // 5. Recent Photos (limit 6)
+      // 3. Recent Photos (limit 6)
       prisma.photo.findMany({
         where: { userId },
         orderBy: { takenAt: 'desc' },
@@ -238,7 +267,7 @@ router.get('/dashboard', async (req, res) => {
         },
       }),
 
-      // 6. Weekly Stats
+      // 4. Weekly Stats
       prisma.journey.aggregate({
         where: {
           userId,
@@ -250,7 +279,7 @@ router.get('/dashboard', async (req, res) => {
       })
     ]);
 
-    // Process recent journeys to add cover photo URLs
+    // Process data
     const recentJourneys = recentJourneysRaw.map((journey) => {
       const hydratedPhotos = hydratePhotos(journey.photos);
       return {
@@ -260,14 +289,11 @@ router.get('/dashboard', async (req, res) => {
       };
     });
 
-    // Process active groups
     const activeGroups = activeGroupsRaw.map(ag => ag.group);
 
     res.json({
       success: true,
-      dashboard: {
-        user,
-        activeJourney,
+      stats: {
         recentJourneys,
         activeGroups,
         recentPhotos: hydratePhotos(recentPhotos),
@@ -279,11 +305,8 @@ router.get('/dashboard', async (req, res) => {
       },
     });
   } catch (error) {
-    if (error?.code === 'P2024' || /connection pool timeout/i.test(error?.message || '')) {
-      return res.status(503).json({ error: 'Service Unavailable', message: 'Database busy, please retry shortly' });
-    }
-    console.error('Get dashboard error:', error);
-    res.status(500).json({ error: 'Failed to get dashboard data', message: error.message });
+    console.error('Get dashboard stats error:', error);
+    res.status(500).json({ error: 'Failed to get dashboard stats', message: error.message });
   }
 });
 

@@ -53,6 +53,7 @@ export const useUserData = () => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [achievementsSummary, setAchievementsSummary] = useState<{ totalAchievements: number; totalTiers: number; unlockedTiers: number; progress: number | string; accountAge: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true); // Default to true so skeletons show on mount
   const [error, setError] = useState<string | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
@@ -60,16 +61,48 @@ export const useUserData = () => {
 
     try {
       setLoading(true);
+      setStatsLoading(true);
       setError(null);
+
+      // 1. Fetch critical data (User + Active Journey) - FAST
       const response = await userAPI.getDashboard();
       if (response?.dashboard) {
-        setDashboardData(response.dashboard);
+        setDashboardData(prev => ({
+          ...prev, // Keep existing data (charts/etc) while refreshing user info
+          ...response.dashboard,
+          // If this is the first load, explicitely set missing fields to empty to prevent UI errors
+          recentJourneys: prev?.recentJourneys || [],
+          activeGroups: prev?.activeGroups || [],
+          recentPhotos: prev?.recentPhotos || [],
+          weeklyStats: prev?.weeklyStats || { journeys: 0, distance: 0, time: 0 }
+        } as DashboardData));
       }
+
+      // 2. Fetch heavy stats (Charts, History, etc) - SLOW (Background)
+      // We don't await this so the UI unblocks immediately
+      userAPI.getDashboardStats().then((statsResponse) => {
+        if (statsResponse?.stats) {
+          setDashboardData(prev => ({
+            ...prev,
+            ...statsResponse.stats,
+            user: prev?.user || statsResponse.stats.user, // Ensure user object persists
+          } as DashboardData));
+        }
+      }).catch(err => {
+        console.warn('Background stats fetch failed:', err);
+        // Don't set main error state as the app is usable
+      }).finally(() => {
+        setStatsLoading(false);
+      });
+
     } catch (err: any) {
       setError(err.message || 'Failed to fetch dashboard data');
       console.error('Dashboard fetch error:', err);
+      setStatsLoading(false); // Ensure we don't get stuck in loading state on error
     } finally {
       setLoading(false);
+      // Note: Loading state turns off after CRITICAL data is loaded. 
+      // Stats loading state stays on until background fetch finishes.
     }
   }, [isAuthenticated]);
 
@@ -146,6 +179,7 @@ export const useUserData = () => {
     achievements,
     achievementsSummary,
     loading,
+    statsLoading, // Export this
     error,
     refreshData,
     fetchUserStats,

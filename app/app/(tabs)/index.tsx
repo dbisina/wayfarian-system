@@ -27,7 +27,7 @@ import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 export default function HomeScreen(): React.JSX.Element {
   const { user, isAuthenticated } = useAuth();
-  const { dashboardData, achievements, loading, refreshData } = useUserData();
+  const { dashboardData, achievements, loading, statsLoading, refreshData } = useUserData();
   const { convertDistance, convertSpeed } = useSettings();
   const { t } = useTranslation();
 
@@ -228,7 +228,7 @@ export default function HomeScreen(): React.JSX.Element {
           style={styles.achievementsScroll}
         >
           <View style={styles.achievementsContainer}>
-            {loading ? (
+            {(loading || statsLoading) ? (
               <>
                 {[0, 1, 2].map((i) => (
                   <View key={i} style={styles.achievementCard}>
@@ -343,7 +343,7 @@ export default function HomeScreen(): React.JSX.Element {
           style={styles.journeysScroll}
         >
           <View style={styles.journeysContainer}>
-            {loading ? (
+            {(loading || statsLoading) ? (
               <>
                 {[0, 1, 2].map((i) => (
                   <View key={i} style={styles.journeyCard}>

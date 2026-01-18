@@ -1,4 +1,4 @@
-import React, {useState, useRef, useCallback} from 'react';
+import React, {useState, useRef, useCallback, useEffect} from 'react';
 import TermsAndConditionsModal from '../../components/TermsAndConditionsModal';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import {
@@ -31,7 +31,7 @@ export default function LoginScreen() {
   const [resettingPassword, setResettingPassword] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loginWithGoogle, loginWithApple, resetPassword } = useAuth();
+  const { login, loginWithGoogle, loginWithApple, resetPassword, isAuthenticated } = useAuth();
   const { showAlert } = useAlert();
   const { t } = useTranslation();
   const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
@@ -47,6 +47,14 @@ export default function LoginScreen() {
     setEmail(text);
   }, []);
   
+  // Safety check: if we become authenticated, ensure we stop loading
+  // This prevents the spinner from getting stuck if navigation is delayed
+  useEffect(() => {
+    if (isAuthenticated) {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
+
   const handlePasswordChange = useCallback((text: string) => {
     passwordRef.current = text;
     setPassword(text);
