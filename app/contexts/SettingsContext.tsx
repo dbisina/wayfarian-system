@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { registerForPushNotifications, unregisterPushToken } from '../services/notificationService';
+// NOTE: notificationService is imported dynamically below to avoid crash on startup
 
 const STORE_KEYS = {
   notifications: 'settings.notificationsEnabled',
@@ -58,11 +58,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     try {
       await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0');
       
+      // Dynamically import to avoid crash on app startup
+      const notificationService = await import('../services/notificationService');
+      
       // Actually sync with backend
       if (val) {
-        await registerForPushNotifications();
+        await notificationService.registerForPushNotifications();
       } else {
-        await unregisterPushToken();
+        await notificationService.unregisterPushToken();
       }
     } catch (e) {
       console.warn('Failed to save notifications setting', e);

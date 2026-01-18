@@ -16,6 +16,7 @@ import { userAPI, leaderboardAPI } from '../../services/api';
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { useTranslation } from 'react-i18next';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type JourneyItem = {
   id: string;
@@ -34,10 +35,6 @@ type JourneyItem = {
   }[];
 };
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// ... existing imports ...
-
 // Key for caching log data
 const CACHE_KEY_LOG_DATA = 'wayfarian_log_screen_data';
 
@@ -46,6 +43,7 @@ export default function RideLogScreen(): React.JSX.Element {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { t, i18n } = useTranslation();
+  const { convertDistance } = useSettings(); // MUST be called before any conditional hooks
   
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
@@ -142,7 +140,6 @@ export default function RideLogScreen(): React.JSX.Element {
   }, [isAuthenticated]);
 
   const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
-  const { convertDistance } = useSettings();
 
   const normalizeDistance = (value?: number) => {
     if (!value || value <= 0) return 0;
