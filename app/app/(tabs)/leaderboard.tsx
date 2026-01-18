@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
 import { getCountryByCode } from '../../constants/countries';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 // const { width: screenWidth } = Dimensions.get('window');
 
@@ -113,10 +114,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
       
       {/* Header */}
       <View style={styles.header}>
-        <Image
-          source={require('../../assets/images/2025-09-26/Q6avvC9L6S.png')}
-          style={styles.backButton}
-        />
+        <AnimatedLogoButton size={34} padding={0} />
         <Text style={styles.headerTitle}>{t('leaderboard.title')}</Text>
         <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
           <Image

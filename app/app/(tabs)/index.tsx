@@ -22,6 +22,7 @@ import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 import { scale, verticalScale, moderateScale } from '../../utils/responsive';
 import { useSettings } from '../../contexts/SettingsContext';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
+import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 
 
 export default function HomeScreen(): React.JSX.Element {
@@ -77,23 +78,13 @@ export default function HomeScreen(): React.JSX.Element {
           />
         </View>
 
-        {/* Header */}
         <View style={styles.header}>
-          {/* User Profile Picture */}
-          <TouchableOpacity 
-            onPress={() => router.push('/profile')}
-            activeOpacity={0.8}
-            style={styles.headerProfileContainer}
-          >
-            <Image
-              source={
-                dashboardData?.user?.photoURL || user?.photoURL
-                  ? { uri: dashboardData?.user?.photoURL || user?.photoURL }
-                  : require("../../assets/images/2025-09-26/i2yG8AHX5c.png")
-              }
-              style={styles.headerProfileImage}
-            />
-          </TouchableOpacity>
+          {/* User Profile Picture - Replaced with Logo */}
+          <AnimatedLogoButton 
+            size={38} 
+            padding={0}
+            containerStyle={styles.logoButtonContainer}
+          />
           <Text style={styles.headerUserName} numberOfLines={1}>
             {dashboardData?.user?.displayName || user?.displayName || "User"}
           </Text>

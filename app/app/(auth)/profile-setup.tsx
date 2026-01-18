@@ -167,12 +167,9 @@ export default function ProfileSetupScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <LinearGradient
-        colors={['#1a1a2e', '#16213e', '#0f3460']}
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <View
         style={styles.backgroundGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
       >
         <ScrollView 
           style={styles.scrollView}
@@ -192,7 +189,7 @@ export default function ProfileSetupScreen() {
             <BlurView intensity={40} tint="light" style={styles.blurContainer}>
               <View style={styles.cardContent}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="person-circle-outline" size={24} color="#fff" />
+                  <Ionicons name="person-circle-outline" size={24} color="#757575" />
                   <Text style={styles.sectionTitle}>
                     {t('profileSetup.profilePhoto', 'Profile Photo')}
                   </Text>
@@ -227,7 +224,7 @@ export default function ProfileSetupScreen() {
             <BlurView intensity={40} tint="light" style={styles.blurContainer}>
               <View style={styles.cardContent}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="text-outline" size={24} color="#fff" />
+                  <Ionicons name="text-outline" size={24} color="#757575" />
                   <Text style={styles.sectionTitle}>
                     {t('profileSetup.displayName', 'Display Name')}
                   </Text>
@@ -238,7 +235,7 @@ export default function ProfileSetupScreen() {
                   value={displayName}
                   onChangeText={setDisplayName}
                   placeholder={t('profileSetup.enterName', 'Enter your name')}
-                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  placeholderTextColor="#9E9E9E"
                   maxLength={50}
                 />
               </View>
@@ -250,7 +247,7 @@ export default function ProfileSetupScreen() {
             <BlurView intensity={40} tint="light" style={styles.blurContainer}>
               <View style={styles.cardContent}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="language-outline" size={24} color="#fff" />
+                  <Ionicons name="language-outline" size={24} color="#757575" />
                   <Text style={styles.sectionTitle}>
                     {t('profileSetup.language', 'Language')}
                   </Text>
@@ -284,7 +281,7 @@ export default function ProfileSetupScreen() {
             <BlurView intensity={40} tint="light" style={styles.blurContainer}>
               <View style={styles.cardContent}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="speedometer-outline" size={24} color="#fff" />
+                  <Ionicons name="speedometer-outline" size={24} color="#757575" />
                   <Text style={styles.sectionTitle}>
                     {t('profileSetup.units', 'Units')}
                   </Text>
@@ -301,7 +298,7 @@ export default function ProfileSetupScreen() {
                     <Ionicons 
                       name={selectedUnits === 'km' ? 'checkmark-circle' : 'ellipse-outline'} 
                       size={24} 
-                      color={selectedUnits === 'km' ? '#4ADE80' : 'rgba(255,255,255,0.5)'} 
+                      color={selectedUnits === 'km' ? '#F9A825' : '#757575'} 
                     />
                     <View style={styles.unitTextContainer}>
                       <Text style={styles.unitLabel}>
@@ -321,7 +318,7 @@ export default function ProfileSetupScreen() {
                     <Ionicons 
                       name={selectedUnits === 'mi' ? 'checkmark-circle' : 'ellipse-outline'} 
                       size={24} 
-                      color={selectedUnits === 'mi' ? '#4ADE80' : 'rgba(255,255,255,0.5)'} 
+                      color={selectedUnits === 'mi' ? '#F9A825' : '#757575'} 
                     />
                     <View style={styles.unitTextContainer}>
                       <Text style={styles.unitLabel}>
@@ -340,7 +337,7 @@ export default function ProfileSetupScreen() {
             <BlurView intensity={40} tint="light" style={styles.blurContainer}>
               <View style={styles.cardContent}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="globe-outline" size={24} color="#fff" />
+                  <Ionicons name="globe-outline" size={24} color="#757575" />
                   <Text style={styles.sectionTitle}>
                     {t('profileSetup.country', 'Country')}
                   </Text>
@@ -360,7 +357,7 @@ export default function ProfileSetupScreen() {
                       {t('profileSetup.selectCountry', 'Select your country')}
                     </Text>
                   )}
-                  <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                  <Ionicons name="chevron-forward" size={20} color="#757575" />
                 </TouchableOpacity>
               </View>
             </BlurView>
@@ -379,7 +376,7 @@ export default function ProfileSetupScreen() {
                 <Text style={styles.continueButtonText}>
                   {t('profileSetup.continue', 'Continue')}
                 </Text>
-                <Ionicons name="arrow-forward" size={20} color="#1a1a2e" />
+                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               </>
             )}
           </TouchableOpacity>
@@ -395,7 +392,7 @@ export default function ProfileSetupScreen() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-      </LinearGradient>
+      </View>
 
       {/* Country Picker Modal */}
       <Modal
@@ -441,7 +438,7 @@ export default function ProfileSetupScreen() {
                   <Image source={item.flag} style={styles.flagImage} />
                   <Text style={styles.countryItemText}>{item.name}</Text>
                   {selectedCountry?.code === item.code && (
-                    <Ionicons name="checkmark" size={20} color="#6366f1" />
+                    <Ionicons name="checkmark" size={20} color="#F9A825" />
                   )}
                 </TouchableOpacity>
               )}
@@ -457,14 +454,17 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   backgroundGradient: {
     flex: 1,
     width: screenWidth,
     minHeight: screenHeight,
+    backgroundColor: '#FFFFFF', // Fallback
   },
   scrollView: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -478,20 +478,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
+    color: '#000000',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.7)',
+    color: '#757575',
   },
   glassCard: {
     borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   blurContainer: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'transparent',
   },
   cardContent: {
     padding: 20,
@@ -505,7 +516,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#fff',
+    color: '#000000',
   },
   avatarContainer: {
     alignSelf: 'center',
@@ -516,17 +527,17 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: '#E0E0E0',
   },
   avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#E0E0E0',
     borderStyle: 'dashed',
   },
   cameraButton: {
@@ -536,20 +547,20 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#F9A825',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#1a1a2e',
+    borderColor: '#FFFFFF',
   },
   textInput: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
+    color: '#000000',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#E0E0E0',
   },
   languageScroll: {
     marginHorizontal: -8,
@@ -558,15 +569,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F5F5F5',
     marginHorizontal: 4,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
   languageOptionActive: {
-    borderColor: '#4ADE80',
-    backgroundColor: 'rgba(74,222,128,0.1)',
+    borderColor: '#F9A825',
+    backgroundColor: 'rgba(249, 168, 37, 0.1)',
   },
   languageFlag: {
     fontSize: 24,
@@ -574,7 +585,7 @@ const styles = StyleSheet.create({
   },
   languageName: {
     fontSize: 12,
-    color: '#fff',
+    color: '#000000',
     fontWeight: '500',
   },
   unitsContainer: {
@@ -586,13 +597,13 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F5F5F5',
     borderWidth: 2,
     borderColor: 'transparent',
   },
   unitOptionActive: {
-    borderColor: '#4ADE80',
-    backgroundColor: 'rgba(74,222,128,0.1)',
+    borderColor: '#F9A825',
+    backgroundColor: 'rgba(249, 168, 37, 0.1)',
   },
   unitTextContainer: {
     flex: 1,
@@ -600,21 +611,21 @@ const styles = StyleSheet.create({
   unitLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#000000',
   },
   unitDescription: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    color: '#757575',
   },
   countrySelector: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#E0E0E0',
   },
   selectedCountryRow: {
     flexDirection: 'row',
@@ -629,11 +640,11 @@ const styles = StyleSheet.create({
   },
   countryName: {
     fontSize: 16,
-    color: '#fff',
+    color: '#000000',
   },
   placeholderText: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.4)',
+    color: '#757575',
   },
   continueButton: {
     flexDirection: 'row',
@@ -644,6 +655,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -651,7 +670,7 @@ const styles = StyleSheet.create({
   continueButtonText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: '#FFFFFF',
   },
   skipButton: {
     alignItems: 'center',
@@ -660,7 +679,7 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
+    color: '#757575',
   },
   // Modal styles
   modalOverlay: {
@@ -669,7 +688,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     height: '80%',
@@ -685,12 +704,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#000',
+    color: '#000000',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
     marginHorizontal: 20,
     marginBottom: 16,
@@ -703,7 +722,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
+    color: '#000000',
   },
   countryItem: {
     flexDirection: 'row',
@@ -714,12 +733,12 @@ const styles = StyleSheet.create({
   countryItemText: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
+    color: '#000000',
     marginLeft: 12,
   },
   separator: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E0E0E0',
     marginHorizontal: 20,
   },
 });
