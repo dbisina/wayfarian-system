@@ -30,14 +30,31 @@ startMetricsLogging();
 startReminderJob(); // Start journey reminder notifications
 healthService.startPeriodicChecks(5 * 60 * 1000); // Every 5 minutes
 
+// Pre-warm database connection to avoid cold-start delays
+const warmupDatabase = async () => {
+  try {
+    const prisma = require('./prisma/client');
+    const startTime = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    logger.info(`🔥 Database connection pre-warmed in ${Date.now() - startTime}ms`);
+  } catch (error) {
+    logger.warn('Database pre-warm failed (will retry on first request)', { error: error.message });
+  }
+};
+
 // Start server - bind to 0.0.0.0 to allow network access
-server.listen(PORT, '0.0.0.0', () => {
-  logger.info(`🚀 Wayfarian API Server running on port ${PORT}`);
-  logger.info(`🌐 Server accessible at http://0.0.0.0:${PORT}`);
-  logger.info(`🔌 Socket.io server ready for real-time connections`);
-  logger.info(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔧 Background jobs and health checks initialized`);
-});
+(async () => {
+  // Pre-warm database before accepting requests
+  await warmupDatabase();
+  
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Wayfarian API Server running on port ${PORT}`);
+    logger.info(`🌐 Server accessible at http://0.0.0.0:${PORT}`);
+    logger.info(`🔌 Socket.io server ready for real-time connections`);
+    logger.info(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`🔧 Background jobs and health checks initialized`);
+  });
+})();
 
 // Graceful shutdown
 const gracefulShutdown = async () => {

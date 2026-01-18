@@ -377,6 +377,7 @@
             "forgotPassword": "Forgot password?",
             "sendingReset": "Sending reset link…",
             "signIn": "Sign in",
+            "signingIn": "Signing in...",
             "noAccount": "Don't Have an account? ",
             "signUp": "SignUp",
             "termsAccept": "By signing in, you accept our ",
@@ -400,8 +401,8 @@
         "next": "Next",
         "getStarted": "Get Started",
         "step1": {
-            "title": "Track Your Journey",
-            "description": "Monitor your speed, distance, and route in real-time."
+            "title": "The adventure begins.",
+            "description": "Your Traveler's Digital Diary. Every ride, every memory, forever stored."
         },
         "step2": {
             "title": "The Thrill Unfolds.",

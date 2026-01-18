@@ -15,10 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackHandler } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function OnboardingScreen3() {
   const { completeOnboarding } = useAuth();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   useFocusEffect(
     useCallback(() => {
@@ -66,16 +68,15 @@ export default function OnboardingScreen3() {
           <View style={styles.header}>
             <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
             <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
-              <Text style={styles.skipText}>Skip</Text>
+              <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Main Content */}
           <View style={styles.content}>
-            <Text style={styles.mainTitle}>The Challenge Awaits.</Text>
+            <Text style={styles.mainTitle}>{t('onboarding.step3.title')}</Text>
             <Text style={styles.description}>
-              Solo rides. Group rides. Extra challenges. Earn rewards as you
-              travel.
+              {t('onboarding.step3.description')}
             </Text>
           </View>
 
@@ -93,7 +94,7 @@ export default function OnboardingScreen3() {
               style={styles.getStartedButton}
               onPress={handleGetStarted}
             >
-              <Text style={styles.getStartedText}>Get Started</Text>
+              <Text style={styles.getStartedText}>{t('onboarding.getStarted')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>

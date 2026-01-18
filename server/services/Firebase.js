@@ -50,14 +50,53 @@ const adminAuth = firebaseInitialized ? admin.auth() : null;
 const adminStorage = firebaseInitialized ? admin.storage() : null;
 const adminDb = firebaseInitialized ? admin.firestore() : null;
 
-// Verify Firebase ID token
+// Token verification cache (5 minute TTL)
+const tokenCache = new Map();
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TOKEN_CACHE_MAX_SIZE = 1000;
+
+// Clean up expired tokens periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of tokenCache.entries()) {
+    if (now > entry.expiresAt) {
+      tokenCache.delete(token);
+    }
+  }
+}, 60 * 1000); // Every minute
+
+// Verify Firebase ID token with caching
 const verifyIdToken = async (idToken) => {
   if (!firebaseInitialized || !adminAuth) {
     throw new Error('Firebase is not initialized. Please configure Firebase credentials.');
   }
+  
+  const startTime = Date.now();
+  
+  // Check cache first
+  const cached = tokenCache.get(idToken);
+  if (cached && Date.now() < cached.expiresAt) {
+    console.log(`[Firebase] Token verified from cache in ${Date.now() - startTime}ms`);
+    return cached.decoded;
+  }
+  
   try {
-    return await adminAuth.verifyIdToken(idToken);
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    
+    // Cache the result (evict oldest if full)
+    if (tokenCache.size >= TOKEN_CACHE_MAX_SIZE) {
+      const oldestKey = tokenCache.keys().next().value;
+      tokenCache.delete(oldestKey);
+    }
+    tokenCache.set(idToken, {
+      decoded,
+      expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+    });
+    
+    console.log(`[Firebase] Token verified from Firebase in ${Date.now() - startTime}ms`);
+    return decoded;
   } catch (error) {
+    console.error(`[Firebase] Token verification failed in ${Date.now() - startTime}ms:`, error.message);
     throw new Error('Invalid Firebase token');
   }
 };

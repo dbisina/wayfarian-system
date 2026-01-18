@@ -299,8 +299,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       };
 
+      // Get token and store it in background (non-blocking)
       const idToken = await firebaseUser.getIdToken();
-      await setAuthToken(idToken);
+      
+      // OPTIMIZATION: Store token in background - don't await
+      setAuthToken(idToken).catch((err) => 
+        console.warn('[AuthContext] Background token storage failed:', err)
+      );
+
+      // OPTIMIZATION: Set authenticated optimistically before backend sync
+      // This makes the app feel faster as navigation happens immediately
+      setIsAuthenticated(true);
+      console.log('[AuthContext] Optimistic auth set - syncing with backend...');
 
       let backendUser: User | null = null;
 
@@ -330,15 +340,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
           
           // If we still have no backend user but Firebase session is valid,
-          // mark as authenticated and let background refresh handle sync
+          // keep authenticated state (already set optimistically) and schedule refresh
           if (!backendUser) {
             console.warn('[AuthContext] Backend unreachable, preserving Firebase session');
-            setIsAuthenticated(true);
             // Schedule token refresh to attempt backend sync later
-            await scheduleTokenRefresh(firebaseUser);
+            scheduleTokenRefresh(firebaseUser).catch(() => {});
             return;
           }
         } else {
+          // Non-recoverable error - revert optimistic auth
+          setIsAuthenticated(false);
           throw error;
         }
       }
@@ -348,6 +359,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (!backendUser) {
+        // Revert optimistic auth on failure
+        setIsAuthenticated(false);
         throw new Error('Unable to load Wayfarian account details.');
       }
 
@@ -372,12 +385,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       console.log('[AuthContext] Setting user state:', srvUser.id);
       setUser(srvUser);
-      setIsAuthenticated(true);
-      console.log('[AuthContext] isAuthenticated set to true');
+      // Auth already set optimistically, just confirm
+      console.log('[AuthContext] Backend sync complete');
       setUserContext(srvUser);
       
-      // Schedule token refresh AFTER successful sync
-      await scheduleTokenRefresh(firebaseUser);
+      // Schedule token refresh in background (non-blocking)
+      scheduleTokenRefresh(firebaseUser).catch(() => {});
     })();
 
     syncInFlightRef.current = syncPromise;
@@ -516,7 +529,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('[AuthContext] Auth state change error:', error);
         try {
           await signOut(auth);
-        } catch {}
+        } catch (e) { console.warn('Failed to sign out after auth error:', e); }
         clearTokenRefreshTimer();
         await removeAuthToken();
         setUser(null);
@@ -591,7 +604,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       try {
         await signOut(auth);
-      } catch {}
+      } catch (e) { console.warn('Failed to sign out after login error:', e); }
       await removeAuthToken();
       setUser(null);
       setIsAuthenticated(false);
@@ -649,7 +662,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       try {
         await signOut(auth);
-      } catch {}
+      } catch (e) { console.warn('Failed to sign out after registration error:', e); }
       await removeAuthToken();
       setUser(null);
       setIsAuthenticated(false);
@@ -789,7 +802,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       try {
         await signOut(auth);
-      } catch {}
+      } catch (e) { console.warn('Failed to sign out after Google login error:', e); }
       await removeAuthToken();
       setUser(null);
       setIsAuthenticated(false);
@@ -929,7 +942,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setFirebaseUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      try { await removeAuthToken(); } catch {}
+      try { await removeAuthToken(); } catch (e) { console.warn('Failed to remove auth token during logout:', e); }
       setLoading(false);
     }
   };
@@ -1083,7 +1096,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setFirebaseUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      try { await removeAuthToken(); } catch {}
+      try { await removeAuthToken(); } catch (e) { console.warn('Failed to remove auth token during account deletion:', e); }
       
     } catch (error: any) {
       console.error('Delete account error:', error);

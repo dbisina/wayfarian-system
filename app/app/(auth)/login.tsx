@@ -287,7 +287,10 @@ export default function LoginScreen() {
               disabled={isBusy}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={[styles.signInButtonText, {marginLeft: 8}]}>{t('auth.login.signingIn')}</Text>
+                </View>
               ) : (
                 <Text style={styles.signInButtonText}>{t('auth.login.signIn')}</Text>
               )}

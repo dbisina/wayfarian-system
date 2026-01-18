@@ -66,7 +66,7 @@ export const saveLanguagePreference = async (languageCode: string) => {
 };
 
 // Initialize i18next with configuration
-const initI18n = async () => {
+export const initI18n = async () => {
     const initialLanguage = await getInitialLanguage();
 
     i18n
@@ -98,7 +98,7 @@ const initI18n = async () => {
         });
 };
 
-// Initialize on module load
-initI18n();
+// Export for manual initialization in _layout.tsx
+// initI18n() is NOT called automatically - must be awaited before rendering
 
 export default i18n;

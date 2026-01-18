@@ -19,6 +19,7 @@ import { LiquidAlert } from '../components/ui/LiquidAlert';
 import GroupJourneyGlobalListener from '../components/GroupJourneyGlobalListener';
 import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
+import { initI18n } from '../i18n';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
@@ -41,20 +42,26 @@ function RootLayoutContent() {
   const colorScheme = useColorScheme();
   const { isAuthenticated, isInitializing, hasCompletedProfileSetup, isNewSignUp } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
+  const [isI18nReady, setIsI18nReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
   });
 
+  // Initialize i18n on mount
   useEffect(() => {
-    if (fontsLoaded && !isInitializing) {
+    initI18n().then(() => setIsI18nReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded && !isInitializing && isI18nReady) {
       setNavigationReady(true);
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, isInitializing]);
+  }, [fontsLoaded, isInitializing, isI18nReady]);
 
-  // Show splash while loading fonts or auth state
-  if (!fontsLoaded || isInitializing || !navigationReady) {
+  // Show splash while loading fonts, auth state, or i18n
+  if (!fontsLoaded || isInitializing || !navigationReady || !isI18nReady) {
     return null;
   }
 

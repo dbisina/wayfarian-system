@@ -54,22 +54,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const setNotificationsEnabled = async (val: boolean) => {
     setNotificationsEnabledState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0'); } catch {}
+    try { await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0'); } catch (e) { console.warn('Failed to save notifications setting', e); }
   };
 
   const setUnits = async (val: Units) => {
     setUnitsState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.units, val); } catch {}
+    try { await AsyncStorage.setItem(STORE_KEYS.units, val); } catch (e) { console.warn('Failed to save units setting', e); }
   };
 
   const setMapType = async (val: MapType) => {
     setMapTypeState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.mapType, val); } catch {}
+    try { await AsyncStorage.setItem(STORE_KEYS.mapType, val); } catch (e) { console.warn('Failed to save mapType setting', e); }
   };
 
   const setVehicle = async (val: Vehicle) => {
     setVehicleState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.vehicle, val); } catch {}
+    try { await AsyncStorage.setItem(STORE_KEYS.vehicle, val); } catch (e) { console.warn('Failed to save vehicle setting', e); }
   };
 
   const convertDistance = (km: number): string => {

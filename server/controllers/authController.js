@@ -8,6 +8,9 @@ const { verifyIdToken, createCustomToken } = require('../services/Firebase');
  * Register/Login user with Firebase token
  */
 const authenticateUser = async (req, res) => {
+  const authStartTime = Date.now();
+  const timings = {};
+  
   try {
     const { idToken, phoneNumber, displayName, photoURL } = req.body;
 
@@ -19,9 +22,12 @@ const authenticateUser = async (req, res) => {
     }
 
     // Verify Firebase token
+    const tokenVerifyStart = Date.now();
     const decodedToken = await verifyIdToken(idToken);
+    timings.tokenVerify = Date.now() - tokenVerifyStart;
 
     // Upsert user atomically to avoid race/unique errors
+    const dbStart = Date.now();
     const now = new Date();
     const inferredDisplayName = (() => {
       if (displayName) return displayName;
@@ -87,6 +93,11 @@ const authenticateUser = async (req, res) => {
         throw upsertError;
       }
     }
+    timings.dbUpsert = Date.now() - dbStart;
+    timings.total = Date.now() - authStartTime;
+
+    // Log performance metrics
+    console.log(`[Auth] Login completed in ${timings.total}ms (tokenVerify: ${timings.tokenVerify}ms, dbUpsert: ${timings.dbUpsert}ms)`);
 
     // Remove sensitive data
     const { firebaseUid, ...userData } = user;
@@ -96,6 +107,7 @@ const authenticateUser = async (req, res) => {
       message: user.createdAt.getTime() === user.updatedAt.getTime() ? 'User registered successfully' : 'User authenticated successfully',
       user: userData,
       isNewUser: user.createdAt.getTime() === user.updatedAt.getTime(),
+      _timings: process.env.NODE_ENV === 'development' ? timings : undefined,
     });
 
   } catch (error) {

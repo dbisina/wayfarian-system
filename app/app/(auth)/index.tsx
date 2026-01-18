@@ -12,10 +12,12 @@ import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 export default function OnboardingScreen() {
   const { completeOnboarding } = useAuth();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   const handleNext = () => {
     router.push('/step2');
@@ -42,15 +44,15 @@ export default function OnboardingScreen() {
           <View style={styles.header}>
             <AnimatedLogoButton containerStyle={styles.logoButton} size={40} />
             <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-              <Text style={styles.skipText}>Skip</Text>
+              <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Main Content */}
           <View style={styles.content}>
-            <Text style={styles.mainTitle}>The adventure begins.</Text>
+            <Text style={styles.mainTitle}>{t('onboarding.step1.title', 'The adventure begins.')}</Text>
             <Text style={styles.subtitle}>
-              Your Traveler&apos;s Digital Diary. every ride, every memory, forever stored..
+              {t('onboarding.step1.description', "Your Traveler's Digital Diary. Every ride, every memory, forever stored.")}
             </Text>
           </View>
 
@@ -85,7 +87,7 @@ export default function OnboardingScreen() {
 
             {/* Next Button */}
             <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextText}>Next</Text>
+              <Text style={styles.nextText}>{t('onboarding.next')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
