@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   RefreshControl,
   Alert,
@@ -13,7 +12,8 @@ import {
   TextInput,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { userAPI, journeyAPI } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../contexts/SettingsContext';
@@ -110,9 +110,11 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     }
   };
 
-  useEffect(() => {
-    fetchJourneys();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchJourneys();
+    }, [])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -263,12 +265,23 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
       return;
     }
     try {
-      await journeyAPI.updateJourneyPreferences(renameJourney.id, { customTitle: trimmed });
-      updateJourneyState(renameJourney.id, { customTitle: trimmed });
+      // Optimistic update
+      const journeyId = renameJourney.id;
+      
+      // Call API
+      await journeyAPI.updateJourneyPreferences(journeyId, { customTitle: trimmed });
+      
+      // Update local state
+      updateJourneyState(journeyId, { customTitle: trimmed });
+      
+      // Close modal
       cancelRename();
+      
+      // Optional: Show success toast/alert if needed, but UI update should be enough
     } catch (renameError: any) {
       console.error('Rename journey error:', renameError);
       Alert.alert(t('history.renameFailed'), renameError?.message || t('history.renameFailed'));
+      // Revert optimistic update if we did it before API (here we do it after, so no revert needed)
     }
   };
 
@@ -404,8 +417,10 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                 <View style={styles.journeyContent}>
                   {coverUri ? (
                     <Image 
-                      source={{ uri: coverUri }} 
+                      source={coverUri ? { uri: coverUri } : undefined} 
                       style={styles.journeyImage} 
+                      contentFit="cover"
+                      transition={200}
                     />
                   ) : (
                     <LinearGradient

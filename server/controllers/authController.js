@@ -349,8 +349,15 @@ const updateProfile = async (req, res) => {
 
 /**
  * Delete user account
+ * This performs a complete cleanup:
+ * 1. Deletes all user images from Cloudinary
+ * 2. Deletes the user from the database (cascade handles related records)
+ * 3. Deletes the Firebase Auth user (so they can't log in anymore)
  */
 const deleteAccount = async (req, res) => {
+  const { adminAuth, firebaseInitialized } = require('../services/Firebase');
+  const { deleteFromCloudinary, cloudinaryInitialized } = require('../services/CloudinaryService');
+
   try {
     const userId = req.user.id;
     const { confirmDelete } = req.body;
@@ -359,6 +366,22 @@ const deleteAccount = async (req, res) => {
       return res.status(400).json({
         error: 'Confirmation required',
         message: 'Please confirm account deletion by setting confirmDelete to true',
+      });
+    }
+
+    // Get the full user record (need firebaseUid and photoURL)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        firebaseUid: true,
+        photoURL: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'User does not exist',
       });
     }
 
@@ -386,6 +409,81 @@ const deleteAccount = async (req, res) => {
       });
     }
 
+    console.log(`[DeleteAccount] Starting full account deletion for user ${userId}`);
+
+    // ============================================
+    // STEP 1: Delete all user images from Cloudinary
+    // ============================================
+    const imagesToDelete = [];
+
+    // Add profile photo if it's on Cloudinary
+    if (user.photoURL && user.photoURL.includes('cloudinary.com')) {
+      imagesToDelete.push(user.photoURL);
+    }
+
+    // Get all user's photos from the Photo table
+    const photos = await prisma.photo.findMany({
+      where: { userId },
+      select: { firebasePath: true, thumbnailPath: true },
+    });
+
+    for (const photo of photos) {
+      if (photo.firebasePath && photo.firebasePath.includes('cloudinary.com')) {
+        imagesToDelete.push(photo.firebasePath);
+      }
+      if (photo.thumbnailPath && photo.thumbnailPath.includes('cloudinary.com')) {
+        imagesToDelete.push(photo.thumbnailPath);
+      }
+    }
+
+    // Get all user's journey photos from JourneyPhoto table (via JourneyInstance)
+    const journeyInstances = await prisma.journeyInstance.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const instanceIds = journeyInstances.map(ji => ji.id);
+
+    if (instanceIds.length > 0) {
+      const journeyPhotos = await prisma.journeyPhoto.findMany({
+        where: { instanceId: { in: instanceIds } },
+        select: { firebasePath: true },
+      });
+
+      for (const jp of journeyPhotos) {
+        if (jp.firebasePath && jp.firebasePath.includes('cloudinary.com')) {
+          imagesToDelete.push(jp.firebasePath);
+        }
+      }
+    }
+
+    // Get group cover photos for groups the user created (that will be deleted)
+    const userGroups = await prisma.group.findMany({
+      where: { creatorId: userId },
+      select: { coverPhotoURL: true },
+    });
+
+    for (const group of userGroups) {
+      if (group.coverPhotoURL && group.coverPhotoURL.includes('cloudinary.com')) {
+        imagesToDelete.push(group.coverPhotoURL);
+      }
+    }
+
+    // Delete all Cloudinary images
+    if (cloudinaryInitialized && imagesToDelete.length > 0) {
+      console.log(`[DeleteAccount] Deleting ${imagesToDelete.length} images from Cloudinary`);
+      for (const imageUrl of imagesToDelete) {
+        try {
+          await deleteFromCloudinary(imageUrl);
+        } catch (err) {
+          console.error(`[DeleteAccount] Failed to delete Cloudinary image: ${imageUrl}`, err.message);
+          // Continue with other deletions even if one fails
+        }
+      }
+    }
+
+    // ============================================
+    // STEP 2: Delete database records
+    // ============================================
     // Get groups where user is the only member (creator with no other members)
     const groupsToDelete = await prisma.group.findMany({
       where: {
@@ -445,10 +543,29 @@ const deleteAccount = async (req, res) => {
       });
     }
 
-    // Delete user (cascade will handle remaining related records)
+    // Delete user (cascade will handle remaining related records: photos, journeys, etc.)
     await prisma.user.delete({
       where: { id: userId },
     });
+
+    console.log(`[DeleteAccount] Database records deleted for user ${userId}`);
+
+    // ============================================
+    // STEP 3: Delete Firebase Auth user
+    // ============================================
+    if (firebaseInitialized && adminAuth && user.firebaseUid) {
+      try {
+        await adminAuth.deleteUser(user.firebaseUid);
+        console.log(`[DeleteAccount] Firebase Auth user deleted: ${user.firebaseUid}`);
+      } catch (firebaseError) {
+        // Log but don't fail - the DB user is already deleted
+        console.error(`[DeleteAccount] Failed to delete Firebase Auth user: ${user.firebaseUid}`, firebaseError.message);
+        // Note: The user won't be able to access the app anyway since DB record is gone
+        // But they might be able to re-register with the same email/phone
+      }
+    }
+
+    console.log(`[DeleteAccount] Account deletion complete for user ${userId}`);
 
     res.json({
       success: true,

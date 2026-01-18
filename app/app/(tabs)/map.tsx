@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings, MapType } from '../../contexts/SettingsContext';
-import { placesAPI } from '../../services/api';
+import { placesAPI, userAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -21,6 +22,17 @@ interface Place {
   rating?: number;
 }
 
+interface MapJourney {
+  id: string;
+  title: string;
+  endLatitude?: number;
+  endLongitude?: number;
+  endAddress?: string;
+  startTime?: string;
+  vehicle?: string;
+  photos?: { id: string; imageUrl: string }[];
+}
+
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { mapType } = useSettings();
@@ -28,6 +40,7 @@ export default function MapScreen(): React.JSX.Element {
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [mapJourneys, setMapJourneys] = useState<MapJourney[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +48,7 @@ export default function MapScreen(): React.JSX.Element {
   const [destination, setDestination] = useState<{ latitude: number; longitude: number; name?: string } | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: string; description: string; placeId: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [initialRegion, setInitialRegion] = useState<Region | null>(null);
 
   const filterTypes = useMemo(() => [
     { key: 'gas', serverType: 'gas_station', label: t('map.filters.gas') },
@@ -85,18 +99,37 @@ export default function MapScreen(): React.JSX.Element {
 
   useEffect(() => {
     getCurrentLocation();
+    fetchMapJourneys();
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
 
+  const fetchMapJourneys = async () => {
+    try {
+      // Fetch completed journeys for the map history
+      const response = await userAPI.getJourneyHistory({ status: 'COMPLETED', limit: 20 });
+      if (response && response.journeys) {
+        setMapJourneys(response.journeys);
+      }
+    } catch (error) {
+      console.error('Failed to fetch map journeys:', error);
+    }
+  };
+
   const getCurrentLocation = async () => {
-    let hasLocation = false;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
         setError(t('map.locationPermDenied'));
+        // Set a default region if permission denied, so map still renders
+        setInitialRegion({
+          latitude: 37.78825,
+          longitude: -122.4324,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
         return;
       }
 
@@ -104,7 +137,12 @@ export default function MapScreen(): React.JSX.Element {
       const lastKnown = await Location.getLastKnownPositionAsync();
       if (lastKnown) {
         setLocation(lastKnown);
-        hasLocation = true;
+        setInitialRegion({
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
       }
 
       // Then fetch fresh high-accuracy location
@@ -113,12 +151,25 @@ export default function MapScreen(): React.JSX.Element {
       });
       
       setLocation(currentLocation);
-    } catch (error: any) {
-      // Only show error if we have no location at all
-      if (!hasLocation && !location) {
-        setError(t('map.failedLocation'));
+      if (!lastKnown) {
+         setInitialRegion({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
       }
+    } catch (error: any) {
       console.error('Location error:', error);
+      // Fallback region if location fails
+       if (!initialRegion) {
+        setInitialRegion({
+          latitude: 37.78825,
+          longitude: -122.4324,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
+      }
     }
   };
 
@@ -298,33 +349,19 @@ export default function MapScreen(): React.JSX.Element {
     );
   }
 
-  if (error && !location) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={getCurrentLocation}>
-            <Text style={styles.retryButtonText}>{t('map.retry')}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  // Removed error check that blocks map rendering. We now fallback to default region.
+
+
 
   return (
     <View style={styles.container}>
       {/* Map */}
-      {location ? (
+      {initialRegion ? (
         <MapView
-          provider={PROVIDER_GOOGLE}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
           style={styles.map}
           ref={mapRef as any}
-          initialRegion={{
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            latitudeDelta: 0.0922,
-            longitudeDelta: 0.0421,
-          }}
+          initialRegion={initialRegion}
           showsUserLocation={true}
           showsMyLocationButton={true}
           mapType={mapType}
@@ -347,6 +384,53 @@ export default function MapScreen(): React.JSX.Element {
               pinColor="#F9A825"
             />
           )}
+          
+          {/* Completed Journeys Cards */}
+          {mapJourneys.map((journey) => {
+            if (!journey.endLatitude || !journey.endLongitude) return null;
+            
+            // Check if we have photos to show a stack effect
+            const hasPhotos = journey.photos && journey.photos.length > 0;
+            const coverPhoto = hasPhotos ? journey.photos![0].imageUrl : null;
+
+            return (
+              <Marker
+                key={journey.id}
+                coordinate={{
+                  latitude: journey.endLatitude,
+                  longitude: journey.endLongitude,
+                }}
+                onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
+                tracksViewChanges={false} // Optimization for static markers
+              >
+                 <View style={styles.cardMarkerContainer}>
+                    {/* Stack effect layers if photos exist (simplified visual) */}
+                    {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '3deg' }] }]} />}
+                    {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '-3deg' }] }]} />}
+                    
+                    {/* Main Card */}
+                    <View style={styles.cardMarker}>
+                      {coverPhoto && (
+                        <Image source={{ uri: coverPhoto }} style={styles.cardImage} contentFit="cover" transition={200} />
+                      )}
+                      <View style={styles.cardContent}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                          {journey.title || t('journey.defaultTitle')}
+                        </Text>
+                        <View style={styles.cardFooter}>
+                           <Text style={styles.cardSubtitle}>{t('common.view')}</Text>
+                           <Ionicons name="arrow-forward" size={12} color="#000" />
+                        </View>
+                      </View>
+                    </View>
+                    
+                    {/* Anchor Point */}
+                    <View style={styles.cardAnchor} />
+                 </View>
+              </Marker>
+            );
+          })}
+
         </MapView>
       ) : (
         <View style={styles.mapPlaceholder}>
@@ -438,6 +522,7 @@ export default function MapScreen(): React.JSX.Element {
               <Image
                 source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
                 style={styles.floatingButtonImage}
+                contentFit="contain"
               />
             </TouchableOpacity>
       
@@ -445,6 +530,7 @@ export default function MapScreen(): React.JSX.Element {
               <Image
                 source={require('../../assets/images/2025-09-26/4BNFvkcOE2.png')}
                 style={styles.floatingButtonImage}
+                contentFit="contain"
               />
             </TouchableOpacity>
       
@@ -664,6 +750,83 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 999,
+  },
+  cardMarkerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 140, // Fixed width for consistency
+  },
+  cardStackLayer: {
+    position: 'absolute',
+    width: 130,
+    height: 60,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardMarker: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    width: 140,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  cardImage: {
+    width: '100%',
+    height: 60,
+    backgroundColor: '#F5F5F5',
+  },
+  cardContent: {
+    padding: 8,
+  },
+  cardTitle: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  cardSubtitle: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 10,
+    color: '#000000',
+    fontWeight: '500',
+  },
+  cardAnchor: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderBottomWidth: 0,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#FFFFFF', // Matches card background
+    marginTop: -1, // Overlap slightly
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
 });
 

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Dimensions,
   Modal,
@@ -14,6 +13,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -491,7 +491,8 @@ const JourneyDetailScreen = (): React.JSX.Element => {
                         <Image 
                           source={photoUri ? { uri: photoUri } : undefined} 
                           style={styles.timelinePhotoImage}
-                          resizeMode="cover"
+                          contentFit="cover"
+                          transition={200}
                         />
                         {index === 0 && (
                           <view style={styles.coverBadge}>
@@ -677,7 +678,8 @@ const JourneyDetailScreen = (): React.JSX.Element => {
                   <Image 
                     source={sourceUri ? { uri: sourceUri } : undefined} 
                     style={styles.photoViewerImage}
-                    resizeMode="contain"
+                    contentFit="contain"
+                    transition={200}
                   />
                 </View>
                 );

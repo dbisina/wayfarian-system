@@ -174,9 +174,23 @@ interface AuthProviderProps {
 
 const ONBOARDING_KEY = '@wayfarian:onboarding_completed';
 const PROFILE_SETUP_KEY = '@wayfarian:profile_setup_completed';
+const USER_DATA_KEY = '@wayfarian:user_data';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setRawUser] = useState<User | null>(null);
+
+  const setUser = useCallback(async (newUser: User | null) => {
+    setRawUser(newUser);
+    try {
+      if (newUser) {
+        await ReactNativeAsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(newUser));
+      } else {
+        await ReactNativeAsyncStorage.removeItem(USER_DATA_KEY);
+      }
+    } catch (error) {
+      console.error('[AuthContext] Failed to persist user:', error);
+    }
+  }, []);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -453,6 +467,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const profileSetupCompleted = await ReactNativeAsyncStorage.getItem(PROFILE_SETUP_KEY);
         console.log('[AuthContext] Profile setup flag retrieved:', profileSetupCompleted);
         
+        // 3. Load cached user data
+        const cachedUserJson = await ReactNativeAsyncStorage.getItem(USER_DATA_KEY);
+
         if (mounted) {
           setHasCompletedOnboarding(completed === 'true');
           // If profile setup is explicitly 'false', user needs to complete it
@@ -460,6 +477,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setHasCompletedProfileSetup(profileSetupCompleted !== 'false');
           console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
           console.log('[AuthContext] hasCompletedProfileSetup set to:', profileSetupCompleted !== 'false');
+
+          if (cachedUserJson) {
+            try {
+              const cachedUser = JSON.parse(cachedUserJson);
+              console.log('[AuthContext] Restoring cached user session');
+              setRawUser(cachedUser);
+              currentUserRef.current = cachedUser;
+              setIsAuthenticated(true);
+              setUserContext(cachedUser);
+            } catch (e) {
+              console.warn('[AuthContext] Failed to parse cached user:', e);
+            }
+          }
         }
       } catch (error) {
         console.error('[AuthContext] Failed to load onboarding state:', error);

@@ -3,9 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 
 interface JourneyCardProps {
   id?: string;
@@ -24,10 +24,13 @@ const JourneyCard = ({ id, title, stats, imageUrl, onPress }: JourneyCardProps):
       disabled={!onPress}
     >
       <Image 
-        source={{ uri: imageUrl }} 
+        source={imageUrl ? { uri: imageUrl } : require('../../assets/placeholder-journey.jpg')} 
         style={styles.image}
-        onError={(error) => console.log('Image load error:', error)}
-        defaultSource={require('../../assets/placeholder-journey.jpg')}
+        contentFit="cover"
+        transition={200}
+        // onError={(error) => console.log('Image load error:', error)}
+        // defaultSource={require('../../assets/placeholder-journey.jpg')} // expo-image handles fallback differently or via state, but simple conditional source is often enough or placeholder prop
+        placeholder={require('../../assets/placeholder-journey.jpg')}
       />
       <View style={styles.content}>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>

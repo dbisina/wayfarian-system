@@ -21,21 +21,36 @@ interface TrackingOverlayProps {
   isPaused: boolean;
 }
 
+const splitMeasurement = (formatted: string) => {
+  if (!formatted) return { value: '0', unit: '' };
+  const match = formatted.match(/^\s*([-+]?\d*[.,]?\d*)\s*(.*)$/);
+  if (!match) return { value: formatted, unit: '' };
+  
+  let unit = (match[2] || '').trim().toLowerCase();
+  
+  // Custom unit formatting to match design
+  if (unit === 'km/h') unit = 'KPH';
+  else if (unit === 'mph') unit = 'MPH';
+  else if (unit === 'km') unit = 'KM';
+  else if (unit === 'mi') unit = 'MI';
+  else unit = unit.toUpperCase();
+  
+  return {
+    value: match[1] || formatted,
+    unit,
+  };
+};
+
 export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }: TrackingOverlayProps) {
   const { currentJourney } = useJourneyState();
   const stats = useJourneyStats();
   const { convertDistance, convertSpeed } = useSettings();
   const { t } = useTranslation();
 
-  // Parse stats for big display
+  // Parse stats for display
   const distance = useMemo(() => {
-    const rawArgs = convertDistance(stats.totalDistance);
-    return rawArgs.replace('km', '').replace('mi', '').trim();
+    return splitMeasurement(convertDistance(stats.totalDistance));
   }, [stats.totalDistance, convertDistance]);
-
-  const units = useMemo(() => {
-    return convertDistance(1).includes('mi') ? 'mi' : 'km';
-  }, [convertDistance]);
 
   const duration = useMemo(() => {
     const seconds = stats.totalTime;
@@ -43,11 +58,11 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }, [stats.totalTime]);
 
   const speed = useMemo(() => {
-     return convertSpeed(stats.currentSpeed);
+     return splitMeasurement(convertSpeed(stats.currentSpeed));
   }, [stats.currentSpeed, convertSpeed]);
 
   return (
@@ -57,39 +72,46 @@ export default function TrackingOverlay({ onStop, onPause, onResume, isPaused }:
 
       {/* Main Stats Row */}
       <View style={styles.statsRow}>
-        <View style={styles.mainStat}>
-          <Text style={styles.statLabel}>{t('components.trackingOverlay.distance')}</Text>
+        
+        {/* Time */}
+        <View style={styles.statItem}>
           <View style={styles.valueContainer}>
-            <Text style={styles.statValueBig}>{distance}</Text>
-            <Text style={styles.statUnit}>{units}</Text>
+             <Text style={styles.statValueBig}>{duration}</Text>
           </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.mainStat}>
           <Text style={styles.statLabel}>{t('components.trackingOverlay.duration')}</Text>
-          <View style={styles.valueContainer}>
-            <Text style={styles.statValueBig}>{duration}</Text>
-          </View>
         </View>
+
+        {/* Speed */}
+        <View style={styles.statItem}>
+          <View style={styles.valueContainer}>
+            <Text style={styles.statValueBig}>{speed.value}</Text>
+            <Text style={styles.statUnit}>{speed.unit}</Text>
+          </View>
+          <Text style={styles.statLabel}>{t('components.trackingOverlay.speed') || 'Speed'}</Text>
+        </View>
+
+        {/* Distance */}
+        <View style={styles.statItem}>
+          <View style={styles.valueContainer}>
+            <Text style={styles.statValueBig}>{distance.value}</Text>
+            <Text style={styles.statUnit}>{distance.unit}</Text>
+          </View>
+          <Text style={styles.statLabel}>{t('components.trackingOverlay.distance')}</Text>
+        </View>
+
       </View>
 
-      {/* Secondary Stats */}
-      <View style={styles.secondaryRow}>
-        <View style={styles.secondaryItem}>
-            <MaterialIcons name="speed" size={16} color="#6B7280" />
-            <Text style={styles.secondaryText}>{speed}</Text>
-        </View>
-        {currentJourney?.title && (
+      {/* Secondary Info (Location only now) */}
+      {currentJourney?.title && (
+        <View style={styles.secondaryRow}>
             <View style={styles.secondaryItem}>
                 <MaterialIcons name="place" size={16} color="#6B7280" />
                 <Text style={styles.secondaryText} numberOfLines={1}>
                     {currentJourney.title}
                 </Text>
             </View>
-        )}
-      </View>
+        </View>
+      )}
 
       {/* Controls */}
       <View style={styles.controls}>
@@ -137,53 +159,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 24,
+    paddingHorizontal: 8,
   },
-  mainStat: {
+  statItem: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'center', // Centered alignment as per likely design intent for balanced look
   },
   valueContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   statValueBig: {
-    fontSize: 48,
+    fontSize: 32, // Slightly smaller than 48 to fit 3 items
     fontWeight: '700',
     color: '#111827',
-    fontFamily: 'Space Grotesk', // Assuming font is available
-    lineHeight: 56,
+    fontFamily: 'Space Grotesk',
+    lineHeight: 40,
   },
   statUnit: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#6B7280',
-    marginLeft: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827', // Darker to match design image
+    marginLeft: 2,
+    marginTop: 0,
     fontFamily: 'Space Grotesk',
   },
   statLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#6B7280',
     fontWeight: '500',
-    marginBottom: 4,
+    marginTop: 2,
     fontFamily: 'Space Grotesk',
-  },
-  divider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 10,
   },
   secondaryRow: {
       flexDirection: 'row',
       justifyContent: 'center',
-      gap: 16,
       marginBottom: 24,
   },
   secondaryItem: {
@@ -200,7 +217,7 @@ const styles = StyleSheet.create({
       color: '#374151',
       fontFamily: 'Space Grotesk',
       fontWeight: '500',
-      maxWidth: 150,
+      maxWidth: 200,
   },
   controls: {
     flexDirection: 'row',
@@ -236,7 +253,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#F97316', // Orange color
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',

@@ -74,7 +74,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const { currentJourney, isTracking, isMinimized } = useJourneyState();
   const stats = useJourneyStats();
   const groupMembers = useJourneyMembers();
-  const { convertDistance, convertSpeed } = useSettings();
+  const { convertDistance, convertSpeed, mapType } = useSettings();
 
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<{
@@ -603,6 +603,7 @@ export default function JourneyScreen(): React.JSX.Element {
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
+            mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
           >
             {(currentJourney?.endLocation || groupView?.end) &&
             GOOGLE_MAPS_API_KEY ? (
@@ -674,6 +675,7 @@ export default function JourneyScreen(): React.JSX.Element {
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
+            mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
           >
             {currentJourney?.endLocation &&
             GOOGLE_MAPS_API_KEY ? (
