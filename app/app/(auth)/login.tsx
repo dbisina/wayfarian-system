@@ -52,6 +52,8 @@ export default function LoginScreen() {
   useEffect(() => {
     if (isAuthenticated) {
       setLoading(false);
+      // Navigate to the main tabs screen after successful login
+      router.replace('/(tabs)' as any);
     }
   }, [isAuthenticated]);
 

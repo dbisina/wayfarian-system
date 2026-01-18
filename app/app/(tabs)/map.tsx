@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings, MapType } from '../../contexts/SettingsContext';
 import { placesAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 import { Feather } from '@expo/vector-icons';
@@ -22,6 +23,7 @@ interface Place {
 
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
+  const { mapType } = useSettings();
   const { t } = useTranslation();
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -325,6 +327,7 @@ export default function MapScreen(): React.JSX.Element {
           }}
           showsUserLocation={true}
           showsMyLocationButton={true}
+          mapType={mapType}
         >
           {places.map((place) => (
             <Marker

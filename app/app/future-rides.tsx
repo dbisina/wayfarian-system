@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Header from '@/components/ui/Header';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest } from '../services/api';
 
 interface FutureRide {
@@ -22,6 +22,7 @@ export default function FutureRidesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [startingJourneyId, setStartingJourneyId] = useState<string | null>(null);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const fetchRides = async () => {
     try {
@@ -178,7 +179,7 @@ export default function FutureRidesScreen() {
           </View>
           {isPlanned && (
             <View style={styles.detailRow}>
-              <Ionicons name="time" size={16} color="#6366f1" />
+              <Ionicons name="time" size={16} color="#F9A825" />
               <Text style={styles.countdownText}>{getTimeUntil(item.date)}</Text>
             </View>
           )}
@@ -210,10 +211,10 @@ export default function FutureRidesScreen() {
             disabled={isStarting}
           >
             {isStarting ? (
-              <ActivityIndicator size="small" color="#6366f1" />
+              <ActivityIndicator size="small" color="#F9A825" />
             ) : (
               <>
-                <Ionicons name="play-circle-outline" size={18} color="#6366f1" />
+                <Ionicons name="play-circle-outline" size={18} color="#F9A825" />
                 <Text style={styles.startEarlyButtonText}>Start Now</Text>
               </>
             )}
@@ -226,11 +227,19 @@ export default function FutureRidesScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <Header title="Future Rides" />
+      
+      {/* Custom Header with Back Button */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color="#1D1B20" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Future Rides</Text>
+        <View style={styles.headerPlaceholder} />
+      </View>
       
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color="#F9A825" />
         </View>
       ) : (
         <FlatList
@@ -312,7 +321,7 @@ const styles = StyleSheet.create({
   },
   groupName: {
     fontSize: 14,
-    color: '#6366f1',
+    color: '#F9A825',
     fontWeight: '600',
   },
   cardDetails: {
@@ -333,7 +342,7 @@ const styles = StyleSheet.create({
   },
   countdownText: {
     fontSize: 14,
-    color: '#6366f1',
+    color: '#F9A825',
     fontWeight: '600',
   },
   startButton: {
@@ -355,29 +364,56 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f0ff',
+    backgroundColor: '#FFF8E1',
     borderWidth: 1,
-    borderColor: '#6366f1',
+    borderColor: '#F9A825',
     paddingVertical: 12,
     borderRadius: 12,
     marginTop: 16,
     gap: 8,
   },
   startEarlyButtonText: {
-    color: '#6366f1',
+    color: '#F9A825',
     fontSize: 16,
     fontWeight: '600',
   },
   plannedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f1',
+    backgroundColor: '#F9A825',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     alignSelf: 'flex-start',
     marginBottom: 12,
     gap: 4,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1D1B20',
+    textAlign: 'center',
+  },
+  headerPlaceholder: {
+    width: 40,
   },
   plannedBadgeText: {
     color: '#fff',
