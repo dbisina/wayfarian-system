@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
@@ -73,6 +73,17 @@ function RootLayoutContent() {
   // 3. Fully authenticated -> (tabs)
   const showAuth = !isAuthenticated;
   const needsProfileSetup = isAuthenticated && (isNewSignUp || !hasCompletedProfileSetup);
+
+  const router = useRouter();
+
+  // Handle redirection to profile-setup when needed
+  // This is required because just updating initialParams on an existing stack
+  // doesn't always trigger a navigation action in Expo Router.
+  useEffect(() => {
+    if (navigationReady && isAuthenticated && needsProfileSetup) {
+      router.replace('/profile-setup' as any);
+    }
+  }, [navigationReady, isAuthenticated, needsProfileSetup]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

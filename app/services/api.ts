@@ -62,6 +62,10 @@ export const getCurrentApiUrl = (): string => currentApiUrl;
 // Token management
 const secureStoreAvailable = Boolean(SecureStore?.setItemAsync);
 
+// Memory cache for token to avoid async delay on every request
+// and to allow synchronous "set + update UI" flows without race conditions
+let cachedToken: string | null = null;
+
 const secureGetItem = async (key: string): Promise<string | null> => {
   if (secureStoreAvailable) {
     try {
@@ -100,8 +104,18 @@ const secureRemoveItem = async (key: string): Promise<void> => {
 };
 
 export const getAuthToken = async (): Promise<string | null> => {
+  // Return cached token if available
+  if (cachedToken) {
+    return cachedToken;
+  }
+
   try {
-    return await secureGetItem(TOKEN_STORAGE_KEY);
+    const token = await secureGetItem(TOKEN_STORAGE_KEY);
+    // Update cache
+    if (token) {
+      cachedToken = token;
+    }
+    return token;
   } catch (error) {
     console.error('Error getting auth token:', error);
     return null;
@@ -109,6 +123,9 @@ export const getAuthToken = async (): Promise<string | null> => {
 };
 
 export const setAuthToken = async (token: string): Promise<void> => {
+  // Update cache immediately
+  cachedToken = token;
+
   try {
     await secureSetItem(TOKEN_STORAGE_KEY, token);
   } catch (error) {
@@ -117,6 +134,9 @@ export const setAuthToken = async (token: string): Promise<void> => {
 };
 
 export const removeAuthToken = async (): Promise<void> => {
+  // Clear cache immediately
+  cachedToken = null;
+
   try {
     await secureRemoveItem(TOKEN_STORAGE_KEY);
   } catch (error) {

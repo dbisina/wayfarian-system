@@ -71,7 +71,7 @@ const RegisterScreen = () => {
       setLoading(true);
       await register(email, password, name);
       // Navigate to profile setup for new users
-      router.replace('/(auth)/profile-setup');
+      router.replace('/profile-setup' as any);
     } catch (error: any) {
       showAlert({
         title: t('auth.registrationFailed'),

@@ -299,10 +299,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       };
 
-      // Get token and store it in background (non-blocking)
+      // Get token and store it
       const idToken = await firebaseUser.getIdToken();
       
-      // OPTIMIZATION: Store token in background - don't await
+      // OPTIMIZATION: Store token in background (non-blocking)
+      // Thanks to in-memory caching in api.ts, the token is available immediately
+      // for subsequent requests even before Async/SecureStore finishes writing.
       setAuthToken(idToken).catch((err) => 
         console.warn('[AuthContext] Background token storage failed:', err)
       );
