@@ -211,7 +211,7 @@ export default function LoginScreen() {
               disabled={isBusy}
             >
               <GoogleIcon />
-              <Text style={styles.socialButtonText}>{t('auth.login.signInGoogle')}</Text>
+              <Text style={styles.socialButtonText}>{t('auth.signInGoogle')}</Text>
             </TouchableOpacity>
             {/* Apple Sign In Button */}
             <TouchableOpacity 
@@ -220,7 +220,7 @@ export default function LoginScreen() {
               disabled={isBusy}
             >
               <AppleIcon />
-              <Text style={styles.socialButtonText}>{t('auth.login.signInApple')}</Text>
+              <Text style={styles.socialButtonText}>{t('auth.signInApple')}</Text>
             </TouchableOpacity>
             {/* Divider */}
             <View style={styles.dividerContainer}>

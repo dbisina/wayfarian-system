@@ -19,14 +19,13 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { COUNTRIES, getCountryByCode } from '../../constants/countries';
 import { LANGUAGES, saveLanguagePreference } from '../../i18n';
-import { userAPI, getCurrentApiUrl } from '../../services/api';
+import { userAPI, getCurrentApiUrl, getAuthToken } from '../../services/api';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -108,7 +107,7 @@ export default function ProfileSetupScreen() {
           type,
         } as any);
 
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await getAuthToken();
         if (!token) {
           throw new Error('Not authenticated');
         }

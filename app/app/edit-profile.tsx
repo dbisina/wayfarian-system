@@ -15,10 +15,9 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { COUNTRIES, getCountryByCode } from '../constants/countries';
-import { userAPI, getCurrentApiUrl } from '../services/api';
+import { userAPI, getCurrentApiUrl, getAuthToken } from '../services/api';
 
 export default function EditProfileScreen() {
   const { user, refreshUser } = useAuth();
@@ -112,7 +111,7 @@ export default function EditProfileScreen() {
         } as any);
 
         // Get auth token
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await getAuthToken();
         if (!token) {
           throw new Error('Not authenticated');
         }

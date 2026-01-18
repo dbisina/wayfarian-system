@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useUserData } from '../hooks/useUserData';
-import { getCurrentApiUrl } from '../services/api';
+import { getCurrentApiUrl, getAuthToken } from '../services/api';
 import { testApiConnection, printDiagnostics } from '../utils/apiDiagnostics';
 
 export default function ProfileScreen() {
@@ -88,7 +87,7 @@ export default function ProfileScreen() {
         } as any);
 
         // Get auth token
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await getAuthToken();
         if (!token) {
           throw new Error('Not authenticated');
         }
