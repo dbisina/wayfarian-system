@@ -234,7 +234,8 @@ export const apiRequest = async (
         const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000); // Max 5s backoff
         console.warn(`[API] Server error ${response.status}, retrying after ${backoffMs}ms...`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
-        return apiRequest(endpoint, method, payload, requiresAuth, timeoutMs, retryCount + 1);
+        // Preserve original options format in retry to avoid losing payload
+        return apiRequest(endpoint, methodOrOptions, data, requiresAuthDefault, timeoutMsDefault, retryCount + 1);
       }
 
       if (responseData && (responseData.errors || responseData.details)) {
@@ -265,8 +266,8 @@ export const apiRequest = async (
       const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000);
       console.warn(`[API] ${isTimeout ? 'Timeout' : 'Network error'}, retrying after ${backoffMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
-
-      return apiRequest(endpoint, method, payload, requiresAuth, timeoutMs, retryCount + 1);
+      // Preserve original options format in retry to avoid losing payload
+      return apiRequest(endpoint, methodOrOptions, data, requiresAuthDefault, timeoutMsDefault, retryCount + 1);
     }
 
     if (error?.name === 'AbortError') {

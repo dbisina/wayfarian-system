@@ -13,6 +13,7 @@ import {
   Modal,
   FlatList,
   Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -82,6 +83,10 @@ export default function ProfileSetupScreen() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
+        Alert.alert(
+          t('alerts.error'), 
+          t('profileSetup.errors.photoPermission', 'Photo library access is required to change your profile picture.')
+        );
         return;
       }
 
@@ -131,8 +136,12 @@ export default function ProfileSetupScreen() {
           await refreshUser?.(response.user);
         }
       }
-    } catch (error) {
-      console.error('Photo upload error:', error);
+    } catch (error: any) {
+      if (__DEV__) console.error('Photo upload error:', error);
+      const message = error?.message === 'Not authenticated' 
+        ? t('profileSetup.errors.notAuthenticated', 'Please sign in again to upload your photo.')
+        : t('profileSetup.errors.uploadFailed', 'Failed to upload photo. Please try again.');
+      Alert.alert(t('alerts.error'), message);
     } finally {
       setUploadingPhoto(false);
     }
@@ -158,7 +167,8 @@ export default function ProfileSetupScreen() {
       // Navigate to main app
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('Profile setup error:', error);
+      if (__DEV__) console.error('Profile setup error:', error);
+      Alert.alert(t('alerts.error'), t('profileSetup.errors.saveFailed', 'Failed to save profile. Please try again.'));
     } finally {
       setSaving(false);
     }

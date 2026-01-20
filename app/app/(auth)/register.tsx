@@ -34,7 +34,7 @@ const RegisterScreen = () => {
   const [showTerms, setShowTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { register, loginWithGoogle, loginWithApple, isNewSignUp } = useAuth();
+  const { register, loginWithGoogle, loginWithApple } = useAuth();
   const { showAlert } = useAlert();
   const keyboardVerticalOffset = Platform.select({ ios: 0, android: 40 });
   const { t } = useTranslation();
@@ -265,7 +265,7 @@ const RegisterScreen = () => {
                     style={styles.passwordToggle}
                     onPress={() => setShowPassword(prev => !prev)}
                     accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                   >
                     <Ionicons
                       name={showPassword ? 'eye-off' : 'eye'}
@@ -297,7 +297,7 @@ const RegisterScreen = () => {
                     style={styles.passwordToggle}
                     onPress={() => setShowConfirmPassword(prev => !prev)}
                     accessibilityRole="button"
-                    accessibilityLabel={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                    accessibilityLabel={showConfirmPassword ? t('auth.hidePasswordConfirm') : t('auth.showPasswordConfirm')}
                   >
                     <Ionicons
                       name={showConfirmPassword ? 'eye-off' : 'eye'}

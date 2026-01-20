@@ -30,6 +30,19 @@ export async function connectSocket(): Promise<Socket> {
     auth: { token },
   });
 
+  // Refresh token before each reconnection attempt to prevent stale token issues
+  socket.on('reconnect_attempt', async () => {
+    try {
+      const freshToken = await getAuthToken();
+      if (socket && freshToken) {
+        socket.auth = { token: freshToken };
+        console.log('[Socket] Refreshed auth token before reconnection');
+      }
+    } catch (error) {
+      console.warn('[Socket] Failed to refresh token on reconnect:', error);
+    }
+  });
+
   return socket;
 }
 
@@ -39,7 +52,7 @@ export function getSocket(): Socket | null {
 
 export function disconnectSocket() {
   if (socket) {
-    try { socket.disconnect(); } catch {}
+    try { socket.disconnect(); } catch { }
     socket = null;
   }
 }

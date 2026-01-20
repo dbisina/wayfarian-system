@@ -488,7 +488,7 @@ export default function GroupDetailScreen() {
 
                 if (response.success) {
                   setActiveSoloJourney(null);
-                  router.push({
+                  router.replace({
                     pathname: '/group-journey',
                     params: { id: activeGroupJourneyId }
                   });
@@ -504,7 +504,7 @@ export default function GroupDetailScreen() {
           },
           {
             text: 'View Solo Journey',
-            onPress: () => router.push('/journey'),
+            onPress: () => router.replace('/journey'),
           },
         ]
       );
@@ -551,7 +551,7 @@ export default function GroupDetailScreen() {
 
         // Navigate immediately to the Journey screen
         try {
-          router.push({ 
+          router.replace({ 
             pathname: '/journey', 
             params: { 
               groupId: String(groupId), 

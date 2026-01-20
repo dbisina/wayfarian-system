@@ -22,7 +22,8 @@
         "close": "Close",
         "termsTitle": "Terms and Conditions",
         "useCurrentLocation": "Use Current Location",
-        "currentLocation": "Current Location"
+        "currentLocation": "Current Location",
+        "view": "View"
     },
     "navigation": {
         "map": "Map",
@@ -328,7 +329,8 @@
             "galleryNeeded": "Gallery permission is required to add photos",
             "cameraNeeded": "Camera permission is required to take photos",
             "photoAdded": "Photo added to journey",
-            "uploadFailed": "Failed to upload photo"
+            "uploadFailed": "Failed to upload photo",
+            "titleUpdated": "Journey title updated"
         }
     },
     "auth": {
@@ -453,7 +455,9 @@
         "progress": "Progress",
         "yourDistance": "Your distance",
         "status": "Status",
-        "setStartLocation": "Set Start Location"
+        "setStartLocation": "Set Start Location",
+        "unableToToggle": "Unable to toggle journey state",
+        "startRiding": "Start Riding"
     },
     "history": {
         "title": "Your Journeys",
@@ -520,6 +524,7 @@
         "trackingOverlay": {
             "distance": "Distance",
             "duration": "Duration",
+            "speed": "Speed",
             "resume": "Resume",
             "endTrip": "End Trip"
         },

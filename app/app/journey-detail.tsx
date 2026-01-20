@@ -186,7 +186,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
       // Actually, I can use t('common.saved') or t('common.success').
       // Let's use t('alerts.success') and for the body... maybe just use t('common.success')? No "Journey title updated" is specific.
       // I'll assume I missed adding this specific specific toaster message key context. I'll use t('alerts.success') and string for now, or just t('common.success').
-      Alert.alert(t('alerts.success'), t('common.save') + ' ' + t('alerts.success')); // "Save Success" - awkward.
+      Alert.alert(t('alerts.success'), t('journeyDetail.alerts.titleUpdated'));
       // Let's check if I have "journeyTitleUpdated".
       // I will leave the english string for the message if I'm not sure, but wrap "Success" with t('alerts.success').
       // Wait, the user wants "Replace all hardcoded English strings".
@@ -291,7 +291,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to take photos');
+        Alert.alert(t('journeyDetail.alerts.photoPermission'), t('journeyDetail.alerts.cameraNeeded'));
         return;
       }
 
@@ -299,8 +299,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -313,14 +312,14 @@ const JourneyDetailScreen = (): React.JSX.Element => {
             journey.id,
             () => {}
           );
-          Alert.alert('Success', 'Photo added to journey');
+          Alert.alert(t('alerts.success'), t('journeyDetail.alerts.photoAdded'));
           await fetchJourneyDetail();
         } catch (err) {
-          Alert.alert('Error', 'Failed to upload photo');
+          Alert.alert(t('alerts.error'), t('journeyDetail.alerts.uploadFailed'));
         }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to take photo');
+      Alert.alert(t('alerts.error'), err.message || t('journeyDetail.alerts.uploadFailed'));
     } finally {
       setUploadingPhoto(false);
     }
@@ -388,24 +387,24 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           {/* Stats Grid */}
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Ionicons name="navigate-outline" size={20} color="#6366f1" style={styles.statIcon} />
+              <Ionicons name="navigate-outline" size={20} color="#F9A825" style={styles.statIcon} />
               <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
               <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="time-outline" size={20} color="#6366f1" style={styles.statIcon} />
+              <Ionicons name="time-outline" size={20} color="#F9A825" style={styles.statIcon} />
               <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
               <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
             </View>
             {journey.avgSpeed > 0 && (
               <View style={styles.statItem}>
-                <Ionicons name="speedometer-outline" size={20} color="#6366f1" style={styles.statIcon} />
+                <Ionicons name="speedometer-outline" size={20} color="#F9A825" style={styles.statIcon} />
                 <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
                 <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
               </View>
             )}
             <View style={styles.statItem}>
-              <Ionicons name="flash-outline" size={20} color="#6366f1" style={styles.statIcon} />
+              <Ionicons name="flash-outline" size={20} color="#F9A825" style={styles.statIcon} />
               <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
               <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
             </View>
@@ -417,7 +416,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
               <Ionicons 
                 name={journey.vehicle === 'bike' ? 'bicycle' : journey.vehicle === 'car' ? 'car' : 'walk'} 
                 size={16} 
-                color="#6366f1" 
+                color="#F9A825" 
               />
               <Text style={styles.vehicleText}>{journey.vehicle}</Text>
             </View>
@@ -446,7 +445,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
               onPress={handleTakePhoto}
               disabled={uploadingPhoto}
             >
-              <Ionicons name="camera" size={20} color="#6366f1" />
+              <Ionicons name="camera" size={20} color="#F9A825" />
               <Text style={styles.takePhotoButtonText}>{t('journeyDetail.takePhoto')}</Text>
             </TouchableOpacity>
           </View>
@@ -488,16 +487,19 @@ const JourneyDetailScreen = (): React.JSX.Element => {
                         activeOpacity={0.8}
                         onPress={() => openPhotoViewer(index)}
                       >
-                        <Image 
-                          source={photoUri ? { uri: photoUri } : undefined} 
-                          style={styles.timelinePhotoImage}
-                          contentFit="cover"
-                          transition={200}
-                        />
+                        {photoUri && (
+                          <Image 
+                            source={{ uri: photoUri }} 
+                            style={styles.timelinePhotoImage}
+                            contentFit="cover"
+                            transition={200}
+                            onError={() => console.warn('Failed to load timeline photo')}
+                          />
+                        )}
                         {index === 0 && (
-                          <view style={styles.coverBadge}>
+                          <View style={styles.coverBadge}>
                              <Text style={styles.coverBadgeText}>{t('journeyDetail.cover')}</Text>
-                          </view>
+                          </View>
                         )}
                       </TouchableOpacity>
                       {hasLocation && (
@@ -675,12 +677,15 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
                 return (
                 <View style={styles.photoViewerImageContainer}>
-                  <Image 
-                    source={sourceUri ? { uri: sourceUri } : undefined} 
-                    style={styles.photoViewerImage}
-                    contentFit="contain"
-                    transition={200}
-                  />
+                  {sourceUri && (
+                    <Image 
+                      source={{ uri: sourceUri }} 
+                      style={styles.photoViewerImage}
+                      contentFit="contain"
+                      transition={200}
+                      onError={() => console.warn('Failed to load photo in viewer')}
+                    />
+                  )}
                 </View>
                 );
               }}

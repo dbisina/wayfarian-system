@@ -88,7 +88,7 @@ export default function NewJourneyScreen() {
 
       if (success) {
         // Navigate to journey screen to start tracking
-        router.push('/journey');
+        router.replace('/journey');
       } else {
         Alert.alert('Error', 'Failed to start journey. Please try again.');
       }
@@ -304,6 +304,9 @@ export default function NewJourneyScreen() {
               display="spinner"
               onChange={onDateChange}
               minimumDate={new Date()}
+              themeVariant="light"
+              textColor="#000000"
+              style={{ backgroundColor: 'white' }}
             />
           </View>
         )}

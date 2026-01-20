@@ -22,7 +22,8 @@
         "no": "لا",
         "ok": "موافق",
         "back": "رجوع",
-        "next": "التالي"
+        "next": "التالي",
+        "view": "عرض"
     },
     "navigation": {
         "map": "الخريطة",
@@ -531,6 +532,7 @@
         "trackingOverlay": {
             "distance": "Distance",
             "duration": "Duration",
+            "speed": "السرعة",
             "resume": "Resume",
             "endTrip": "End Trip"
         },

@@ -356,8 +356,9 @@ router.delete(
       }
 
       // Delete photos first (to avoid FK constraints)
+      // Note: Journey.photos refers to the Photo model, not JourneyPhoto
       if (journey.photos && journey.photos.length > 0) {
-        await prisma.journeyPhoto.deleteMany({
+        await prisma.photo.deleteMany({
           where: { journeyId },
         });
       }

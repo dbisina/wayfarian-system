@@ -105,6 +105,7 @@ export default function FutureRidesScreen() {
       // Update journey status to ACTIVE
       const response = await apiRequest(`/journey/${journeyId}/start`, {
         method: 'POST',
+        body: {}, // Send empty object to prevent "invalid JSON" parse error
       });
 
       if (response.success) {

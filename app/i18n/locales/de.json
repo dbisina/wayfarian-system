@@ -22,7 +22,8 @@
         "no": "Nein",
         "ok": "OK",
         "back": "Zurück",
-        "next": "Weiter"
+        "next": "Weiter",
+        "view": "Ansehen"
     },
     "navigation": {
         "map": "Karte",
@@ -528,6 +529,7 @@
         "trackingOverlay": {
             "distance": "Distance",
             "duration": "Duration",
+            "speed": "Geschwindigkeit",
             "resume": "Resume",
             "endTrip": "End Trip"
         },

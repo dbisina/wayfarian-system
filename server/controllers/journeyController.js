@@ -592,15 +592,22 @@ module.exports = {
    * Force clear/cancel a stuck journey (any status)
    */
   forceClearJourney: async (req, res) => {
+    const { deleteFromCloudinary, cloudinaryInitialized } = require('../services/CloudinaryService');
+
     try {
       const { journeyId } = req.params;
       const userId = req.user.id;
 
-      // Find journey regardless of status
+      // Find journey regardless of status, including photos
       const journey = await prisma.journey.findFirst({
         where: {
           id: journeyId,
           userId,
+        },
+        include: {
+          photos: {
+            select: { firebasePath: true, thumbnailPath: true },
+          },
         },
       });
 
@@ -611,7 +618,25 @@ module.exports = {
         });
       }
 
-      // Delete the journey completely
+      // Delete Cloudinary images before deleting journey to prevent orphans
+      if (cloudinaryInitialized && journey.photos && journey.photos.length > 0) {
+        console.log(`[ForceClear] Deleting ${journey.photos.length} photos from Cloudinary for journey ${journeyId}`);
+        for (const photo of journey.photos) {
+          try {
+            if (photo.firebasePath && photo.firebasePath.includes('cloudinary.com')) {
+              await deleteFromCloudinary(photo.firebasePath);
+            }
+            if (photo.thumbnailPath && photo.thumbnailPath.includes('cloudinary.com')) {
+              await deleteFromCloudinary(photo.thumbnailPath);
+            }
+          } catch (err) {
+            console.error(`[ForceClear] Failed to delete Cloudinary image:`, err.message);
+            // Continue with deletion even if Cloudinary cleanup fails
+          }
+        }
+      }
+
+      // Delete the journey completely (cascade will handle related records)
       await prisma.journey.delete({
         where: { id: journeyId },
       });

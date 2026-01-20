@@ -951,6 +951,26 @@ const completeInstance = async (req, res) => {
           },
         });
         logger.info(`[Instance] Created Journey record for instance ${instanceId} with group name: ${groupName}`);
+
+        // Update user stats for leaderboard consistency
+        try {
+          const distanceInKm = (updatedInstance.totalDistance || 0) / 1000;
+          await prisma.user.update({
+            where: { id: instance.userId },
+            data: {
+              totalDistance: { increment: distanceInKm },
+              totalTime: { increment: duration },
+              totalTrips: { increment: 1 },
+              topSpeed: updatedInstance.topSpeed && updatedInstance.topSpeed > 0 
+                ? { set: Math.max(updatedInstance.topSpeed, 0) }
+                : undefined,
+            },
+          });
+          logger.info(`[Instance] Updated user stats for ${instance.userId}: +${distanceInKm.toFixed(2)}km, +${duration}s`);
+        } catch (statsError) {
+          logger.warn(`[Instance] Failed to update user stats for ${instance.userId}:`, statsError);
+          // Don't fail the completion if stats update fails
+        }
       } catch (journeyError) {
         // Log but don't fail the completion if journey creation fails
         logger.error(`[Instance] Failed to create Journey record for instance ${instanceId}:`, journeyError);

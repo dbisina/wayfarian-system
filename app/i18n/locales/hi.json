@@ -22,7 +22,8 @@
         "no": "नहीं",
         "ok": "ठीक है",
         "back": "वापस",
-        "next": "अगला"
+        "next": "अगला",
+        "view": "देखें"
     },
     "navigation": {
         "map": "नक्शा",
@@ -525,6 +526,7 @@
         "trackingOverlay": {
             "distance": "Distance",
             "duration": "Duration",
+            "speed": "गति",
             "resume": "Resume",
             "endTrip": "End Trip"
         },

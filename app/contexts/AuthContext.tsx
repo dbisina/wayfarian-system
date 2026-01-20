@@ -459,13 +459,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const initializeAuthState = async () => {
       try {
         // 1. Load onboarding flag from AsyncStorage
-        console.log('[AuthContext] Loading onboarding state from AsyncStorage...');
+        if (__DEV__) console.log('[AuthContext] Loading onboarding state from AsyncStorage...');
         const completed = await ReactNativeAsyncStorage.getItem(ONBOARDING_KEY);
-        console.log('[AuthContext] Onboarding flag retrieved:', completed);
+        if (__DEV__) console.log('[AuthContext] Onboarding flag retrieved:', completed);
         
         // 2. Load profile setup flag
         const profileSetupCompleted = await ReactNativeAsyncStorage.getItem(PROFILE_SETUP_KEY);
-        console.log('[AuthContext] Profile setup flag retrieved:', profileSetupCompleted);
+        if (__DEV__) console.log('[AuthContext] Profile setup flag retrieved:', profileSetupCompleted);
         
         // 3. Load cached user data
         const cachedUserJson = await ReactNativeAsyncStorage.getItem(USER_DATA_KEY);
@@ -475,17 +475,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // If profile setup is explicitly 'false', user needs to complete it
           // Otherwise default to true (existing users)
           setHasCompletedProfileSetup(profileSetupCompleted !== 'false');
-          console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
-          console.log('[AuthContext] hasCompletedProfileSetup set to:', profileSetupCompleted !== 'false');
+          if (__DEV__) console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
+          if (__DEV__) console.log('[AuthContext] hasCompletedProfileSetup set to:', profileSetupCompleted !== 'false');
 
           if (cachedUserJson) {
             try {
               const cachedUser = JSON.parse(cachedUserJson);
-              console.log('[AuthContext] Restoring cached user session');
+              if (__DEV__) console.log('[AuthContext] Restoring cached user session');
               setRawUser(cachedUser);
               currentUserRef.current = cachedUser;
               setIsAuthenticated(true);
               setUserContext(cachedUser);
+              // Only auto-complete onboarding if we have a valid cached user AND onboarding wasn't explicitly false
+              if (completed !== 'false') {
+                setHasCompletedOnboarding(true);
+              }
             } catch (e) {
               console.warn('[AuthContext] Failed to parse cached user:', e);
             }
@@ -1102,8 +1106,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Note: This requires recent authentication
           await firebaseUser.delete();
         } catch (firebaseError: any) {
-          // If requires-recent-login, the backend already deleted the user
-          // so we just sign out locally
+          // If requires-recent-login, we need to inform the user
+          if (firebaseError.code === 'auth/requires-recent-login') {
+            // Backend data is already deleted, but Firebase auth remains
+            // Sign out locally and inform user they need to re-authenticate
+            console.warn('Firebase user deletion requires recent login - backend data deleted but Firebase auth remains');
+            throw new Error('Please sign in again and retry to complete account deletion.');
+          }
+          // For other Firebase errors, log but proceed (backend data is already deleted)
           console.warn('Firebase user deletion failed (backend already deleted):', firebaseError);
         }
       }
@@ -1128,7 +1138,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setFirebaseUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      try { await removeAuthToken(); } catch (e) { console.warn('Failed to remove auth token during account deletion:', e); }
+      
+      // CRITICAL: Clear ALL cached data from AsyncStorage to prevent stale session restoration
+      try {
+        await Promise.all([
+          removeAuthToken(),
+          ReactNativeAsyncStorage.removeItem(USER_DATA_KEY),
+          ReactNativeAsyncStorage.removeItem(ONBOARDING_KEY),
+          ReactNativeAsyncStorage.removeItem(PROFILE_SETUP_KEY),
+        ]);
+      } catch (e) {
+        console.warn('Failed to clear cached data during account deletion:', e);
+      }
       
     } catch (error: any) {
       console.error('Delete account error:', error);

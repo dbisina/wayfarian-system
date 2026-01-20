@@ -487,7 +487,7 @@ export default function GroupJourneyScreen() {
         setMyInstance((prev) => (prev ? { ...prev, status: "PAUSED" } : prev));
       }
     } catch (error: any) {
-      Alert.alert("Error", error?.message || `Unable to ${endpoint} instance.`);
+      Alert.alert(t('alerts.error'), error?.message || t('groupJourney.unableToToggle'));
     } finally {
       setIsPausing(false);
     }
@@ -541,8 +541,6 @@ export default function GroupJourneyScreen() {
               setRegion(null);
               setManualRouteCoords([]);
               
-              setManualRouteCoords([]);
-              
               Alert.alert(t('groupJourney.journeyComplete'), t('groupJourney.greatRide'));
               router.back();
             } catch (error: any) {
@@ -578,7 +576,7 @@ export default function GroupJourneyScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color="#F9A825" />
         <Text style={styles.loadingText}>{t('groupJourney.loading')}</Text>
       </View>
     );
@@ -602,8 +600,7 @@ export default function GroupJourneyScreen() {
   if (!region) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366f1" />
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color="#F9A825" />
         <Text style={styles.loadingText}>
           {isLocatingUser
             ? t('groupJourney.gettingLocation')
@@ -803,7 +800,7 @@ export default function GroupJourneyScreen() {
           {isStarting ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.startButtonText}>Start Riding</Text>
+            <Text style={styles.startButtonText}>{t('groupJourney.startRiding')}</Text>
           )}
         </TouchableOpacity>
       )}
@@ -815,7 +812,7 @@ export default function GroupJourneyScreen() {
             onPress={() => setShowCamera(true)}
           >
             <Ionicons name="camera" size={22} color="#fff" />
-            <Text style={styles.controlButtonText}>Camera</Text>
+            <Text style={styles.controlButtonText}>{t('journey.camera')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.controlButton, styles.pauseButton, isPausing && styles.buttonDisabled]}
@@ -832,7 +829,7 @@ export default function GroupJourneyScreen() {
                   color="#fff"
                 />
                 <Text style={styles.controlButtonText}>
-                  {myInstance.status === "PAUSED" ? "Resume" : "Pause"}
+                  {myInstance.status === "PAUSED" ? t('common.resume') : t('common.pause')}
                 </Text>
               </>
             )}
@@ -847,7 +844,7 @@ export default function GroupJourneyScreen() {
             ) : (
               <>
                 <Ionicons name="checkmark" size={22} color="#fff" />
-                <Text style={styles.controlButtonText}>Complete</Text>
+                <Text style={styles.controlButtonText}>{t('common.complete')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -857,10 +854,10 @@ export default function GroupJourneyScreen() {
       {showStartLocationModal && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Set Your Start Location</Text>
-            <Text style={styles.modalSubtitle}>Where are you starting from?</Text>
+            <Text style={styles.modalTitle}>{t('group.setYourStartLocation')}</Text>
+            <Text style={styles.modalSubtitle}>{t('group.whereStartingFrom')}</Text>
             <LocationPicker
-              placeholder="Start Location"
+              placeholder={t('group.startLocation')}
               value={userStartLocation?.address || ''}
               onLocationSelect={(location) => {
                 setUserStartLocation({
@@ -876,7 +873,7 @@ export default function GroupJourneyScreen() {
                 style={styles.modalCancelButton}
                 onPress={() => setShowStartLocationModal(false)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalConfirmButton, (!userStartLocation || isStarting) && styles.modalConfirmDisabled]}
@@ -891,7 +888,7 @@ export default function GroupJourneyScreen() {
                 {isStarting ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.modalConfirmText}>Confirm</Text>
+                  <Text style={styles.modalConfirmText}>{t('common.confirm')}</Text>
                 )}
               </TouchableOpacity>
             </View>

@@ -38,12 +38,12 @@ function buildMemberFromPayload(payload: any): GroupMember {
     isOnline: true,
     currentLocation: payload?.location
       ? {
-          latitude: payload.location.latitude,
-          longitude: payload.location.longitude,
-          timestamp: new Date(payload.location.timestamp || Date.now()).getTime(),
-          speed: payload.location.speed,
-          heading: payload.location.heading,
-        }
+        latitude: payload.location.latitude,
+        longitude: payload.location.longitude,
+        timestamp: new Date(payload.location.timestamp || Date.now()).getTime(),
+        speed: payload.location.speed,
+        heading: payload.location.heading,
+      }
       : undefined,
   };
 }
@@ -70,11 +70,11 @@ async function seedGroupMembers(groupId: string, dispatch: AppDispatch) {
     const normalized: GroupMember[] = membersFromGroup.map((member: any) => {
       const location = member.lastLatitude && member.lastLongitude
         ? {
-            latitude: member.lastLatitude,
-            longitude: member.lastLongitude,
-            timestamp: new Date(member.lastSeen || Date.now()).getTime(),
-            speed: member.lastSpeed,
-          }
+          latitude: member.lastLatitude,
+          longitude: member.lastLongitude,
+          timestamp: new Date(member.lastSeen || Date.now()).getTime(),
+          speed: member.lastSpeed,
+        }
         : lastPointByUser[member.user?.id || member.userId];
 
       return {
@@ -109,68 +109,96 @@ function bindSocketListeners(dispatch: AppDispatch) {
   teardownListeners();
 
   const handleMemberLocation = (payload: any) => {
-    if (!payload?.userId || !payload?.location) return;
-    dispatch(mergeMemberLocation({
-      userId: payload.userId,
-      latitude: payload.location.latitude,
-      longitude: payload.location.longitude,
-      speed: payload.location.speed,
-      heading: payload.location.heading,
-      lastUpdate: new Date(payload.location.timestamp || Date.now()).toISOString(),
-      displayName: payload.displayName,
-      photoURL: payload.photoURL,
-    }));
+    try {
+      if (!payload?.userId || !payload?.location) return;
+      dispatch(mergeMemberLocation({
+        userId: payload.userId,
+        latitude: payload.location.latitude,
+        longitude: payload.location.longitude,
+        speed: payload.location.speed,
+        heading: payload.location.heading,
+        lastUpdate: new Date(payload.location.timestamp || Date.now()).toISOString(),
+        displayName: payload.displayName,
+        photoURL: payload.photoURL,
+      }));
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling member location:', error);
+    }
   };
 
   const handleMemberJoined = (payload: any) => {
-    if (!payload?.userId) return;
-    dispatch(upsertGroupMember(buildMemberFromPayload(payload)));
+    try {
+      if (!payload?.userId) return;
+      dispatch(upsertGroupMember(buildMemberFromPayload(payload)));
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling member joined:', error);
+    }
   };
 
   const handleMemberLeft = (payload: any) => {
-    if (!payload?.userId) return;
-    dispatch(setMemberOnlineStatus({ userId: payload.userId, isOnline: false }));
+    try {
+      if (!payload?.userId) return;
+      dispatch(setMemberOnlineStatus({ userId: payload.userId, isOnline: false }));
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling member left:', error);
+    }
   };
 
   const handleGroupLocations = (payload: any) => {
-    if (!payload?.locations) return;
-    payload.locations.forEach((entry: any) => {
-      if (!entry?.userId || !entry?.location) return;
-      dispatch(mergeMemberLocation({
-        userId: entry.userId,
-        latitude: entry.location.latitude,
-        longitude: entry.location.longitude,
-        speed: entry.location.speed,
-        heading: entry.location.heading,
-        lastUpdate: entry.location.lastSeen,
-        displayName: entry.displayName,
-        photoURL: entry.photoURL,
-      }));
-    });
+    try {
+      if (!payload?.locations) return;
+      payload.locations.forEach((entry: any) => {
+        if (!entry?.userId || !entry?.location) return;
+        dispatch(mergeMemberLocation({
+          userId: entry.userId,
+          latitude: entry.location.latitude,
+          longitude: entry.location.longitude,
+          speed: entry.location.speed,
+          heading: entry.location.heading,
+          lastUpdate: entry.location.lastSeen,
+          displayName: entry.displayName,
+          photoURL: entry.photoURL,
+        }));
+      });
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling group locations:', error);
+    }
   };
 
   const handleMemberStarted = (payload: any) => {
-    if (payload?.instance) {
-      dispatch(memberStarted(payload.instance));
+    try {
+      if (payload?.instance) {
+        dispatch(memberStarted(payload.instance));
+      }
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling member started:', error);
     }
   };
 
   const handleMemberCompleted = (payload: any) => {
-    if (payload?.instance && payload?.userId) {
-      dispatch(memberCompleted({ userId: payload.userId, instance: payload.instance }));
+    try {
+      if (payload?.instance && payload?.userId) {
+        dispatch(memberCompleted({ userId: payload.userId, instance: payload.instance }));
+      }
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling member completed:', error);
     }
   };
 
   const handleRideEvent = (payload: any) => {
-    if (!payload?.id) return;
-    dispatch(addEvent({
-      id: payload.id,
-      type: payload.type || 'CUSTOM',
-      userId: payload.userId,
-      username: payload.username,
-      timestamp: payload.timestamp ? new Date(payload.timestamp) : new Date(),
-      data: payload.data,
-    }));
+    try {
+      if (!payload?.id) return;
+      dispatch(addEvent({
+        id: payload.id,
+        type: payload.type || 'CUSTOM',
+        userId: payload.userId,
+        username: payload.username,
+        timestamp: payload.timestamp ? new Date(payload.timestamp) : new Date(),
+        data: payload.data,
+      }));
+    } catch (error) {
+      console.error('[groupJourneySocket] Error handling ride event:', error);
+    }
   };
 
   listeners = [

@@ -232,7 +232,7 @@ export default function LoginScreen() {
             </View>
             {/* Email Field */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email</Text>
+              <Text style={styles.inputLabel}>{t('auth.email')}</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.textInput}
@@ -251,7 +251,7 @@ export default function LoginScreen() {
             </View>
             {/* Password Field */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
+              <Text style={styles.inputLabel}>{t('auth.password')}</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.textInput}
@@ -270,7 +270,7 @@ export default function LoginScreen() {
                   style={styles.passwordToggle}
                   onPress={() => setShowPassword(prev => !prev)}
                   accessibilityRole="button"
-                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   <Ionicons
                     name={showPassword ? 'eye-off' : 'eye'}

@@ -413,8 +413,7 @@ export default function JourneyScreen(): React.JSX.Element {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
         exif: false,
         base64: false,
