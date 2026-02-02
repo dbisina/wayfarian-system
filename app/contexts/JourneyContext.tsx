@@ -578,81 +578,102 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    const loadActiveJourney = async () => {
-      dispatch(setHydrated(false));
-      try {
-        const response = await journeyAPI.getActiveJourney();
-        if (cancelled) return;
-        if (response?.journey) {
-          dispatch(setCurrentJourney({
-            id: response.journey.id,
-            title: response.journey.title,
-            startLocation: response.journey.startLatitude ? {
-              latitude: response.journey.startLatitude,
-              longitude: response.journey.startLongitude,
-              address: response.journey.startAddress || 'Start Location',
-            } : undefined,
-            endLocation: response.journey.endLatitude ? {
-              latitude: response.journey.endLatitude,
-              longitude: response.journey.endLongitude,
-              address: response.journey.endAddress || 'End Location',
-            } : undefined,
-            groupId: response.journey.groupId,
-            vehicle: response.journey.vehicle,
-            status: response.journey.status === 'active' ? 'active' : 'paused',
-            photos: response.journey.photos || [],
-          }));
-          dispatch(setTracking(response.journey.status === 'active'));
-          if (response.journey.groupId) {
-            await ensureGroupJourneySocket(response.journey.groupId, dispatch);
+      const loadActiveJourney = async () => {
+        dispatch(setHydrated(false));
+        try {
+          // Check for explicitly passed active journey ID (e.g. from scheduled start)
+          // We can't access route params directly here in context easily without passing them in.
+          // However, we can check if we already have a journey in state that matches param if we could.
+          
+          // Better approach: Rely on backend.
+          const response = await journeyAPI.getActiveJourney();
+          if (cancelled) return;
+          
+          if (response?.journey) {
+            dispatch(setCurrentJourney({
+              id: response.journey.id,
+              title: response.journey.title,
+              startLocation: response.journey.startLatitude ? {
+                latitude: response.journey.startLatitude,
+                longitude: response.journey.startLongitude,
+                address: response.journey.startAddress || 'Start Location',
+              } : undefined,
+              endLocation: response.journey.endLatitude ? {
+                latitude: response.journey.endLatitude,
+                longitude: response.journey.endLongitude,
+                address: response.journey.endAddress || 'End Location',
+              } : undefined,
+              groupId: response.journey.groupId,
+              vehicle: response.journey.vehicle,
+              status: response.journey.status === 'active' ? 'active' : 'paused',
+              photos: response.journey.photos || [],
+            }));
+            
+            // Only set tracking if actually active
+            if (response.journey.status === 'active') {
+               // Ensure we have a valid start time for the timer
+               if (response.journey.startTime) {
+                 const startTime = new Date(response.journey.startTime).getTime();
+                 startTimeRef.current = startTime;
+                 await persistStartTime(startTime);
+               }
+               dispatch(setTracking(true));
+            }
+            
+            if (response.journey.groupId) {
+              await ensureGroupJourneySocket(response.journey.groupId, dispatch);
+            }
+          } else {
+            // Only clear if we really don't have one on backend.
+            // This prevents race condition where local state might be ahead/behind.
+            dispatch(setCurrentJourney(null));
           }
-        } else {
-          dispatch(setCurrentJourney(null));
+        } catch (error) {
+          console.error('Error loading active journey:', error);
         }
-      } catch (error) {
-        console.error('Error loading active journey:', error);
-      }
-
-      try {
-        const myInst = await groupJourneyAPI.getMyActiveInstance();
-        const inst = myInst?.instance || myInst?.myInstance || myInst?.data || myInst?.journeyInstance;
-        if (cancelled) return;
-        if (inst && (inst.status === 'ACTIVE' || inst.status === 'PAUSED')) {
-          dispatch(setMyInstance(inst));
-          dispatch(setCurrentJourney({
-            id: inst.id,
-            title: inst.groupJourney?.title || 'Group Ride',
-            startLocation: inst.startLatitude ? {
-              latitude: inst.startLatitude,
-              longitude: inst.startLongitude,
-              address: inst.startAddress || 'Start Location',
-            } : undefined,
-            endLocation: inst.endLatitude ? {
-              latitude: inst.endLatitude,
-              longitude: inst.endLongitude,
-              address: inst.endAddress || 'End Location',
-            } : undefined,
-            groupId: inst.groupId || inst.groupJourney?.groupId,
-            groupJourneyId: inst.groupJourney?.id,
-            vehicle: inst.vehicle,
-            status: 'paused',
-            photos: inst.photos || [],
-          }));
-          dispatch(setTracking(false));
-          dispatch(setJourneyMinimized(true));
-          const gid = inst.groupId || inst.groupJourney?.groupId;
-          if (gid) {
-            await ensureGroupJourneySocket(gid, dispatch);
+  
+        try {
+          const myInst = await groupJourneyAPI.getMyActiveInstance();
+          const inst = myInst?.instance || myInst?.myInstance || myInst?.data || myInst?.journeyInstance;
+          if (cancelled) return;
+          if (inst && (inst.status === 'ACTIVE' || inst.status === 'PAUSED')) {
+            dispatch(setMyInstance(inst));
+            dispatch(setCurrentJourney({
+              id: inst.id,
+              title: inst.groupJourney?.title || 'Group Ride',
+              startLocation: inst.startLatitude ? {
+                latitude: inst.startLatitude,
+                longitude: inst.startLongitude,
+                address: inst.startAddress || 'Start Location',
+              } : undefined,
+              endLocation: inst.endLatitude ? {
+                latitude: inst.endLatitude,
+                longitude: inst.endLongitude,
+                address: inst.endAddress || 'End Location',
+              } : undefined,
+              groupId: inst.groupId || inst.groupJourney?.groupId,
+              groupJourneyId: inst.groupJourney?.id,
+              vehicle: inst.vehicle,
+              status: 'paused',
+              photos: inst.photos || [],
+            }));
+            // Prioritize group instance tracking state? 
+            // Usually group instances are managed via socket updates for locations
+            dispatch(setTracking(false)); 
+            dispatch(setJourneyMinimized(true));
+            const gid = inst.groupId || inst.groupJourney?.groupId;
+            if (gid) {
+              await ensureGroupJourneySocket(gid, dispatch);
+            }
           }
+        } catch (error) {
+          console.warn('Error hydrating group journey instance:', error);
         }
-      } catch (error) {
-        console.warn('Error hydrating group journey instance:', error);
-      }
-
-      if (!cancelled) {
-        dispatch(setHydrated(true));
-      }
-    };
+  
+        if (!cancelled) {
+          dispatch(setHydrated(true));
+        }
+      };
 
     loadActiveJourney();
     return () => { cancelled = true; };

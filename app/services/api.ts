@@ -648,7 +648,9 @@ export const leaderboardAPI = {
     page?: number;
     limit?: number;
   }) => {
-    const queryString = new URLSearchParams(params as any).toString();
+    // Add timestamp to bust cache and ensure fresh data
+    const queryParams = { ...params, _t: Date.now() };
+    const queryString = new URLSearchParams(queryParams as any).toString();
     const result = await apiRequest(`/leaderboard/global?${queryString}`, 'GET');
     return result;
   },
@@ -656,19 +658,25 @@ export const leaderboardAPI = {
   getGroupLeaderboard: async (groupId: string, params?: {
     sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime';
   }) => {
-    const queryString = new URLSearchParams(params as any).toString();
+    // Add timestamp to bust cache and ensure fresh data
+    const queryParams = { ...params, _t: Date.now() };
+    const queryString = new URLSearchParams(queryParams as any).toString();
     return apiRequest(`/leaderboard/group/${groupId}?${queryString}`, 'GET');
   },
 
   getFriendsLeaderboard: async (params?: {
     sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime';
   }) => {
-    const queryString = new URLSearchParams(params as any).toString();
+    // Add timestamp to bust cache and ensure fresh data
+    const queryParams = { ...params, _t: Date.now() };
+    const queryString = new URLSearchParams(queryParams as any).toString();
     return apiRequest(`/leaderboard/friends?${queryString}`, 'GET');
   },
 
   getUserPosition: async (params?: { sortBy?: 'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime' }) => {
-    const queryString = new URLSearchParams(params as any).toString();
+    // Add timestamp to bust cache and ensure fresh data
+    const queryParams = { ...params, _t: Date.now() };
+    const queryString = new URLSearchParams(queryParams as any).toString();
     return apiRequest(`/leaderboard/position?${queryString}`, 'GET');
   },
 };

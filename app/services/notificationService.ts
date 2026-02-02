@@ -18,9 +18,9 @@ export function initNotificationHandler(): void {
             shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: true,
-            // Set to false for iOS compatibility - these can cause crashes on some iOS versions
-            shouldShowBanner: false,
-            shouldShowList: false,
+            // Enable banner and notification list on iOS for full notification experience
+            shouldShowBanner: true,
+            shouldShowList: true,
         }),
     });
 }

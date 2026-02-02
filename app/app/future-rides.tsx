@@ -109,8 +109,11 @@ export default function FutureRidesScreen() {
       });
 
       if (response.success) {
-        // Navigate to active journey screen
-        router.push('/journey');
+        // Navigate to active journey screen with params to force recognition
+        router.push({
+          pathname: '/journey',
+          params: { activeJourneyId: journeyId }
+        });
       } else {
         Alert.alert('Error', response.message || 'Failed to start journey');
       }

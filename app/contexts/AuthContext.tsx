@@ -554,12 +554,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
           }
         } else {
-          setFirebaseUser(null);
-          setUser(null);
-          setIsAuthenticated(false);
-          setUserContext(null);
-          clearTokenRefreshTimer();
-          await removeAuthToken();
+          // CRITICAL FIX: Don't clear cached user session if we restored it from AsyncStorage
+          // Firebase may fire null initially before session restoration on some devices
+          if (!currentUserRef.current) {
+            // Only clear if there's no cached user from AsyncStorage
+            setFirebaseUser(null);
+            setUser(null);
+            setIsAuthenticated(false);
+            setUserContext(null);
+            clearTokenRefreshTimer();
+            await removeAuthToken();
+          } else {
+            // We have a cached user from AsyncStorage - preserve the session
+            // This handles cold starts where Firebase doesn't immediately restore the session
+            if (__DEV__) console.log('[AuthContext] Firebase returned null but cached user exists, preserving session');
+            setFirebaseUser(null); // Firebase user is null, but our app user is still valid
+          }
         }
       } catch (error) {
         console.error('[AuthContext] Auth state change error:', error);
@@ -974,6 +984,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       // Clear local auth state regardless
       clearTokenRefreshTimer();
+      // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
+      currentUserRef.current = null;
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);
@@ -1134,6 +1146,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Clear local auth state
       clearTokenRefreshTimer();
+      // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
+      currentUserRef.current = null;
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);

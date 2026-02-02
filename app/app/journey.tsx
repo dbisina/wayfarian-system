@@ -58,7 +58,7 @@ const normalizeDistanceValue = (value?: number | null): number => {
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function JourneyScreen(): React.JSX.Element {
-  const { groupId: paramGroupId, groupJourneyId } = useLocalSearchParams<{ groupId?: string; groupJourneyId?: string }>();
+  const { groupId: paramGroupId, groupJourneyId, activeJourneyId } = useLocalSearchParams<{ groupId?: string; groupJourneyId?: string; activeJourneyId?: string }>();
   const {
     routePoints,
     startJourney,

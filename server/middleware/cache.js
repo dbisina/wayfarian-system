@@ -140,7 +140,7 @@ const invalidateCache = (patterns = []) => {
  * @param {number} ttl - Time to live in seconds (default: 600)
  * @returns {Function} Express middleware
  */
-const cacheLeaderboard = (ttl = 600) => {
+const cacheLeaderboard = (ttl = 60) => {
   return cacheMiddleware(
     ttl,
     (req) => {
