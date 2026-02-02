@@ -60,6 +60,8 @@ async function withRetry(operation, retries = MAX_RETRIES) {
         error.code === 'P1002' || // Connection timeout
         error.code === 'P1008' || // Operations timeout
         error.message?.includes('Connection') ||
+        error.message?.includes('Server has closed the connection') ||
+        error.message?.includes('closed the connection') ||
         error.message?.includes('ECONNREFUSED') ||
         error.message?.includes('ENOTFOUND') ||
         error.message?.includes('forcibly closed');
