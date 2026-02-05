@@ -76,7 +76,9 @@
         {
           "appleTeamId": "KJWN27VC5D"
         }
-      ]
+      ],
+      "./plugins/withWidgetXcodeFix",
+      "./plugins/withPodfileFix"
     ],
     "ios": {
       "supportsTablet": true,

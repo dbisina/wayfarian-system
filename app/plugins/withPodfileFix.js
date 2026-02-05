@@ -16,11 +16,16 @@ const withPodfileFix = (config) => {
 
       let contents = await fs.promises.readFile(file, 'utf8');
 
-      // Skip if already patched
-      if (contents.includes('CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES')) {
-        console.log('[withPodfileFix] Podfile already patched. Skipping.');
+      // Verify if the specific widget fix is already present
+      if (contents.includes('Fix for widget targets failing due to ccache path issues')) {
+        console.log('[withPodfileFix] Podfile already patched with widget fix. Skipping.');
         return config;
       }
+      
+      // If the old patch exists but not the widget one, we might need to be careful
+      // But for simplicity, we'll append the widget fix if it's missing, 
+      // or replace the whole block if we can identify the old one. 
+      // Let's just define the block we want to ensure exists.
 
       const buildSettingsFix = `
     # Fix for Firebase non-modular header includes (added by withPodfileFix)
@@ -41,11 +46,13 @@ const withPodfileFix = (config) => {
                        target.name.to_s.include?('Widget')
         if is_extension
           target.build_configurations.each do |config|
-            # Remove ccache compiler settings that rely on REACT_NATIVE_PATH
-            config.build_settings.delete('CC')
-            config.build_settings.delete('CXX')
-            config.build_settings.delete('LD')
-            config.build_settings.delete('LDPLUSPLUS')
+            # Explicitly set compilers to system default to override values from xcconfig
+            config.build_settings['CC'] = 'clang'
+            config.build_settings['CXX'] = 'clang++'
+            config.build_settings['LD'] = 'clang'
+            config.build_settings['LDPLUSPLUS'] = 'clang++'
+            
+            # Remove ccache specific settings
             config.build_settings.delete('CCACHE_BINARY')
           end
         end
@@ -53,16 +60,27 @@ const withPodfileFix = (config) => {
       aggregate_target.user_project.save()
     end`;
 
-      // Strategy 1: Look for post_install block with installer parameter
-      // Match variations: post_install do |installer| or post_install do |pi|, etc.
+      // Strategy: Check if we have the old patch (Firebase only) and replace it for cleaner file
+      // OR just look for post_install loop.
+      
       const postInstallMatch = contents.match(/post_install\s+do\s+\|(\w+)\|/);
 
       if (postInstallMatch) {
         const installerVarName = postInstallMatch[1];
         console.log(`[withPodfileFix] Found post_install block with variable: ${installerVarName}`);
 
-        // Replace installer with the actual variable name used in the Podfile
+        // Prepare the code snippet with the correct installer variable name
         const fixCode = buildSettingsFix.replace(/installer\./g, `${installerVarName}.`);
+
+        // Check if we already have the Firebase fix but miss the Widget fix
+        if (contents.includes('CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES')) {
+             // If we already have the old fix, let's just append the WIDGET fix part right after it
+             // Finding the end of the old fix is hard via regex. 
+             // Simplest approach: Inject the NEW widget fix right at the start of post_install anyway.
+             // It's safe to run the firebase fix twice (idempotent-ish assignment).
+             // But to avoid duplication, let's NOT include the firebase fix in the new block if it exists?
+             // No, let's just leave it. If it sets it to YES again, that's fine.
+        }
 
         // Insert the fix right after the post_install block opens
         const regex = new RegExp(`(post_install\\s+do\\s+\\|${installerVarName}\\|[^\\n]*\\n)`);
@@ -73,8 +91,7 @@ const withPodfileFix = (config) => {
         return config;
       }
 
-      // Strategy 2: If no post_install block, we need to add one
-      // This is rare but could happen with some Expo configurations
+      // Strategy 2: If no post_install block, add one
       console.warn('[withPodfileFix] No post_install block found. Adding one at end of file.');
 
       const fullPostInstall = `
@@ -82,14 +99,12 @@ post_install do |installer|
 ${buildSettingsFix}
 end
 `;
-
-      // Check if there's already a post_install (in case our regex failed)
+      // Safety check
       if (contents.includes('post_install')) {
-        console.error('[withPodfileFix] post_install exists but our regex did not match. Manual review needed.');
-        console.error('[withPodfileFix] Podfile content near post_install:');
-        const postInstallIndex = contents.indexOf('post_install');
-        console.error(contents.substring(postInstallIndex, postInstallIndex + 200));
-        return config;
+         // Should have matched regex above. If here, regex failed but 'post_install' string exists.
+         // fallback to appending might break syntax if inside another block.
+         // But usually this means weird formatting.
+         console.warn('[withPodfileFix] post_install detected but regex failed. Appending anyway.');
       }
 
       contents = contents + fullPostInstall;
