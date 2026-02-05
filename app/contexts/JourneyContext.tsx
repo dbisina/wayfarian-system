@@ -62,6 +62,8 @@ export interface JourneyContextType {
   updateMemberLocation: (memberId: string, location: LocationPoint) => void;
   hydrated: boolean;
   currentLocation: LocationPoint | null;
+  // Resume tracking for an existing ACTIVE journey (used for scheduled journeys)
+  resumeActiveJourney: (journeyId: string) => Promise<boolean>;
 }
 
 const JourneyContext = createContext<JourneyContextType | undefined>(undefined);
@@ -124,17 +126,27 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   // Update local timer every second when tracking - with persistence and smooth updates
   useEffect(() => {
+    // FIX: Always clear existing interval FIRST to prevent memory leak from multiple intervals
+    // This must happen before any async operations
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
     // For solo journeys, use startTimeRef; for group journeys, use myInstance.startTime
     const hasJourney = journeyState.isTracking && (
-      startTimeRef.current || 
+      startTimeRef.current ||
       journeyState.myInstance?.startTime ||
       journeyState.currentJourney?.id
     );
-    
+
+    // Track if effect has been cleaned up to prevent setting state after unmount
+    let isCancelled = false;
+
     if (hasJourney) {
       const initializeTimer = async () => {
         let startTime: number;
-        
+
         if (journeyState.myInstance?.startTime) {
           // Group journey - use instance startTime
           startTime = new Date(journeyState.myInstance.startTime).getTime();
@@ -144,6 +156,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         } else {
           // Try to recover from AsyncStorage (app was restarted)
           const recovered = await recoverStartTime();
+          if (isCancelled) return; // Don't continue if effect was cleaned up
+
           if (recovered && journeyState.currentJourney?.id) {
             startTime = recovered;
             startTimeRef.current = recovered;
@@ -152,23 +166,23 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             startTime = Date.now();
             startTimeRef.current = startTime;
             await persistStartTime(startTime);
+            if (isCancelled) return;
           }
         }
-        
+
+        // Don't set state or create interval if effect was cleaned up
+        if (isCancelled) return;
+
         // Update immediately with accurate time
         const now = Date.now();
         const elapsed = Math.max(0, Math.floor((now - startTime) / 1000));
         setLocalElapsedTime(elapsed);
-        
-        // Clear any existing interval
-        if (timerIntervalRef.current) {
-          clearInterval(timerIntervalRef.current);
-        }
-        
+
         // Use setInterval for consistent 1-second updates
         // Calculate from startTime each tick to prevent drift
         timerIntervalRef.current = setInterval(() => {
-          const currentStartTime = journeyState.myInstance?.startTime 
+          if (isCancelled) return;
+          const currentStartTime = journeyState.myInstance?.startTime
             ? new Date(journeyState.myInstance.startTime).getTime()
             : startTimeRef.current || startTime;
           const currentTime = Date.now();
@@ -176,10 +190,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           setLocalElapsedTime(newElapsed);
         }, 1000) as unknown as number;
       };
-      
+
       initializeTimer();
-      
+
       return () => {
+        isCancelled = true;
         if (timerIntervalRef.current) {
           clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
@@ -191,10 +206,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       if (!journeyState.myInstance?.startTime) {
         startTimeRef.current = null;
       }
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
+
+      return () => {
+        isCancelled = true;
+      };
     }
   }, [journeyState.isTracking, journeyState.myInstance?.startTime, journeyState.currentJourney?.id, recoverStartTime, persistStartTime]);
 
@@ -732,8 +747,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }
 
       // Start persistent background tracking notification
+      // CRITICAL: Pass startTime to sync foreground and background timers (fixes Android 1:30 issue)
       await BackgroundTaskService.startBackgroundTracking(journeyId, {
         startLocationName: 'Current Location', // Could reverse geocode here if we had address
+        startTime: startTimestamp,
       });
 
       return true;
@@ -765,28 +782,110 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   };
 
   const pauseJourney = async () => {
+    if (!journeyState.currentJourney) {
+      console.warn('[JourneyContext] No journey to pause');
+      return;
+    }
     try {
-      if (journeyState.currentJourney) {
-        // @ts-ignore - status update is valid backend-side
-        await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'PAUSED' });
-        dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'paused' }));
-        dispatch(setTracking(false));
-      }
+      // @ts-ignore - status update is valid backend-side
+      await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'PAUSED' });
+      dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'paused' }));
+      dispatch(setTracking(false));
     } catch (error) {
-      console.error('Error pausing journey:', error);
+      // FIX: Re-throw error so callers can handle it (e.g., show user notification)
+      // Silent swallowing can leave users confused when pause doesn't work
+      console.error('[JourneyContext] Error pausing journey:', error);
+      throw error;
     }
   };
 
   const resumeJourney = async () => {
+    if (!journeyState.currentJourney) {
+      console.warn('[JourneyContext] No journey to resume');
+      return;
+    }
     try {
-      if (journeyState.currentJourney) {
-        // @ts-ignore - status update is valid backend-side
-        await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'ACTIVE' });
-        dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'active' }));
-        dispatch(setTracking(true));
-      }
+      // @ts-ignore - status update is valid backend-side
+      await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'ACTIVE' });
+      dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'active' }));
+      dispatch(setTracking(true));
     } catch (error) {
-      console.error('Error resuming journey:', error);
+      // FIX: Re-throw error so callers can handle it (e.g., show user notification)
+      // Silent swallowing can leave users confused when resume doesn't work
+      console.error('[JourneyContext] Error resuming journey:', error);
+      throw error;
+    }
+  };
+
+  // Resume tracking for an existing ACTIVE journey (used for scheduled journeys)
+  // This fetches the journey from the server and starts client-side tracking
+  const resumeActiveJourney = async (journeyId: string): Promise<boolean> => {
+    try {
+      console.log('[JourneyContext] Resuming active journey:', journeyId);
+
+      // Fetch the journey details from the server
+      const response = await journeyAPI.getJourney(journeyId);
+      const journey = response?.journey;
+
+      if (!journey) {
+        console.error('[JourneyContext] Journey not found:', journeyId);
+        return false;
+      }
+
+      if (journey.status !== 'ACTIVE') {
+        console.warn('[JourneyContext] Journey is not ACTIVE:', journey.status);
+        // If not active, we can't resume tracking
+        return false;
+      }
+
+      // Set up the journey state
+      const newJourney: JourneyData = {
+        id: journey.id,
+        title: journey.title || 'My Journey',
+        startLocation: journey.startLatitude ? {
+          latitude: journey.startLatitude,
+          longitude: journey.startLongitude,
+          address: journey.startAddress || 'Start Location',
+        } : undefined,
+        endLocation: journey.endLatitude ? {
+          latitude: journey.endLatitude,
+          longitude: journey.endLongitude,
+          address: journey.endAddress || 'End Location',
+        } : undefined,
+        groupId: journey.groupId,
+        vehicle: journey.vehicle || 'car',
+        status: 'active',
+        photos: journey.photos || [],
+      };
+
+      dispatch(setCurrentJourney(newJourney));
+      dispatch(setTracking(true));
+      dispatch(setJourneyMinimized(false));
+
+      // Set startTime for timer from the server's journey start time
+      const journeyStartTime = journey.startTime || new Date().toISOString();
+      const startTimestamp = new Date(journeyStartTime).getTime();
+      startTimeRef.current = startTimestamp;
+      await persistStartTime(startTimestamp);
+
+      if (journey.groupId) {
+        await ensureGroupJourneySocket(journey.groupId, dispatch);
+      }
+
+      // Start background tracking with synced startTime
+      await BackgroundTaskService.startBackgroundTracking(journeyId, {
+        startLocationName: journey.startAddress || 'Start Location',
+        destinationName: journey.endAddress,
+        destinationLatitude: journey.endLatitude,
+        destinationLongitude: journey.endLongitude,
+        startTime: startTimestamp,
+      });
+
+      console.log('[JourneyContext] Successfully resumed tracking for journey:', journeyId);
+      return true;
+    } catch (error) {
+      console.error('[JourneyContext] Error resuming active journey:', error);
+      return false;
     }
   };
 
@@ -796,19 +895,30 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         console.warn('No current journey to end');
         return null;
       }
-      
+
       const journeyIdForNavigation = journeyState.currentJourney.id;
 
-      // CRITICAL: Use officialDistance from Roads API (snapped data) for final distance
-      // This ensures accurate final stats without phantom data
-      const finalDistance = officialDistance; // Already in kilometers from Roads API
+      // CRITICAL FIX FOR ANDROID: Get stats from background service as fallback
+      // On Android, foreground state may not be fully synced when endJourney is called
+      const backgroundState = await BackgroundTaskService.getPersistedJourneyState();
+
+      // Use the maximum of foreground and background stats to ensure accuracy
+      // This fixes the issue where Android shows 0 stats at journey end
+      const foregroundDistance = officialDistance;
+      const backgroundDistance = backgroundState?.totalDistance || 0;
+      const finalDistance = Math.max(foregroundDistance, backgroundDistance);
+
+      console.log('[JourneyContext] End journey stats - Foreground:', foregroundDistance, 'Background:', backgroundDistance, 'Final:', finalDistance);
 
       // Calculate accurate total time from our persistent startTime
       let finalTotalTime: number;
       if (startTimeRef.current) {
         finalTotalTime = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      } else if (backgroundState?.startTime) {
+        // Fallback to background service startTime
+        finalTotalTime = Math.floor((Date.now() - backgroundState.startTime) / 1000);
       } else {
-        // Fallback to local elapsed time if startTimeRef somehow not available
+        // Last fallback to local elapsed time
         finalTotalTime = localElapsedTime;
       }
 
@@ -1013,18 +1123,32 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
       const activeGroupJourneyId = journeyState.currentJourney.groupJourneyId || journeyState.myInstance?.groupJourneyId;
       if (activeGroupJourneyId && uploadedPhotoUri) {
-        const routePoints = locationService.getRoutePoints();
-        const lastPoint = routePoints.length ? routePoints[routePoints.length - 1] : undefined;
+        // FIX: Prefer liveRawLocation (current GPS) over routePoints (which may be stale or empty)
+        // This ensures photo location is accurate even when GPS buffer hasn't flushed
+        let photoLatitude: number | undefined;
+        let photoLongitude: number | undefined;
+
+        if (liveRawLocation) {
+          photoLatitude = liveRawLocation.latitude;
+          photoLongitude = liveRawLocation.longitude;
+        } else {
+          // Fallback to route points if live location unavailable
+          const routePoints = locationService.getRoutePoints();
+          const lastPoint = routePoints.length ? routePoints[routePoints.length - 1] : undefined;
+          photoLatitude = lastPoint?.latitude;
+          photoLongitude = lastPoint?.longitude;
+        }
+
         try {
           await groupJourneyAPI.postEvent(activeGroupJourneyId, {
             type: 'PHOTO',
             message: 'Shared a ride photo',
             mediaUrl: uploadedPhotoUri,
-            latitude: lastPoint?.latitude,
-            longitude: lastPoint?.longitude,
+            latitude: photoLatitude,
+            longitude: photoLongitude,
           });
         } catch (eventError) {
-          console.warn('Failed to broadcast group photo event', eventError);
+          console.warn('[JourneyContext] Failed to broadcast group photo event:', eventError);
         }
       }
     } catch (error) {
@@ -1087,6 +1211,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         accuracy: liveRawLocation.accuracy,
         altitude: 0
     } : null,
+    resumeActiveJourney,
   };
 
   return (

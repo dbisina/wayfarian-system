@@ -1,12 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import 'react-native-reanimated';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -20,6 +21,7 @@ import GroupJourneyGlobalListener from '../components/GroupJourneyGlobalListener
 import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
 import { initI18n } from '../i18n';
+import { parseNotificationData } from '../services/notificationService';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
@@ -44,6 +46,7 @@ function RootLayoutContent() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [isI18nReady, setIsI18nReady] = useState(false);
   const router = useRouter(); // Must be called before any early returns
+  const notificationResponseListener = useRef<Notifications.Subscription>();
 
   const [fontsLoaded] = useFonts({
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
@@ -53,6 +56,56 @@ function RootLayoutContent() {
   useEffect(() => {
     initI18n().then(() => setIsI18nReady(true));
   }, []);
+
+  // Handle notification taps - navigate to appropriate screen
+  useEffect(() => {
+    // Handle notification that opened the app
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response?.notification) {
+        handleNotificationNavigation(response.notification);
+      }
+    });
+
+    // Handle notifications while app is running
+    notificationResponseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationNavigation(response.notification);
+    });
+
+    return () => {
+      if (notificationResponseListener.current) {
+        Notifications.removeNotificationSubscription(notificationResponseListener.current);
+      }
+    };
+  }, []);
+
+  // Navigate based on notification data
+  const handleNotificationNavigation = (notification: Notifications.Notification) => {
+    const data = parseNotificationData(notification);
+    if (!data) return;
+
+    console.log('[Notification] Handling notification tap:', data);
+
+    switch (data.type) {
+      case 'JOURNEY_REMINDER':
+      case 'JOURNEY_READY':
+        // Navigate to future rides screen for journey reminders
+        if (data.journeyId) {
+          router.push('/future-rides' as any);
+        }
+        break;
+      case 'GROUP_JOURNEY_STARTED':
+        // Navigate to the group journey
+        if (data.groupJourneyId) {
+          router.push({
+            pathname: '/journey',
+            params: { groupJourneyId: data.groupJourneyId },
+          } as any);
+        }
+        break;
+      default:
+        console.log('[Notification] Unknown notification type:', data.type);
+    }
+  };
 
   useEffect(() => {
     if (fontsLoaded && !isInitializing && isI18nReady) {

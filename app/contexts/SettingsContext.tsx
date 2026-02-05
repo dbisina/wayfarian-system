@@ -43,10 +43,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORE_KEYS.mapType),
           AsyncStorage.getItem(STORE_KEYS.vehicle),
         ]);
+
+        // Determine if notifications should be enabled
+        const shouldEnableNotifications = n === null || n === '1'; // Default to enabled
         if (n !== null) setNotificationsEnabledState(n === '1');
         if (u === 'km' || u === 'mi') setUnitsState(u);
         if (m === 'standard' || m === 'satellite' || m === 'terrain') setMapTypeState(m as MapType);
         if (v === 'car' || v === 'bike' || v === 'scooter') setVehicleState(v as Vehicle);
+
+        // CRITICAL: Register for push notifications on app start if enabled
+        // This was previously only triggered when user toggled the setting
+        if (shouldEnableNotifications) {
+          try {
+            const notificationService = await import('../services/notificationService');
+            await notificationService.registerForPushNotifications();
+            console.log('[Settings] Push notifications registered on app start');
+          } catch (notifError) {
+            console.warn('[Settings] Failed to register push notifications on start:', notifError);
+          }
+        }
       } catch (e) {
         console.warn('Failed to load settings', e);
       }

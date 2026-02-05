@@ -12,13 +12,16 @@ const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
 const BUFFER_SIZE = 10; // Flush every 10 points
 const FLUSH_INTERVAL_MS = 30000; // Or every 30 seconds
 const STATIONARY_SPEED_THRESHOLD = 1.5; // m/s (approx 5.4 km/h)
-const MIN_TIME_DELTA_FOR_SPEED_CALC = 1.0; // Minimum 1 second for accurate speed calculation
+const MIN_TIME_DELTA_FOR_SPEED_CALC = 2.0; // INCREASED: Minimum 2 seconds for accurate speed calculation (was 1.0)
+const MIN_DISTANCE_FOR_SPEED_CALC = 3.0; // NEW: Minimum 3 meters moved to calculate speed (prevents jitter spikes)
 const MAX_REASONABLE_SPEED_MPS = 69.4; // 250 km/h in m/s - filter extreme GPS jitter
 const MIN_ACCURACY_FOR_DISTANCE = 30; // Ignore GPS readings with accuracy worse than 30m
 const POSITION_SMOOTHING_FACTOR = 0.3; // Exponential smoothing for position
 const SPEED_SMOOTHING_FACTOR = 0.4; // Exponential smoothing for speed display (higher = more responsive)
-const SPEED_CALC_WINDOW_MS = 5000; // 5 second window for speed calculation (was 3s)
+const SPEED_CALC_WINDOW_MS = 5000; // 5 second window for speed calculation
 const MAX_SPEED_SAMPLES_REQUIRED = 2; // Require 2 samples at high speed before updating max
+const LOW_SPEED_THRESHOLD_MPS = 3.0; // Speed below which we apply extra filtering (10.8 km/h)
+const LOW_SPEED_EXTRA_SMOOTHING = 0.2; // More aggressive smoothing at low speeds
 
 // Calculate distance between two points (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -69,7 +72,9 @@ export function useSmartTracking(isTracking: boolean) {
   const stationaryStartTimeRef = useRef<number | null>(null);
   const DWELL_THRESHOLD_MS = 5000; // 5 seconds
   const DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
-  const [isDwelling, setIsDwelling] = useState<boolean>(false); // True when stationary >5s
+  // FIX: Use ref instead of state for isDwelling to avoid stale closure issue
+  // The handleLocationUpdate callback captures state at creation time, but refs are always current
+  const isDwellingRef = useRef<boolean>(false);
 
   // Smoothed position for reducing GPS jitter
   const smoothedPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -183,12 +188,16 @@ export function useSmartTracking(isTracking: boolean) {
       const oldest = recentPointsRef.current[0];
       const newest = recentPointsRef.current[recentPointsRef.current.length - 1];
       const timeDeltaSeconds = (newest.timestamp - oldest.timestamp) / 1000;
+      const distanceKm = calculateDistance(oldest.lat, oldest.lng, newest.lat, newest.lng);
+      const distanceMeters = distanceKm * 1000;
 
-      // Only calculate speed if we have enough time elapsed to get accurate reading
-      // With very short time deltas, GPS jitter causes unrealistically high speeds
-      if (timeDeltaSeconds >= MIN_TIME_DELTA_FOR_SPEED_CALC) {
-        const distanceKm = calculateDistance(oldest.lat, oldest.lng, newest.lat, newest.lng);
-        const distanceMeters = distanceKm * 1000;
+      // IMPROVED FILTERING: Only calculate speed if we have enough time AND distance
+      // This prevents GPS jitter at very low speeds from causing speed spikes
+      // At low speeds, GPS error of 2-3 meters over short time causes huge calculated speeds
+      const hasEnoughTime = timeDeltaSeconds >= MIN_TIME_DELTA_FOR_SPEED_CALC;
+      const hasEnoughDistance = distanceMeters >= MIN_DISTANCE_FOR_SPEED_CALC;
+
+      if (hasEnoughTime && hasEnoughDistance) {
         calculatedSpeedMps = distanceMeters / timeDeltaSeconds;
 
         // Validate speed is reasonable - cap at MAX_REASONABLE_SPEED_MPS (250 km/h)
@@ -196,6 +205,15 @@ export function useSmartTracking(isTracking: boolean) {
         if (calculatedSpeedMps < 0 || calculatedSpeedMps > MAX_REASONABLE_SPEED_MPS) {
           calculatedSpeedMps = 0;
         }
+
+        // Additional validation: if distance moved is very small but time is long,
+        // we're probably stationary and the "movement" is just GPS jitter
+        if (distanceMeters < 5 && timeDeltaSeconds > 5) {
+          calculatedSpeedMps = 0;
+        }
+      } else if (hasEnoughTime && !hasEnoughDistance) {
+        // Haven't moved enough - probably stationary with GPS jitter
+        calculatedSpeedMps = 0;
       }
     }
 
@@ -219,8 +237,8 @@ export function useSmartTracking(isTracking: boolean) {
       } else {
         // Check if we've been stationary for >5 seconds
         const stationaryDuration = now - stationaryStartTimeRef.current;
-        if (stationaryDuration >= DWELL_THRESHOLD_MS && !isDwelling) {
-          setIsDwelling(true);
+        if (stationaryDuration >= DWELL_THRESHOLD_MS && !isDwellingRef.current) {
+          isDwellingRef.current = true;
         }
       }
     } else {
@@ -228,8 +246,8 @@ export function useSmartTracking(isTracking: boolean) {
       if (stationaryStartTimeRef.current !== null) {
         stationaryStartTimeRef.current = null;
       }
-      if (isDwelling) {
-        setIsDwelling(false);
+      if (isDwellingRef.current) {
+        isDwellingRef.current = false;
       }
     }
 
@@ -238,7 +256,7 @@ export function useSmartTracking(isTracking: boolean) {
     const filteredSpeed = finalSpeedMps < STATIONARY_SPEED_THRESHOLD ? 0 : finalSpeedMps;
 
     // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
-    const preSmoothedSpeed = isDwelling ? 0 : filteredSpeed;
+    const preSmoothedSpeed = isDwellingRef.current ? 0 : filteredSpeed;
 
     // Apply exponential smoothing to speed for smooth UI display
     // This prevents jarring speed jumps between readings
@@ -248,8 +266,13 @@ export function useSmartTracking(isTracking: boolean) {
       displaySpeedMps = smoothedSpeedRef.current * 0.3; // Decay faster
       if (displaySpeedMps < 0.5) displaySpeedMps = 0;
     } else {
-      // Smoothly transition when moving
-      displaySpeedMps = smoothedSpeedRef.current + SPEED_SMOOTHING_FACTOR * (preSmoothedSpeed - smoothedSpeedRef.current);
+      // IMPROVED: Use stronger smoothing at low speeds to prevent jitter
+      // At low speeds, GPS accuracy issues cause more relative error
+      const smoothingFactor = preSmoothedSpeed < LOW_SPEED_THRESHOLD_MPS
+        ? LOW_SPEED_EXTRA_SMOOTHING  // More aggressive smoothing at low speeds
+        : SPEED_SMOOTHING_FACTOR;    // Normal smoothing at higher speeds
+
+      displaySpeedMps = smoothedSpeedRef.current + smoothingFactor * (preSmoothedSpeed - smoothedSpeedRef.current);
     }
     smoothedSpeedRef.current = displaySpeedMps;
 
@@ -297,7 +320,7 @@ export function useSmartTracking(isTracking: boolean) {
 
     // 3. Moving Time Calculation
     // Only count moving time when NOT dwelling (using filteredSpeed, not displaySpeed)
-    if (filteredSpeed > 0 && !isDwelling) {
+    if (filteredSpeed > 0 && !isDwellingRef.current) {
       if (!isMovingRef.current) {
         isMovingRef.current = true;
         lastMovementTimeRef.current = now;
@@ -312,7 +335,7 @@ export function useSmartTracking(isTracking: boolean) {
 
     // 4. Buffering
     // Only buffer if we have moved (not dwelling) - this ensures Roads API gets accurate path
-    if (filteredSpeed > 0 && !isDwelling) {
+    if (filteredSpeed > 0 && !isDwellingRef.current) {
       bufferRef.current.push(smartLoc);
     }
 
@@ -324,11 +347,39 @@ export function useSmartTracking(isTracking: boolean) {
       flushBufferToRoadsAPI();
     }
 
-  }, [flushBufferToRoadsAPI, isDwelling]);
+  }, [flushBufferToRoadsAPI]);
+
+  // Track previous isTracking state to detect new journey starts
+  const prevIsTrackingRef = useRef<boolean>(false);
 
   // Start/Stop Tracking
   useEffect(() => {
     if (isTracking) {
+      // CRITICAL: Reset all tracking state when starting a NEW journey
+      // This prevents distance/stats from carrying over from previous journey
+      if (!prevIsTrackingRef.current) {
+        console.log('[SmartTracking] New journey detected - resetting all tracking state');
+        setOfficialDistance(0);
+        setMovingTime(0);
+        setMaxSpeed(0);
+        setOfficialSnappedPath([]);
+        setLiveRawLocation(null);
+        isDwellingRef.current = false;
+
+        // Reset all refs
+        bufferRef.current = [];
+        lastFlushTimeRef.current = Date.now();
+        lastLocationRef.current = null;
+        isMovingRef.current = false;
+        lastMovementTimeRef.current = 0;
+        stationaryStartTimeRef.current = null;
+        smoothedPositionRef.current = null;
+        smoothedSpeedRef.current = 0;
+        highSpeedSamplesRef.current = [];
+        recentPointsRef.current = [];
+      }
+      prevIsTrackingRef.current = true;
+
       const start = async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
@@ -347,6 +398,7 @@ export function useSmartTracking(isTracking: boolean) {
       };
       start();
     } else {
+      prevIsTrackingRef.current = false;
       // Stop tracking
       if (subscriptionRef.current) {
         subscriptionRef.current.remove();

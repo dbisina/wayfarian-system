@@ -307,6 +307,9 @@ export interface BackgroundTrackingOptions {
     destinationLatitude?: number;
     destinationLongitude?: number;
     estimatedTotalDistance?: number;
+    // CRITICAL: Pass startTime from foreground to ensure timer sync
+    // This fixes Android issue where timer starts at wrong value
+    startTime?: number;
 }
 
 export async function startBackgroundTracking(
@@ -327,9 +330,12 @@ export async function startBackgroundTracking(
         });
 
         // Create initial persisted state with destination info
+        // CRITICAL: Use passed startTime for timer sync between foreground and background
+        // This ensures Android timer doesn't start at wrong value
+        const syncedStartTime = options?.startTime || Date.now();
         const initialState: PersistedJourneyState = {
             journeyId,
-            startTime: Date.now(),
+            startTime: syncedStartTime,
             totalDistance: 0,
             movingTime: 0,
             topSpeed: 0,

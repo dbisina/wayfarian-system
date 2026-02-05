@@ -3,9 +3,11 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function AuthLayout() {
-  const { hasCompletedOnboarding, loading } = useAuth();
+  const { hasCompletedOnboarding, loading, isInitializing } = useAuth();
 
-  if (loading) {
+  // Wait for both loading AND initialization to complete
+  // isInitializing includes onboarding status check from AsyncStorage
+  if (loading || isInitializing) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />

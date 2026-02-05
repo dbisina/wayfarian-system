@@ -277,12 +277,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Sync backend user data
   const syncUserData = useCallback(async (firebaseUser: FirebaseUser) => {
+    // FIX: Check and set synchronously to prevent race condition
+    // If another sync is in progress, wait for it
     if (syncInFlightRef.current) {
+      console.log('[AuthContext] syncUserData: waiting for in-flight sync');
       await syncInFlightRef.current;
       return;
     }
 
-    const syncPromise = (async () => {
+    // Create a deferred promise that we set synchronously BEFORE any async work
+    // This prevents the race condition where two calls both see null
+    let resolveSync: () => void;
+    const syncPromise = new Promise<void>((resolve) => {
+      resolveSync = resolve;
+    });
+    syncInFlightRef.current = syncPromise;
+
+    const executeSync = (async () => {
       const normalizeUser = (payload: any): User | null => {
         if (!payload) {
           console.warn('[AuthContext] normalizeUser: payload is empty');
@@ -406,13 +417,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUserContext(srvUser);
       
       // Schedule token refresh in background (non-blocking)
-      scheduleTokenRefresh(firebaseUser).catch(() => {});
+      scheduleTokenRefresh(firebaseUser).catch((err) => {
+        console.warn('[AuthContext] Token refresh scheduling failed:', err);
+      });
     })();
 
-    syncInFlightRef.current = syncPromise;
-
     try {
-      await syncPromise;
+      await executeSync;
     } catch (error: any) {
       const existingUser = currentUserRef.current;
       const message = String(error?.message || '');
@@ -445,6 +456,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           : (message || 'Failed to sync user data')
       );
     } finally {
+      // Resolve the deferred promise and clear the ref
+      resolveSync!();
       syncInFlightRef.current = null;
     }
   }, [setUserContext, scheduleTokenRefresh, clearTokenRefreshTimer]);

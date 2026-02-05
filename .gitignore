@@ -71,3 +71,4 @@ coverage/
 
 # Google service files (sensitive credentials)
 
+/.claude

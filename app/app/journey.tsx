@@ -63,6 +63,7 @@ export default function JourneyScreen(): React.JSX.Element {
     routePoints,
     startJourney,
     resumeJourney,
+    resumeActiveJourney,
     endJourney,
     clearStuckJourney,
     addPhoto,
@@ -149,6 +150,50 @@ export default function JourneyScreen(): React.JSX.Element {
     // Load once when arriving with param
     loadGroupMembers(gid).catch(() => {});
   }, [paramGroupId, loadGroupMembers]);
+
+  // Handle scheduled journey start via activeJourneyId param
+  // This is triggered when user starts a scheduled journey from future-rides screen
+  // The journey has already been started (status changed to ACTIVE) via /journey/{id}/start
+  // We just need to set up client-side tracking for it
+  const scheduledJourneyInitRef = useRef<boolean>(false);
+  useEffect(() => {
+    const initScheduledJourney = async () => {
+      // Only process if we have an activeJourneyId and haven't already initialized
+      if (!activeJourneyId || typeof activeJourneyId !== 'string' || scheduledJourneyInitRef.current) {
+        return;
+      }
+
+      // Skip if we already have an active journey that matches
+      if (currentJourney?.id === activeJourneyId && isTracking) {
+        console.log('[Journey] Already tracking this journey:', activeJourneyId);
+        return;
+      }
+
+      console.log('[Journey] Initializing scheduled journey tracking:', activeJourneyId);
+      scheduledJourneyInitRef.current = true;
+      setIsStartBusy(true);
+
+      try {
+        // Use resumeActiveJourney to set up tracking for the existing ACTIVE journey
+        // This properly fetches the journey and starts client-side tracking
+        const success = await resumeActiveJourney(activeJourneyId);
+
+        if (!success) {
+          console.warn('[Journey] Failed to resume tracking for scheduled journey');
+          Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
+        } else {
+          console.log('[Journey] Successfully started tracking scheduled journey');
+        }
+      } catch (error) {
+        console.error('[Journey] Error initializing scheduled journey:', error);
+        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
+      } finally {
+        setIsStartBusy(false);
+      }
+    };
+
+    initScheduledJourney();
+  }, [activeJourneyId, currentJourney?.id, isTracking, resumeActiveJourney, t]);
 
   // Initialize map with current location if no region set
   useEffect(() => {
