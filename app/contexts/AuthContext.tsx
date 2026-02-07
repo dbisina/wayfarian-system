@@ -30,6 +30,7 @@ import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, setAuthToken, removeAuthToken } from '../services/api';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as FirebaseAuthNS from 'firebase/auth';
+import { getBoolSync, setBoolSync } from '../services/storage';
 import { setUser as setSentryUser, clearUser as clearSentryUser, captureException } from '../services/sentry';
 
 if (typeof globalThis.Buffer === 'undefined') {
@@ -175,6 +176,9 @@ interface AuthProviderProps {
 const ONBOARDING_KEY = '@wayfarian:onboarding_completed';
 const PROFILE_SETUP_KEY = '@wayfarian:profile_setup_completed';
 const USER_DATA_KEY = '@wayfarian:user_data';
+// MMKV keys for synchronous cold-start reads (eliminates onboarding flash)
+const MMKV_AUTH_KEY = 'wayfarian:is_authenticated';
+const MMKV_ONBOARDING_KEY = 'wayfarian:onboarding_completed';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setRawUser] = useState<User | null>(null);
@@ -193,8 +197,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  // Initialize from MMKV (synchronous) so first render already has correct auth state
+  // This prevents the onboarding page from flashing on cold start for authenticated users
+  const [isAuthenticated, setIsAuthenticated] = useState(() => getBoolSync(MMKV_AUTH_KEY, false));
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(() => getBoolSync(MMKV_ONBOARDING_KEY, false));
   const [hasCompletedProfileSetup, setHasCompletedProfileSetup] = useState(true); // Default true - only false for new signups
   const [isNewSignUp, setIsNewSignUp] = useState(false);
   const [onboardingStatusChecked, setOnboardingStatusChecked] = useState(false);
@@ -203,6 +209,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const tokenRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const currentUserRef = useRef<User | null>(null);
+
+  // Sync auth/onboarding state to MMKV for instant cold-start reads
+  // This eliminates the onboarding page flash for already-authenticated users
+  useEffect(() => { setBoolSync(MMKV_AUTH_KEY, isAuthenticated); }, [isAuthenticated]);
+  useEffect(() => { setBoolSync(MMKV_ONBOARDING_KEY, hasCompletedOnboarding); }, [hasCompletedOnboarding]);
 
   const clearTokenRefreshTimer = useCallback(() => {
     if (tokenRefreshTimeoutRef.current) {

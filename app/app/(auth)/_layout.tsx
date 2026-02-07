@@ -1,9 +1,33 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEffect, useRef } from 'react';
 
 export default function AuthLayout() {
   const { hasCompletedOnboarding, loading, isInitializing } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+  const hasNavigatedRef = useRef(false);
+
+  // Navigate away from onboarding if user has completed it
+  // initialRouteName only works on first mount, so we need useEffect for subsequent state changes
+  useEffect(() => {
+    if (loading || isInitializing) return;
+
+    const currentScreen = segments[segments.length - 1] as any;
+    const isOnOnboardingScreen = currentScreen === 'index' || currentScreen === 'step2' || currentScreen === 'step3';
+
+    if (hasCompletedOnboarding && isOnOnboardingScreen && !hasNavigatedRef.current) {
+      console.log('[AuthLayout] User completed onboarding but on onboarding screen, redirecting to login');
+      hasNavigatedRef.current = true;
+      router.replace('/(auth)/login');
+    }
+  }, [hasCompletedOnboarding, segments, router, loading, isInitializing]);
+
+  // Reset navigation flag when onboarding status changes
+  useEffect(() => {
+    hasNavigatedRef.current = false;
+  }, [hasCompletedOnboarding]);
 
   // Wait for both loading AND initialization to complete
   // isInitializing includes onboarding status check from AsyncStorage
@@ -14,9 +38,6 @@ export default function AuthLayout() {
       </View>
     );
   }
-
-  // Note: Root _layout.tsx handles the auth → tabs switch
-  // so we don't need to redirect here (that caused snap-back flicker)
 
   const initialRouteName = hasCompletedOnboarding ? 'login' : 'index';
 
@@ -31,4 +52,3 @@ export default function AuthLayout() {
     </Stack>
   );
 }
-

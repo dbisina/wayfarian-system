@@ -12,9 +12,10 @@ import GroupCard from '../components/ui/GroupCard';
 interface GroupsScreenProps {
   onTabPress?: (tab: string) => void;
   onCreateGroup?: () => void;
+  onGroupDetail?: (groupId: string) => void;
 }
 
-const GroupsScreen = ({onTabPress, onCreateGroup, onGroupDetail}: GroupsScreenProps): JSX.Element => {
+const GroupsScreen = ({onTabPress, onCreateGroup, onGroupDetail}: GroupsScreenProps): React.JSX.Element => {
   const myGroups = [
     {
       id: '1',

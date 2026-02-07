@@ -10,22 +10,13 @@ import notifee, {
     EventType,
 } from '@notifee/react-native';
 
-// Conditionally import expo-live-activity for iOS
-let LiveActivity: any = null;
-if (Platform.OS === 'ios') {
-    try {
-        LiveActivity = require('expo-live-activity');
-    } catch (e) {
-        console.warn('[LiveNotification] expo-live-activity not available');
-    }
-}
+import * as ActivityController from '../modules/activity-controller';
 
 // Channel ID for journey tracking
 const CHANNEL_ID = 'journey-tracking';
 const NOTIFICATION_ID = 'journey-live';
 
-// Track the current iOS Live Activity ID
-let currentActivityId: string | null = null;
+
 
 // Journey data interface for notifications
 export interface JourneyNotificationData {
@@ -167,18 +158,18 @@ export async function dismissJourneyNotification(): Promise<void> {
     }
 }
 
-// iOS Live Activity implementation using expo-live-activity
+// iOS Live Activity implementation using local ActivityController module
 async function updateIOSLiveActivity(data: JourneyNotificationData): Promise<void> {
-    if (!LiveActivity) {
-        console.log('[LiveNotification] expo-live-activity not available');
-        return;
-    }
-
     try {
+        // Check if activities are enabled/supported
+        if (!ActivityController.areLiveActivitiesEnabled()) {
+            return;
+        }
+
         const elapsed = Math.floor((Date.now() - data.startTime) / 1000);
 
         // Content state for the Live Activity (dynamic, updatable data)
-        const contentState = {
+        const contentState: ActivityController.JourneyContentState = {
             elapsedTime: elapsed,
             totalDistance: data.totalDistance,
             currentSpeed: data.currentSpeed,
@@ -186,21 +177,26 @@ async function updateIOSLiveActivity(data: JourneyNotificationData): Promise<voi
             distanceRemaining: data.distanceRemaining || 0,
         };
 
-        if (currentActivityId) {
+        const isRunning = ActivityController.isLiveActivityRunning();
+
+        if (isRunning) {
             // Update existing Live Activity
-            await LiveActivity.updateActivity(currentActivityId, contentState);
-            console.log('[LiveNotification] iOS Live Activity updated:', currentActivityId);
+            await ActivityController.updateLiveActivity(contentState);
+            console.log('[LiveNotification] iOS Live Activity updated');
         } else {
             // Start new Live Activity
-            const attributes = {
+            const attributes: ActivityController.JourneyAttributes = {
                 journeyId: data.journeyId,
                 startLocationName: data.startLocationName || 'Start',
                 destinationName: data.destinationName || 'Destination',
-                startTime: new Date(data.startTime).toISOString(),
+                startTime: data.startTime, // timestamp in ms
             };
 
-            currentActivityId = await LiveActivity.startActivity(attributes, contentState);
-            console.log('[LiveNotification] iOS Live Activity started:', currentActivityId);
+            await ActivityController.startLiveActivity({
+                ...attributes,
+                contentState,
+            });
+            console.log('[LiveNotification] iOS Live Activity started');
         }
     } catch (error) {
         console.error('[LiveNotification] iOS Live Activity error:', error);
@@ -208,18 +204,13 @@ async function updateIOSLiveActivity(data: JourneyNotificationData): Promise<voi
 }
 
 async function endIOSLiveActivity(): Promise<void> {
-    if (!LiveActivity || !currentActivityId) {
-        console.log('[LiveNotification] No iOS Live Activity to end');
-        return;
-    }
-
     try {
-        await LiveActivity.endActivity(currentActivityId);
-        console.log('[LiveNotification] iOS Live Activity ended:', currentActivityId);
-        currentActivityId = null;
+        if (ActivityController.isLiveActivityRunning()) {
+            await ActivityController.stopLiveActivity();
+            console.log('[LiveNotification] iOS Live Activity ended');
+        }
     } catch (error) {
         console.error('[LiveNotification] Error ending iOS Live Activity:', error);
-        currentActivityId = null;
     }
 }
 

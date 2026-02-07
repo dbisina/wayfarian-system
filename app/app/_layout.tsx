@@ -22,9 +22,13 @@ import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
 import { initI18n } from '../i18n';
 import { parseNotificationData } from '../services/notificationService';
+import OfflineQueueService from '../services/offlineQueueService';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
+
+// Initialize offline queue for network resilience
+OfflineQueueService.initialize();
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -42,7 +46,7 @@ export const unstable_settings = {
 
 function RootLayoutContent() {
   const colorScheme = useColorScheme();
-  const { isAuthenticated, isInitializing, hasCompletedProfileSetup, isNewSignUp } = useAuth();
+  const { isAuthenticated, isInitializing, hasCompletedProfileSetup, isNewSignUp, hasCompletedOnboarding } = useAuth();
   const [navigationReady, setNavigationReady] = useState(false);
   const [isI18nReady, setIsI18nReady] = useState(false);
   const router = useRouter(); // Must be called before any early returns

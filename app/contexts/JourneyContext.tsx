@@ -37,6 +37,7 @@ import {
   useJourneyUploadQueue,
 } from '../hooks/useJourneyState';
 import BackgroundTaskService from '../services/backgroundTaskService';
+import LiveNotificationService, { JourneyNotificationData } from '../services/liveNotificationService';
 import OfflineQueueService from '../services/offlineQueueService';
 
 export type { GroupMember, JourneyData } from '../store/slices/journeySlice';
@@ -259,6 +260,64 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     dispatch(setRoutePoints(newRoutePoints));
 
   }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, officialSnappedPath, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
+
+  // Foreground → Live Activity / Notification sync
+  // This ensures the iOS Live Activity and Android notification get accurate data
+  // from the foreground smart tracking (speed, distance, time, progress, addresses)
+  const liveNotificationThrottleRef = useRef<number>(0);
+  useEffect(() => {
+    if (!journeyState.isTracking || !journeyState.currentJourney) return;
+
+    // Throttle updates to every 3 seconds to avoid excessive native bridge calls
+    const now = Date.now();
+    if (now - liveNotificationThrottleRef.current < 3000) return;
+    liveNotificationThrottleRef.current = now;
+
+    const journey = journeyState.currentJourney;
+    const currentStartTime = journeyState.myInstance?.startTime
+      ? new Date(journeyState.myInstance.startTime).getTime()
+      : startTimeRef.current || now;
+
+    // Calculate progress based on distance to destination
+    let progress = 0;
+    let distanceRemaining: number | undefined;
+    if (journey.endLocation && liveRawLocation) {
+      const R = 6371;
+      const dLat = (journey.endLocation.latitude - liveRawLocation.latitude) * Math.PI / 180;
+      const dLon = (journey.endLocation.longitude - liveRawLocation.longitude) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(liveRawLocation.latitude * Math.PI / 180) *
+        Math.cos(journey.endLocation.latitude * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+      distanceRemaining = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      // Estimate total distance as distance traveled + remaining
+      const estimatedTotal = officialDistance + distanceRemaining;
+      if (estimatedTotal > 0) {
+        progress = Math.min(officialDistance / estimatedTotal, 0.99);
+      }
+    }
+
+    const notificationData: JourneyNotificationData = {
+      journeyId: journey.id,
+      startTime: currentStartTime,
+      totalDistance: officialDistance,
+      currentSpeed: derivedStats.currentSpeed, // km/h from smart tracking
+      avgSpeed: avgSpeed, // km/h
+      topSpeed: maxSpeed, // km/h
+      movingTime: movingTime,
+      progress,
+      distanceRemaining,
+      startLocationName: journey.startLocation?.address || 'Start',
+      destinationName: journey.endLocation?.address || 'Destination',
+      currentLatitude: liveRawLocation?.latitude,
+      currentLongitude: liveRawLocation?.longitude,
+    };
+
+    LiveNotificationService.updateNotification(notificationData).catch(e => {
+      console.warn('[JourneyContext] Live notification update failed:', e);
+    });
+  }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
 
   // Backend & Socket Updates
   useEffect(() => {
@@ -699,9 +758,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // Get current location for start point
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') throw new Error('Location permission denied');
-      
+
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-      
+
       const response = await journeyAPI.startJourney({
         vehicle: journeyData.vehicle || 'car',
         title: journeyData.title || 'My Journey',
@@ -715,8 +774,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }
       const journeyId = response.journey.id;
 
-      // Store startTime from API response for timer
-      const journeyStartTime = response.journey?.startTime || new Date().toISOString();
+      // FIX: Capture start time AFTER all async setup (permissions, GPS, API call)
+      // This ensures the timer starts from ~0 when the journey screen appears,
+      // rather than showing ~20s elapsed from GPS + API call overhead
+      const startTimestamp = Date.now();
       
       const newJourney: JourneyData = {
         id: journeyId,
@@ -736,9 +797,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(setCurrentJourney(newJourney));
       dispatch(setTracking(true));
       dispatch(setJourneyMinimized(false));
-      
+
       // Set startTime for timer and persist for app restart recovery
-      const startTimestamp = new Date(journeyStartTime).getTime();
+      // Using clientStartTime captured at function start for accuracy
       startTimeRef.current = startTimestamp;
       await persistStartTime(startTimestamp);
 
@@ -746,10 +807,27 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         await ensureGroupJourneySocket(journeyData.groupId, dispatch);
       }
 
+      // Calculate estimated total distance if we have a destination
+      let estimatedTotalDistance: number | undefined;
+      if (journeyData.endLocation) {
+        const R = 6371;
+        const dLat = (journeyData.endLocation.latitude - location.coords.latitude) * Math.PI / 180;
+        const dLon = (journeyData.endLocation.longitude - location.coords.longitude) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos(location.coords.latitude * Math.PI / 180) *
+          Math.cos(journeyData.endLocation.latitude * Math.PI / 180) *
+          Math.sin(dLon / 2) ** 2;
+        estimatedTotalDistance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
       // Start persistent background tracking notification
-      // CRITICAL: Pass startTime to sync foreground and background timers (fixes Android 1:30 issue)
+      // Pass all location info for accurate Live Activity display
       await BackgroundTaskService.startBackgroundTracking(journeyId, {
-        startLocationName: 'Current Location', // Could reverse geocode here if we had address
+        startLocationName: journeyData.startLocation?.address || newJourney.startLocation?.address || 'Start',
+        destinationName: journeyData.endLocation?.address,
+        destinationLatitude: journeyData.endLocation?.latitude,
+        destinationLongitude: journeyData.endLocation?.longitude,
+        estimatedTotalDistance,
         startTime: startTimestamp,
       });
 
@@ -862,11 +940,22 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(setTracking(true));
       dispatch(setJourneyMinimized(false));
 
-      // Set startTime for timer from the server's journey start time
-      const journeyStartTime = journey.startTime || new Date().toISOString();
-      const startTimestamp = new Date(journeyStartTime).getTime();
+      // FIX: For scheduled journeys, use CURRENT time when user actually starts tracking
+      // The server's startTime might be when the journey was scheduled, not when tracking begins
+      // This fixes the "Android starts at 1:30" issue where timer shows elapsed time since scheduled start
+      const startTimestamp = Date.now();
       startTimeRef.current = startTimestamp;
       await persistStartTime(startTimestamp);
+
+      // Update the server with the actual tracking start time
+      try {
+        await journeyAPI.updateJourney(journeyId, {
+          // Signal to server that tracking has actually started now
+          timestamp: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('[JourneyContext] Failed to update journey start time on server:', e);
+      }
 
       if (journey.groupId) {
         await ensureGroupJourneySocket(journey.groupId, dispatch);

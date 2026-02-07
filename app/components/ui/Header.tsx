@@ -6,22 +6,33 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 interface HeaderProps {
-  onSettingsPress?: () => void;
+  onBackPress?: () => void;
   title?: string;
 }
 
-const Header = ({ onSettingsPress, title = 'Groups' }: HeaderProps): React.JSX.Element => {
+const Header = ({ onBackPress, title = 'Groups' }: HeaderProps): React.JSX.Element => {
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (onBackPress) {
+      onBackPress();
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.avatar} />
+      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <MaterialIcons name="arrow-back" size={24} color="#1D1B20" />
+      </TouchableOpacity>
       <View style={styles.titleContainer}>
         <Text style={styles.title}>{title}</Text>
       </View>
-      <TouchableOpacity style={styles.settingsButton} onPress={onSettingsPress}>
-        <MaterialIcons name="settings" size={20.1} color="#1D1B20" />
-      </TouchableOpacity>
+      <View style={styles.spacer} />
     </View>
   );
 };
@@ -32,19 +43,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 27,
+    marginTop: 16,
     paddingBottom: 11,
     backgroundColor: '#FFFFFF',
   },
-  avatar: {
+  backButton: {
     width: 34,
     height: 34,
-    borderRadius: 17,
-    backgroundColor: '#D9D9D9',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   titleContainer: {
     flex: 1,
     alignItems: 'center',
-    paddingRight: 48,
   },
   title: {
     fontSize: 18,
@@ -53,13 +65,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     lineHeight: 23,
   },
-  settingsButton: {
+  spacer: {
     width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserData } from '../../hooks/useUserData';
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
@@ -30,6 +31,13 @@ export default function HomeScreen(): React.JSX.Element {
   const { dashboardData, achievements, loading, statsLoading, refreshData } = useUserData();
   const { convertDistance, convertSpeed } = useSettings();
   const { t } = useTranslation();
+
+  // Refresh data when screen gains focus (fixes XP not updating)
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
   const normalizeDistance = (value: number) => {
     if (!value) return 0;
@@ -180,41 +188,47 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {/* XP Progress Section */}
+        {/* Level Progress Section (KM-based) */}
         <View style={styles.xpSection}>
-          <View style={styles.xpHeader}>
-            <Text style={styles.xpTitle}>
-              {t('home.level')} {dashboardData?.user?.level || 1}
-            </Text>
-            <Text style={styles.xpValue}>
-              {dashboardData?.user?.xp || 0} {t('home.xp')}
-            </Text>
-          </View>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarBackground}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width: `${Math.min(
-                      100,
-                      (dashboardData?.user?.xp || 0) % 100
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-          <Text style={styles.nextBadge}>
-            {loading ? (
-              <SkeletonLine width={160} height={12} />
-            ) : (
-              t('home.xpToNextLevel', {
-                xp: 100 - ((dashboardData?.user?.xp || 0) % 100),
-                level: (dashboardData?.user?.level || 1) + 1
-              })
-            )}
-          </Text>
+          {(() => {
+            const totalKm = normalizeDistance(dashboardData?.user?.totalDistance || 0);
+            const kmLevel = Math.max(1, Math.floor(totalKm / 100) + 1);
+            const currentThreshold = (kmLevel - 1) * 100;
+            const nextThreshold = kmLevel * 100;
+            const progressKm = totalKm - currentThreshold;
+            const progressPercent = Math.min(100, (progressKm / (nextThreshold - currentThreshold)) * 100);
+            const kmRemaining = Math.max(0, nextThreshold - totalKm);
+
+            return (
+              <>
+                <View style={styles.xpHeader}>
+                  <Text style={styles.xpTitle}>
+                    {t('home.level')} {kmLevel}
+                  </Text>
+                  <Text style={styles.xpValue}>
+                    {Math.round(totalKm)} km
+                  </Text>
+                </View>
+                <View style={styles.progressBarContainer}>
+                  <View style={styles.progressBarBackground}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        { width: `${progressPercent}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.nextBadge}>
+                  {loading ? (
+                    <SkeletonLine width={160} height={12} />
+                  ) : (
+                    `${Math.round(kmRemaining)} km to Level ${kmLevel + 1}`
+                  )}
+                </Text>
+              </>
+            );
+          })()}
         </View>
 
         {/* Achievements Section */}

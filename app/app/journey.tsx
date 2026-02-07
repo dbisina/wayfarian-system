@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -76,6 +77,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const stats = useJourneyStats();
   const groupMembers = useJourneyMembers();
   const { convertDistance, convertSpeed, mapType } = useSettings();
+  const insets = useSafeAreaInsets();
 
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<{
@@ -865,8 +867,8 @@ export default function JourneyScreen(): React.JSX.Element {
             <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} />
           )}
 
-          {/* Header */}
-          <View style={styles.header}>
+          {/* Header - with SafeArea top padding */}
+          <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
             <View style={styles.headerLeft}>
               <TouchableOpacity onPress={handleMinimize}>
                 <Image
@@ -886,17 +888,12 @@ export default function JourneyScreen(): React.JSX.Element {
               </TouchableOpacity>
             </View>
             <View style={styles.headerRight}>
-              <Image
-                source={require("../assets/images/2025-09-26/WTtXWrq4i5.png")}
-                style={styles.profileImage}
-              />
-
-              <TouchableOpacity onPress={handleTakePhoto}>
+            
+              <TouchableOpacity onPress={handleTakePhoto} style={styles.cameraButton}>
                 <MaterialIcons
                   name="camera-alt"
-                  size={24}
+                  size={22}
                   color="#000"
-                  style={styles.cameraIcon}
                 />
               </TouchableOpacity>
             </View>
@@ -1115,7 +1112,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingTop: 18,
+    // paddingTop is now set dynamically with SafeArea insets
     paddingBottom: 8,
   },
   headerLeft: {
@@ -1166,10 +1163,20 @@ const styles = StyleSheet.create({
     right: 11,
     top: 2.5,
   },
-  cameraIcon: {
-    position: "absolute",
-    right: 11,
-    top: Platform.OS === "android" ? -10 : 0,
+  cameraButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+    // Shadow for visibility
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
   },
   memberMarker: {
     position: "relative",

@@ -102,57 +102,99 @@ struct LockScreenView: View {
     let context: ActivityViewContext<JourneyWidgetAttributes>
     
     var body: some View {
-        VStack(spacing: 12) {
-            // Header with origin → destination
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(context.attributes.startLocationName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(context.attributes.destinationName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+        VStack(spacing: 14) {
+            // Header with origin → destination and speed
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Start address - two lines, small font
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 3)
+                        Text(context.attributes.startLocationName)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    
+                    // Destination address - two lines, slightly larger
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                            .padding(.top, 1)
+                        Text(context.attributes.destinationName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Spacer()
+                
+                Spacer(minLength: 12)
+                
                 // Current speed
-                VStack(alignment: .trailing) {
+                VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Int(context.state.currentSpeed))")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
                     Text("km/h")
-                        .font(.caption2)
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
             }
             
-            // Progress bar with markers
-            JourneyProgressView(progress: context.state.progress)
+            // Progress bar with car icon and address labels
+            VStack(spacing: 6) {
+                JourneyProgressView(progress: context.state.progress)
+                    .padding(.horizontal, 4)
+                
+                // Address labels under progress bar
+                HStack {
+                    Text(shortenName(context.attributes.startLocationName))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(shortenName(context.attributes.destinationName))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
             
             // Stats row
             HStack {
                 // Elapsed time
                 Label(formatDuration(context.state.elapsedTime), systemImage: "timer")
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .medium))
                 
                 Spacer()
                 
                 // Distance traveled
                 Label(formatDistance(context.state.totalDistance), systemImage: "road.lanes")
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .medium))
                 
                 Spacer()
                 
                 // Distance remaining
                 if let remaining = context.state.distanceRemaining, remaining > 0 {
                     Label("\(String(format: "%.1f", remaining)) km", systemImage: "flag.checkered")
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
             }
         }
-        .padding()
-        .activityBackgroundTint(.black.opacity(0.8))
+        .padding(.horizontal, 15)
+        .padding(.vertical, 16)
+        .activityBackgroundTint(.black.opacity(0.85))
         .activitySystemActionForegroundColor(.white)
+    }
+    
+    private func shortenName(_ name: String) -> String {
+        if name.count <= 15 { return name }
+        let parts = name.components(separatedBy: ",")
+        let first = parts.first?.trimmingCharacters(in: .whitespaces) ?? name
+        if first.count <= 15 { return first }
+        return String(first.prefix(14)) + "…"
     }
     
     private func formatDistance(_ km: Double) -> String {
@@ -174,20 +216,23 @@ struct LockScreenView: View {
     }
 }
 
-// MARK: - Progress View with Markers
+// MARK: - Progress View with Car Icon
 struct JourneyProgressView: View {
     let progress: Double
     
     var body: some View {
         GeometryReader { geometry in
+            let trackWidth = geometry.size.width
+            let clampedProgress = min(max(progress, 0), 1.0)
+            
             ZStack(alignment: .leading) {
-                // Background track
-                RoundedRectangle(cornerRadius: 4)
+                // Background track (road-like)
+                RoundedRectangle(cornerRadius: 5)
                     .fill(Color.gray.opacity(0.3))
-                    .frame(height: 8)
+                    .frame(height: 10)
                 
                 // Progress fill
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 5)
                     .fill(
                         LinearGradient(
                             colors: [.orange, .orange.opacity(0.7)],
@@ -195,31 +240,33 @@ struct JourneyProgressView: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: geometry.size.width * CGFloat(min(progress, 1.0)), height: 8)
+                    .frame(width: trackWidth * CGFloat(clampedProgress), height: 10)
                 
-                // Start marker (black circle ring)
+                // Start marker (white circle)
                 Circle()
-                    .stroke(Color.black, lineWidth: 2)
-                    .frame(width: 12, height: 12)
-                    .background(Circle().fill(Color.white))
-                    .offset(x: -6)
+                    .fill(Color.white)
+                    .frame(width: 10, height: 10)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                    )
+                    .offset(x: -5)
                 
-                // Current position marker
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 14, height: 14)
-                    .shadow(color: .orange.opacity(0.5), radius: 4)
-                    .offset(x: geometry.size.width * CGFloat(min(progress, 1.0)) - 7)
+                // Car icon at current position
+                Image(systemName: "car.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.orange)
+                    .shadow(color: .orange.opacity(0.6), radius: 4)
+                    .offset(x: trackWidth * CGFloat(clampedProgress) - 10, y: -1)
                 
-                // End marker (orange circle ring)
-                Circle()
-                    .stroke(Color.orange, lineWidth: 2)
-                    .frame(width: 12, height: 12)
-                    .background(Circle().fill(Color.white))
-                    .offset(x: geometry.size.width - 6)
+                // End marker (flag)
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+                    .offset(x: trackWidth - 8)
             }
         }
-        .frame(height: 16)
+        .frame(height: 20)
     }
 }
 

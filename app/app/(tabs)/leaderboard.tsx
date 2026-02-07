@@ -62,10 +62,16 @@ export default function LeaderboardScreen(): React.JSX.Element {
 
   const currentData = activeTab === 'friends' ? friendsData : globalData;
 
+  const getKmLevel = (totalDistance: number) => {
+    const km = normalizeDistance(totalDistance || 0);
+    return Math.max(1, Math.floor(km / 100) + 1);
+  };
+
   const renderLeaderboardItem = (item: any, isCurrentUser = false) => {
     // Use photoURL if available, otherwise generate avatar with user's initials
     const displayName = item.displayName || item.name || t('leaderboard.user');
     const avatarUri = item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=128&background=F9A825&color=fff&bold=true&rounded=true`;
+    const userLevel = getKmLevel(item.totalDistance);
     
     return (
       <View key={item.id || 'current-user'} style={styles.leaderboardItem}>
@@ -74,10 +80,15 @@ export default function LeaderboardScreen(): React.JSX.Element {
           style={styles.avatar}
         />
         <View style={styles.userInfo}>
-          <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
-            {displayName}
-            {isCurrentUser && ` (${t('leaderboard.you')})`}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={[styles.userName, isCurrentUser && styles.currentUserName]} numberOfLines={1}>
+              {displayName}
+              {isCurrentUser && ` (${t('leaderboard.you')})`}
+            </Text>
+            <View style={styles.levelBadge}>
+              <Text style={styles.levelBadgeText}>Lv.{userLevel}</Text>
+            </View>
+          </View>
           <View style={styles.countryContainer}>
             {item.countryCode ? (
               <>
@@ -316,13 +327,31 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 16,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   userName: {
     fontFamily: 'Poppins',
     fontSize: 12,
     lineHeight: 18,
     color: '#000000',
     fontWeight: '400',
-    marginBottom: 4,
+    flexShrink: 1,
+  },
+  levelBadge: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  levelBadgeText: {
+    fontFamily: 'Poppins',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#6366F1',
   },
   currentUserName: {
     opacity: 0.6,

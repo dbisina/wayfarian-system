@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage, { isMMKVAvailable, migrateFromAsyncStorage } from '../services/storage';
 // NOTE: notificationService is imported dynamically below to avoid crash on startup
 
 const STORE_KEYS = {
@@ -37,11 +37,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
+        // Migrate from AsyncStorage to MMKV if available (one-time migration)
+        if (isMMKVAvailable()) {
+          await migrateFromAsyncStorage(Object.values(STORE_KEYS));
+        }
+
+        // Use fast storage (MMKV if available, AsyncStorage fallback)
         const [n, u, m, v] = await Promise.all([
-          AsyncStorage.getItem(STORE_KEYS.notifications),
-          AsyncStorage.getItem(STORE_KEYS.units),
-          AsyncStorage.getItem(STORE_KEYS.mapType),
-          AsyncStorage.getItem(STORE_KEYS.vehicle),
+          Storage.get(STORE_KEYS.notifications),
+          Storage.get(STORE_KEYS.units),
+          Storage.get(STORE_KEYS.mapType),
+          Storage.get(STORE_KEYS.vehicle),
         ]);
 
         // Determine if notifications should be enabled
@@ -71,7 +77,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setNotificationsEnabled = async (val: boolean) => {
     setNotificationsEnabledState(val);
     try {
-      await AsyncStorage.setItem(STORE_KEYS.notifications, val ? '1' : '0');
+      await Storage.set(STORE_KEYS.notifications, val ? '1' : '0');
       
       // Dynamically import to avoid crash on app startup
       const notificationService = await import('../services/notificationService');
@@ -89,17 +95,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const setUnits = async (val: Units) => {
     setUnitsState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.units, val); } catch (e) { console.warn('Failed to save units setting', e); }
+    try { await Storage.set(STORE_KEYS.units, val); } catch (e) { console.warn('Failed to save units setting', e); }
   };
 
   const setMapType = async (val: MapType) => {
     setMapTypeState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.mapType, val); } catch (e) { console.warn('Failed to save mapType setting', e); }
+    try { await Storage.set(STORE_KEYS.mapType, val); } catch (e) { console.warn('Failed to save mapType setting', e); }
   };
 
   const setVehicle = async (val: Vehicle) => {
     setVehicleState(val);
-    try { await AsyncStorage.setItem(STORE_KEYS.vehicle, val); } catch (e) { console.warn('Failed to save vehicle setting', e); }
+    try { await Storage.set(STORE_KEYS.vehicle, val); } catch (e) { console.warn('Failed to save vehicle setting', e); }
   };
 
   const convertDistance = (km: number): string => {

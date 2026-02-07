@@ -13,6 +13,12 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { userAPI, leaderboardAPI } from '../../services/api';
+
+// User XP data for consistent display with home page
+interface UserXpData {
+  xp: number;
+  level: number;
+}
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { useTranslation } from 'react-i18next';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
@@ -48,6 +54,7 @@ export default function RideLogScreen(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
   const [xpProgress, setXpProgress] = useState<number>(0);
+  const [userXp, setUserXp] = useState<UserXpData>({ xp: 0, level: 1 }); // Synced with home page
   const [nextBadge, setNextBadge] = useState<string>('');
   const [badges, setBadges] = useState<{ id: string; title: string; achievementId: string }[]>([]);
   const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
@@ -55,13 +62,23 @@ export default function RideLogScreen(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
 
   // Separate function to process and set data to state
-  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
+  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any, dashboardRes?: any) => {
     const position = positionRes?.position ?? positionRes?.rank ?? null;
     if (typeof position === 'number') setRank(position);
 
-    // XP Progress and next badge
-    const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
-    setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
+    // FIX: Use dashboard XP data to stay in sync with home page
+    // Both screens now use the same source of truth for XP
+    if (dashboardRes?.user) {
+      const xp = dashboardRes.user.xp || 0;
+      const level = dashboardRes.user.level || 1;
+      setUserXp({ xp, level });
+      // Calculate progress within current level (same formula as home page)
+      setXpProgress(xp % 100);
+    } else {
+      // Fallback to achievements progress if dashboard unavailable
+      const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
+      setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
+    }
 
     // Find next locked tier name as next badge
     let nextName = t('log.nextMilestone');
@@ -98,7 +115,7 @@ export default function RideLogScreen(): React.JSX.Element {
         const cached = await AsyncStorage.getItem(CACHE_KEY_LOG_DATA);
         if (cached) {
           const parsed = JSON.parse(cached);
-          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes);
+          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes, parsed.dashboardRes);
         }
       } catch (e) {
         console.warn('Failed to load log cache', e);
@@ -109,22 +126,24 @@ export default function RideLogScreen(): React.JSX.Element {
       if (!soloJourneys.length && !groupJourneys.length) {
          setLoading(true);
       }
-      
-      // 2. Fetch fresh data
-      const [positionRes, achievementsRes, historyRes] = await Promise.all([
+
+      // 2. Fetch fresh data (including dashboard for synced XP)
+      const [positionRes, achievementsRes, historyRes, dashboardRes] = await Promise.all([
         leaderboardAPI.getUserPosition(),
         userAPI.getAchievements(),
         userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
+        userAPI.getDashboard(), // FIX: Fetch dashboard to sync XP with home page
       ]);
 
       // 3. Update state with fresh data
-      processAndSetData(positionRes, achievementsRes, historyRes);
+      processAndSetData(positionRes, achievementsRes, historyRes, dashboardRes);
 
       // 4. Update cache
       AsyncStorage.setItem(CACHE_KEY_LOG_DATA, JSON.stringify({
         positionRes,
         achievementsRes,
         historyRes,
+        dashboardRes, // Include dashboard data in cache
         timestamp: Date.now()
       })).catch(e => console.warn('Failed to save log cache', e));
 

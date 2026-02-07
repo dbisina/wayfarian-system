@@ -3,7 +3,12 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from '../services/api';
+import OfflineQueueService from '../services/offlineQueueService';
+
+// Cache key for offline support
+const FUTURE_RIDES_CACHE_KEY = 'wayfarian_future_rides_cache';
 
 interface FutureRide {
   id: string;
@@ -24,7 +29,29 @@ export default function FutureRidesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const fetchRides = async () => {
+  const fetchRides = async (useCache = true) => {
+    // 1. Load from cache first for instant display (offline support)
+    if (useCache && !refreshing) {
+      try {
+        const cached = await AsyncStorage.getItem(FUTURE_RIDES_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setRides(parsed.rides || []);
+          console.log('[FutureRides] Loaded from cache:', parsed.rides?.length || 0, 'rides');
+        }
+      } catch (e) {
+        console.warn('[FutureRides] Failed to load cache:', e);
+      }
+    }
+
+    // 2. Check if online before fetching
+    if (!OfflineQueueService.isOnline()) {
+      console.log('[FutureRides] Offline - using cached data only');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       // Fetch both PLANNED and READY_TO_START journeys
       const [plannedResponse, readyResponse] = await Promise.all([
@@ -49,19 +76,36 @@ export default function FutureRidesScreen() {
           : 'Location TBD',
         creatorName: 'You',
         status: j.status,
+        // Store full journey data for offline starting
+        startLatitude: j.startLatitude,
+        startLongitude: j.startLongitude,
+        endLatitude: j.endLatitude,
+        endLongitude: j.endLongitude,
+        vehicle: j.vehicle,
+        notes: j.notes,
       }));
-      
+
       // Sort by date, with READY_TO_START first
       mappedRides.sort((a, b) => {
         if (a.status === 'READY_TO_START' && b.status !== 'READY_TO_START') return -1;
         if (a.status !== 'READY_TO_START' && b.status === 'READY_TO_START') return 1;
         return new Date(a.date).getTime() - new Date(b.date).getTime();
       });
-      
+
       setRides(mappedRides);
+
+      // 3. Cache the data for offline access
+      AsyncStorage.setItem(FUTURE_RIDES_CACHE_KEY, JSON.stringify({
+        rides: mappedRides,
+        timestamp: Date.now(),
+      })).catch(e => console.warn('[FutureRides] Failed to cache:', e));
+
     } catch (error: any) {
-      console.warn('Failed to fetch future rides', error);
-      Alert.alert('Error', 'Failed to load upcoming rides');
+      console.warn('[FutureRides] Failed to fetch:', error);
+      // Only show error if we have no cached data
+      if (rides.length === 0) {
+        Alert.alert('Error', 'Failed to load upcoming rides. Please check your connection.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

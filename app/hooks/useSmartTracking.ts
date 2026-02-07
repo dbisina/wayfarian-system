@@ -11,17 +11,19 @@ const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
 const BUFFER_SIZE = 10; // Flush every 10 points
 const FLUSH_INTERVAL_MS = 30000; // Or every 30 seconds
-const STATIONARY_SPEED_THRESHOLD = 1.5; // m/s (approx 5.4 km/h)
-const MIN_TIME_DELTA_FOR_SPEED_CALC = 2.0; // INCREASED: Minimum 2 seconds for accurate speed calculation (was 1.0)
-const MIN_DISTANCE_FOR_SPEED_CALC = 3.0; // NEW: Minimum 3 meters moved to calculate speed (prevents jitter spikes)
-const MAX_REASONABLE_SPEED_MPS = 69.4; // 250 km/h in m/s - filter extreme GPS jitter
-const MIN_ACCURACY_FOR_DISTANCE = 30; // Ignore GPS readings with accuracy worse than 30m
-const POSITION_SMOOTHING_FACTOR = 0.3; // Exponential smoothing for position
-const SPEED_SMOOTHING_FACTOR = 0.4; // Exponential smoothing for speed display (higher = more responsive)
-const SPEED_CALC_WINDOW_MS = 5000; // 5 second window for speed calculation
-const MAX_SPEED_SAMPLES_REQUIRED = 2; // Require 2 samples at high speed before updating max
-const LOW_SPEED_THRESHOLD_MPS = 3.0; // Speed below which we apply extra filtering (10.8 km/h)
-const LOW_SPEED_EXTRA_SMOOTHING = 0.2; // More aggressive smoothing at low speeds
+const STATIONARY_SPEED_THRESHOLD = 2.0; // m/s (approx 7.2 km/h) - INCREASED to better filter idle jitter
+const MIN_TIME_DELTA_FOR_SPEED_CALC = 3.0; // INCREASED: Minimum 3 seconds for accurate speed calculation
+const MIN_DISTANCE_FOR_SPEED_CALC = 5.0; // INCREASED: Minimum 5 meters moved to calculate speed (prevents jitter spikes)
+const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h in m/s - lowered to filter extreme GPS jitter
+const MAX_ACCELERATION_MPS2 = 8.0; // Maximum realistic acceleration (sports car ~0-100 in 3.5s = ~8 m/s²)
+const MIN_ACCURACY_FOR_DISTANCE = 25; // STRICTER: Ignore GPS readings with accuracy worse than 25m
+const POSITION_SMOOTHING_FACTOR = 0.25; // Slightly more smoothing for position
+const SPEED_SMOOTHING_FACTOR = 0.35; // Exponential smoothing for speed display (slightly less responsive to filter spikes)
+const SPEED_DECAY_FACTOR = 0.5; // FASTER decay when speed drops (was 0.3)
+const SPEED_CALC_WINDOW_MS = 4000; // REDUCED: 4 second window for more responsive speed calculation
+const MAX_SPEED_SAMPLES_REQUIRED = 3; // INCREASED: Require 3 samples at high speed before updating max
+const LOW_SPEED_THRESHOLD_MPS = 4.0; // INCREASED: Speed below which we apply extra filtering (14.4 km/h)
+const LOW_SPEED_EXTRA_SMOOTHING = 0.15; // Even more aggressive smoothing at low speeds
 
 // Calculate distance between two points (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -68,10 +70,14 @@ export function useSmartTracking(isTracking: boolean) {
   const isMovingRef = useRef<boolean>(false);
   const lastMovementTimeRef = useRef<number>(0);
 
-  // Dwell Detection: Track when stationary for >5 seconds
+  // Dwell Detection: Track when stationary for >3 seconds (reduced for faster idle detection)
   const stationaryStartTimeRef = useRef<number | null>(null);
-  const DWELL_THRESHOLD_MS = 5000; // 5 seconds
-  const DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
+  const DWELL_THRESHOLD_MS = 3000; // REDUCED: 3 seconds for faster idle detection
+  const DWELL_SPEED_THRESHOLD_MPS = 2.0; // INCREASED: 2.0 m/s (7.2 km/h) to catch more idle states
+
+  // Track previous speed for acceleration-based filtering
+  const previousSpeedRef = useRef<number>(0);
+  const previousSpeedTimeRef = useRef<number>(0);
   // FIX: Use ref instead of state for isDwelling to avoid stale closure issue
   // The handleLocationUpdate callback captures state at creation time, but refs are always current
   const isDwellingRef = useRef<boolean>(false);
@@ -223,9 +229,32 @@ export function useSmartTracking(isTracking: boolean) {
     let finalSpeedMps = calculatedSpeedMps;
 
     // Only trust device speed if GPS calculation unavailable AND accuracy is excellent
-    if (finalSpeedMps <= 0 && accuracy && accuracy < 15 && reportedSpeedMps > 0) {
+    if (finalSpeedMps <= 0 && accuracy && accuracy < 10 && reportedSpeedMps > 0) {
       finalSpeedMps = reportedSpeedMps;
     }
+
+    // ACCELERATION-BASED FILTERING: Reject unrealistic speed changes
+    // If speed jumped too dramatically, it's likely GPS jitter not real movement
+    if (previousSpeedTimeRef.current > 0 && finalSpeedMps > 0) {
+      const timeSinceLastSpeed = (now - previousSpeedTimeRef.current) / 1000;
+      if (timeSinceLastSpeed > 0.5) { // Only check if enough time passed
+        const speedChange = Math.abs(finalSpeedMps - previousSpeedRef.current);
+        const acceleration = speedChange / timeSinceLastSpeed;
+
+        if (acceleration > MAX_ACCELERATION_MPS2) {
+          // Unrealistic acceleration - likely GPS spike
+          // Instead of accepting the spike, use a gradual change
+          const maxAllowedChange = MAX_ACCELERATION_MPS2 * timeSinceLastSpeed;
+          if (finalSpeedMps > previousSpeedRef.current) {
+            // Speed increasing too fast - cap the increase
+            finalSpeedMps = Math.min(finalSpeedMps, previousSpeedRef.current + maxAllowedChange);
+          }
+          // Note: We don't cap speed decreases - slowing down quickly is realistic (braking)
+        }
+      }
+    }
+    previousSpeedRef.current = finalSpeedMps;
+    previousSpeedTimeRef.current = now;
 
     // 1. Dwell Detection Filter - Track stationary time (check BEFORE filtering)
     // Must check finalSpeedMps (unfiltered) to correctly detect speeds up to threshold
@@ -263,16 +292,26 @@ export function useSmartTracking(isTracking: boolean) {
     let displaySpeedMps: number;
     if (preSmoothedSpeed === 0) {
       // Quickly drop to 0 when stopped
-      displaySpeedMps = smoothedSpeedRef.current * 0.3; // Decay faster
+      displaySpeedMps = smoothedSpeedRef.current * SPEED_DECAY_FACTOR;
       if (displaySpeedMps < 0.5) displaySpeedMps = 0;
     } else {
-      // IMPROVED: Use stronger smoothing at low speeds to prevent jitter
-      // At low speeds, GPS accuracy issues cause more relative error
-      const smoothingFactor = preSmoothedSpeed < LOW_SPEED_THRESHOLD_MPS
-        ? LOW_SPEED_EXTRA_SMOOTHING  // More aggressive smoothing at low speeds
-        : SPEED_SMOOTHING_FACTOR;    // Normal smoothing at higher speeds
+      // IMPROVED: Use different smoothing for acceleration vs deceleration
+      const isDecelerating = preSmoothedSpeed < smoothedSpeedRef.current;
 
-      displaySpeedMps = smoothedSpeedRef.current + smoothingFactor * (preSmoothedSpeed - smoothedSpeedRef.current);
+      if (isDecelerating) {
+        // Speed is DECREASING - respond faster so display catches up to actual slower speed
+        // This fixes "takes time for speed to retrace to normal"
+        const decelerationFactor = preSmoothedSpeed < LOW_SPEED_THRESHOLD_MPS ? 0.4 : 0.5;
+        displaySpeedMps = smoothedSpeedRef.current + decelerationFactor * (preSmoothedSpeed - smoothedSpeedRef.current);
+      } else {
+        // Speed is INCREASING - use stronger smoothing to filter spikes
+        // At low speeds, GPS accuracy issues cause more relative error
+        const smoothingFactor = preSmoothedSpeed < LOW_SPEED_THRESHOLD_MPS
+          ? LOW_SPEED_EXTRA_SMOOTHING  // Very aggressive smoothing at low speeds
+          : SPEED_SMOOTHING_FACTOR;    // Normal smoothing at higher speeds
+
+        displaySpeedMps = smoothedSpeedRef.current + smoothingFactor * (preSmoothedSpeed - smoothedSpeedRef.current);
+      }
     }
     smoothedSpeedRef.current = displaySpeedMps;
 
@@ -377,6 +416,8 @@ export function useSmartTracking(isTracking: boolean) {
         smoothedSpeedRef.current = 0;
         highSpeedSamplesRef.current = [];
         recentPointsRef.current = [];
+        previousSpeedRef.current = 0;
+        previousSpeedTimeRef.current = 0;
       }
       prevIsTrackingRef.current = true;
 
