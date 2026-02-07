@@ -209,6 +209,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const tokenRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const currentUserRef = useRef<User | null>(null);
+  // CRITICAL: Track whether the user was previously authenticated (from MMKV sync read)
+  // This prevents onAuthStateChanged's initial null callback from wiping isAuthenticated
+  // before the async cached-user restore from AsyncStorage completes.
+  const wasAuthenticatedRef = useRef<boolean>(getBoolSync(MMKV_AUTH_KEY, false));
+  // Track whether the first real Firebase auth state has been resolved
+  const firstAuthResolvedRef = useRef(false);
 
   // Sync auth/onboarding state to MMKV for instant cold-start reads
   // This eliminates the onboarding page flash for already-authenticated users
@@ -566,6 +572,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         if (firebaseUser) {
           setFirebaseUser(firebaseUser);
+          // Firebase confirmed a real user — mark as resolved and update MMKV guard
+          firstAuthResolvedRef.current = true;
+          wasAuthenticatedRef.current = true;
           try {
             await syncUserData(firebaseUser);
           } catch (syncError: any) {
@@ -580,20 +589,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else {
           // CRITICAL FIX: Don't clear cached user session if we restored it from AsyncStorage
           // Firebase may fire null initially before session restoration on some devices
-          if (!currentUserRef.current) {
-            // Only clear if there's no cached user from AsyncStorage
+          //
+          // Race condition prevention: On cold start, Firebase's onAuthStateChanged fires null
+          // BEFORE the async initializeAuthState effect loads the cached user from AsyncStorage.
+          // Without this guard, isAuthenticated flips false → true, causing a flash of the
+          // onboarding/auth screen for already-authenticated users.
+          //
+          // We check three things:
+          // 1. currentUserRef.current — set by initializeAuthState once cached user is loaded
+          // 2. wasAuthenticatedRef.current — synchronously read from MMKV at init time
+          // 3. firstAuthResolvedRef — only skip the very first null callback, not real signouts
+          if (!currentUserRef.current && !wasAuthenticatedRef.current) {
+            // User was genuinely not authenticated — safe to clear
             setFirebaseUser(null);
             setUser(null);
             setIsAuthenticated(false);
             setUserContext(null);
             clearTokenRefreshTimer();
             await removeAuthToken();
+          } else if (!currentUserRef.current && wasAuthenticatedRef.current && !firstAuthResolvedRef.current) {
+            // User was previously authenticated (MMKV says so), but Firebase fired null
+            // before the async cached user loaded. Don't clear — wait for Firebase session
+            // restoration or the cached user to load.
+            if (__DEV__) console.log('[AuthContext] Firebase null before cached user loaded, preserving MMKV auth state');
+            setFirebaseUser(null);
+            // Don't clear isAuthenticated or user — MMKV says they were authenticated
           } else {
             // We have a cached user from AsyncStorage - preserve the session
             // This handles cold starts where Firebase doesn't immediately restore the session
             if (__DEV__) console.log('[AuthContext] Firebase returned null but cached user exists, preserving session');
             setFirebaseUser(null); // Firebase user is null, but our app user is still valid
           }
+          firstAuthResolvedRef.current = true;
         }
       } catch (error) {
         console.error('[AuthContext] Auth state change error:', error);
@@ -1010,6 +1037,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       clearTokenRefreshTimer();
       // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
       currentUserRef.current = null;
+      // Clear MMKV auth guard so onAuthStateChanged null callback properly clears state on next launch
+      wasAuthenticatedRef.current = false;
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);
@@ -1172,6 +1201,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       clearTokenRefreshTimer();
       // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
       currentUserRef.current = null;
+      wasAuthenticatedRef.current = false;
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);

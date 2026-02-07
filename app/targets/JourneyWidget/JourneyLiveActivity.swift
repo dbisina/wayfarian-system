@@ -45,9 +45,14 @@ struct JourneyLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        // Elapsed time
-                        Label(formatDuration(context.state.elapsedTime), systemImage: "timer")
-                            .font(.caption2)
+                        // Live counting timer from startTime
+                        HStack(spacing: 4) {
+                            Image(systemName: "timer")
+                                .font(.caption2)
+                            Text(context.attributes.startTime, style: .timer)
+                                .font(.caption2)
+                                .monospacedDigit()
+                        }
                         
                         Spacer()
                         
@@ -64,10 +69,11 @@ struct JourneyLiveActivity: Widget {
                 Image(systemName: "car.fill")
                     .foregroundColor(.orange)
             } compactTrailing: {
-                // Compact trailing (right side of Dynamic Island)
-                Text(formatDistance(context.state.totalDistance))
+                // Compact trailing - live timer
+                Text(context.attributes.startTime, style: .timer)
                     .font(.caption2)
                     .fontWeight(.semibold)
+                    .monospacedDigit()
             } minimal: {
                 // Minimal view (when another Live Activity is showing)
                 Image(systemName: "car.fill")
@@ -163,9 +169,14 @@ struct LockScreenView: View {
             
             // Stats row
             HStack {
-                // Elapsed time
-                Label(formatDuration(context.state.elapsedTime), systemImage: "timer")
-                    .font(.system(size: 12, weight: .medium))
+                // Live counting timer from startTime
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 12))
+                    Text(context.attributes.startTime, style: .timer)
+                        .font(.system(size: 12, weight: .medium))
+                        .monospacedDigit()
+                }
                 
                 Spacer()
                 

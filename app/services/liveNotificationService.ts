@@ -1,6 +1,6 @@
 // app/services/liveNotificationService.ts
 // Cross-platform live journey notifications
-// Android: Uses notifee for enhanced foreground notifications
+// Android: Uses notifee for ongoing notification (expo-location provides the foreground service)
 // iOS: Uses expo-live-activity for Live Activities and Dynamic Island
 
 import { Platform } from 'react-native';
@@ -15,6 +15,22 @@ import * as ActivityController from '../modules/activity-controller';
 // Channel ID for journey tracking
 const CHANNEL_ID = 'journey-tracking';
 const NOTIFICATION_ID = 'journey-live';
+
+// Track if channel has been initialized
+let channelInitialized = false;
+
+// CRITICAL: Register notifee foreground service runner at module level
+// This MUST be called before any displayNotification with asForegroundService: true
+// Without this, Android throws CannotPostForegroundServiceNotificationException
+if (Platform.OS === 'android') {
+    notifee.registerForegroundService(() => {
+        return new Promise(() => {
+            // This promise intentionally never resolves.
+            // The foreground service stays alive until stopForegroundService() is called.
+            // notifee handles the lifecycle automatically.
+        });
+    });
+}
 
 
 
@@ -41,18 +57,28 @@ export interface JourneyNotificationData {
 }
 
 // Initialize the notification channel (Android)
+// MUST be called early in app lifecycle (e.g., _layout.tsx mount)
+// to avoid CannotPostForegroundServiceNotificationException on Android 14+
 export async function initializeNotificationChannel(): Promise<void> {
     if (Platform.OS !== 'android') return;
+    if (channelInitialized) return; // Avoid redundant calls
 
-    await notifee.createChannel({
-        id: CHANNEL_ID,
-        name: 'Journey Tracking',
-        description: 'Real-time journey progress notifications',
-        importance: AndroidImportance.HIGH,
-        lights: false,
-        vibration: false,
-        sound: undefined,
-    });
+    try {
+        // Create the notification channel BEFORE any foreground service notification is posted
+        await notifee.createChannel({
+            id: CHANNEL_ID,
+            name: 'Journey Tracking',
+            description: 'Real-time journey progress notifications',
+            importance: AndroidImportance.HIGH,
+            lights: false,
+            vibration: false,
+            sound: undefined,
+        });
+        channelInitialized = true;
+        console.log('[LiveNotification] Android notification channel created successfully');
+    } catch (error) {
+        console.error('[LiveNotification] Failed to create notification channel:', error);
+    }
 }
 
 // Format duration for display
@@ -116,6 +142,11 @@ export async function updateJourneyNotification(data: JourneyNotificationData): 
 
     body += `\n${elapsedFormatted}  •  ${formatNotificationDistance(data.totalDistance, units)}  •  ${formatNotificationSpeed(data.currentSpeed, units)}`;
 
+    // Ensure channel exists before posting notification
+    if (!channelInitialized) {
+        await initializeNotificationChannel();
+    }
+
     await notifee.displayNotification({
         id: NOTIFICATION_ID,
         title,
@@ -151,8 +182,17 @@ export async function updateJourneyNotification(data: JourneyNotificationData): 
 // Stop the journey notification
 export async function dismissJourneyNotification(): Promise<void> {
     if (Platform.OS === 'android') {
-        await notifee.stopForegroundService();
-        await notifee.cancelNotification(NOTIFICATION_ID);
+        try {
+            await notifee.stopForegroundService();
+        } catch (e) {
+            // Foreground service may not be running if we used regular notification
+            console.warn('[LiveNotification] stopForegroundService failed (may not be running):', e);
+        }
+        try {
+            await notifee.cancelNotification(NOTIFICATION_ID);
+        } catch (e) {
+            console.warn('[LiveNotification] cancelNotification failed:', e);
+        }
     } else {
         await endIOSLiveActivity();
     }

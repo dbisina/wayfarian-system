@@ -23,12 +23,16 @@ import { initSentry } from '../services/sentry';
 import { initI18n } from '../i18n';
 import { parseNotificationData } from '../services/notificationService';
 import OfflineQueueService from '../services/offlineQueueService';
+import LiveNotificationService from '../services/liveNotificationService';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
 
 // Initialize offline queue for network resilience
 OfflineQueueService.initialize();
+
+// Pre-initialize Android notification channel at app startup
+LiveNotificationService.initializeChannel();
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -50,7 +54,7 @@ function RootLayoutContent() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [isI18nReady, setIsI18nReady] = useState(false);
   const router = useRouter(); // Must be called before any early returns
-  const notificationResponseListener = useRef<Notifications.Subscription>();
+  const notificationResponseListener = useRef<Notifications.Subscription>(undefined);
 
   const [fontsLoaded] = useFonts({
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
@@ -77,7 +81,7 @@ function RootLayoutContent() {
 
     return () => {
       if (notificationResponseListener.current) {
-        Notifications.removeNotificationSubscription(notificationResponseListener.current);
+        notificationResponseListener.current.remove();
       }
     };
   }, []);

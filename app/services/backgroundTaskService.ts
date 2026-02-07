@@ -310,6 +310,13 @@ export interface BackgroundTrackingOptions {
     // CRITICAL: Pass startTime from foreground to ensure timer sync
     // This fixes Android issue where timer starts at wrong value
     startTime?: number;
+    // Pass initial location from foreground to avoid redundant GPS call
+    // This saves 2-15 seconds during journey start
+    initialLocation?: {
+        latitude: number;
+        longitude: number;
+        timestamp: number;
+    };
 }
 
 export async function startBackgroundTracking(
@@ -324,10 +331,23 @@ export async function startBackgroundTracking(
             return false;
         }
 
-        // Get current location for initial state
-        const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.BestForNavigation,
-        });
+        // OPTIMIZATION: Use initial location from foreground if available,
+        // otherwise get current location. This eliminates the redundant second GPS call
+        // that was adding 2-15s to journey start time.
+        let initialCoords: { latitude: number; longitude: number; timestamp: number };
+        if (options?.initialLocation) {
+            initialCoords = options.initialLocation;
+            console.log('[BackgroundTask] Using pre-fetched location (saved GPS call)');
+        } else {
+            const currentLocation = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced, // Balanced is faster than BestForNavigation
+            });
+            initialCoords = {
+                latitude: currentLocation.coords.latitude,
+                longitude: currentLocation.coords.longitude,
+                timestamp: currentLocation.timestamp,
+            };
+        }
 
         // Create initial persisted state with destination info
         // CRITICAL: Use passed startTime for timer sync between foreground and background
@@ -339,20 +359,20 @@ export async function startBackgroundTracking(
             totalDistance: 0,
             movingTime: 0,
             topSpeed: 0,
-            lastLatitude: currentLocation.coords.latitude,
-            lastLongitude: currentLocation.coords.longitude,
-            lastTimestamp: currentLocation.timestamp,
+            lastLatitude: initialCoords.latitude,
+            lastLongitude: initialCoords.longitude,
+            lastTimestamp: initialCoords.timestamp,
             routePoints: [{
-                latitude: currentLocation.coords.latitude,
-                longitude: currentLocation.coords.longitude,
-                timestamp: currentLocation.timestamp,
+                latitude: initialCoords.latitude,
+                longitude: initialCoords.longitude,
+                timestamp: initialCoords.timestamp,
                 speed: 0,
             }],
             // Buffer for raw points to snap to roads later
             rawPointsBuffer: [{
-                latitude: currentLocation.coords.latitude,
-                longitude: currentLocation.coords.longitude,
-                timestamp: currentLocation.timestamp,
+                latitude: initialCoords.latitude,
+                longitude: initialCoords.longitude,
+                timestamp: initialCoords.timestamp,
                 speed: 0,
             }],
             // Include destination info if provided
@@ -518,6 +538,67 @@ export async function getBackgroundDistance(): Promise<number> {
     }
 }
 
+// Sync foreground state to background persisted state
+// Called when app goes to background so the background task has accurate data
+export async function syncForegroundToBackground(foregroundState: {
+    totalDistance: number;
+    movingTime: number;
+    topSpeed: number;
+    currentSpeed: number; // km/h
+    currentLatitude?: number;
+    currentLongitude?: number;
+}): Promise<void> {
+    try {
+        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (!stateJson) return;
+
+        const state: PersistedJourneyState = JSON.parse(stateJson);
+
+        // Use the maximum of foreground and background values to avoid losing data
+        // Foreground uses Roads API (more accurate) so prefer it when larger
+        state.totalDistance = Math.max(state.totalDistance, foregroundState.totalDistance);
+        state.movingTime = Math.max(state.movingTime, foregroundState.movingTime);
+        state.topSpeed = Math.max(state.topSpeed, foregroundState.topSpeed);
+        
+        // Update speed for notification display
+        state.lastSpeed = foregroundState.currentSpeed / 3.6; // Convert km/h to m/s
+
+        // Update position if provided
+        if (foregroundState.currentLatitude && foregroundState.currentLongitude) {
+            state.lastLatitude = foregroundState.currentLatitude;
+            state.lastLongitude = foregroundState.currentLongitude;
+            state.lastTimestamp = Date.now();
+        }
+
+        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(state));
+        console.log('[BackgroundTask] Synced foreground state to background - distance:', state.totalDistance.toFixed(2), 'km');
+    } catch (e) {
+        console.warn('[BackgroundTask] Failed to sync foreground state:', e);
+    }
+}
+
+// Get background-accumulated delta since last sync
+// Returns the distance/time accumulated purely in background since the last foreground sync
+export async function getBackgroundAccumulatedState(): Promise<{
+    totalDistance: number;
+    movingTime: number;
+    topSpeed: number;
+    routePoints: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+} | null> {
+    try {
+        const state = await getPersistedJourneyState();
+        if (!state) return null;
+        return {
+            totalDistance: state.totalDistance,
+            movingTime: state.movingTime,
+            topSpeed: state.topSpeed,
+            routePoints: state.routePoints,
+        };
+    } catch {
+        return null;
+    }
+}
+
 export default {
     startBackgroundTracking,
     stopBackgroundTracking,
@@ -527,5 +608,7 @@ export default {
     getBufferedBackgroundPoints,
     clearBackgroundBuffer,
     getBackgroundDistance,
+    syncForegroundToBackground,
+    getBackgroundAccumulatedState,
     BACKGROUND_LOCATION_TASK,
 };

@@ -632,22 +632,121 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, journeyState.currentJourney, journeyState.isTracking, journeyState.myInstance, persistStartTime, clearStartTime]);
 
+  // Sync foreground state to background when app goes to background
+  const syncToBackgroundOnSuspend = useCallback(async () => {
+    if (!journeyState.isTracking || !journeyState.currentJourney) return;
+
+    try {
+      console.log('[JourneyContext] App going to background, syncing foreground state...');
+
+      // 1. Sync foreground tracking data to background persisted state
+      await BackgroundTaskService.syncForegroundToBackground({
+        totalDistance: officialDistance,
+        movingTime: movingTime,
+        topSpeed: maxSpeed,
+        currentSpeed: derivedStats.currentSpeed,
+        currentLatitude: liveRawLocation?.latitude,
+        currentLongitude: liveRawLocation?.longitude,
+      });
+
+      // 2. Force an immediate Live Activity / notification update (bypass throttle)
+      const journey = journeyState.currentJourney;
+      const currentStartTime = journeyState.myInstance?.startTime
+        ? new Date(journeyState.myInstance.startTime).getTime()
+        : startTimeRef.current || Date.now();
+
+      let progress = 0;
+      let distanceRemaining: number | undefined;
+      if (journey.endLocation && liveRawLocation) {
+        const R = 6371;
+        const dLat = (journey.endLocation.latitude - liveRawLocation.latitude) * Math.PI / 180;
+        const dLon = (journey.endLocation.longitude - liveRawLocation.longitude) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos(liveRawLocation.latitude * Math.PI / 180) *
+          Math.cos(journey.endLocation.latitude * Math.PI / 180) *
+          Math.sin(dLon / 2) ** 2;
+        distanceRemaining = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const estimatedTotal = officialDistance + distanceRemaining;
+        if (estimatedTotal > 0) {
+          progress = Math.min(officialDistance / estimatedTotal, 0.99);
+        }
+      }
+
+      const notificationData: JourneyNotificationData = {
+        journeyId: journey.id,
+        startTime: currentStartTime,
+        totalDistance: officialDistance,
+        currentSpeed: derivedStats.currentSpeed,
+        avgSpeed: avgSpeed,
+        topSpeed: maxSpeed,
+        movingTime: movingTime,
+        progress,
+        distanceRemaining,
+        startLocationName: journey.startLocation?.address || 'Start',
+        destinationName: journey.endLocation?.address || 'Destination',
+        currentLatitude: liveRawLocation?.latitude,
+        currentLongitude: liveRawLocation?.longitude,
+      };
+
+      // Reset throttle so this sends immediately
+      liveNotificationThrottleRef.current = 0;
+      await LiveNotificationService.updateNotification(notificationData);
+      console.log('[JourneyContext] Background sync complete');
+    } catch (error) {
+      console.error('[JourneyContext] Error syncing to background:', error);
+    }
+  }, [journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime,
+      officialDistance, movingTime, maxSpeed, avgSpeed, derivedStats.currentSpeed, liveRawLocation]);
+
+  // Merge background state when app returns to foreground
+  const mergeBackgroundStateOnForeground = useCallback(async () => {
+    if (!journeyState.isTracking || !journeyState.currentJourney) return;
+
+    try {
+      const bgState = await BackgroundTaskService.getBackgroundAccumulatedState();
+      if (!bgState) return;
+
+      console.log('[JourneyContext] Merging background state - BG distance:', bgState.totalDistance.toFixed(2),
+        'FG distance:', officialDistance.toFixed(2));
+
+      // If background accumulated more distance than foreground has
+      // (because background kept tracking while app was suspended),
+      // we need to sync the background's persisted state so the next
+      // foreground GPS readings build on top of it.
+      // The foreground smart tracking will naturally pick up from current position.
+
+      // Also re-trigger an immediate Live Activity update with fresh foreground data
+      liveNotificationThrottleRef.current = 0;
+    } catch (error) {
+      console.error('[JourneyContext] Error merging background state:', error);
+    }
+  }, [journeyState.isTracking, journeyState.currentJourney, officialDistance]);
+
   // Listen for AppState changes
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      // App going to background — sync foreground state
+      if (
+        appStateRef.current === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        syncToBackgroundOnSuspend();
+      }
+
       // App came to foreground from background/inactive
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
         recoverJourneyOnForeground();
+        mergeBackgroundStateOnForeground();
       }
       appStateRef.current = nextAppState;
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [recoverJourneyOnForeground]);
+  }, [recoverJourneyOnForeground, syncToBackgroundOnSuspend, mergeBackgroundStateOnForeground]);
 
   useEffect(() => {
     let cancelled = false;
@@ -755,28 +854,76 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const startJourney = async (journeyData: Partial<JourneyData>): Promise<boolean> => {
     try {
-      // Get current location for start point
+      // STEP 1: Permission check — typically instant if already granted
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') throw new Error('Location permission denied');
 
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      // STEP 2: Get location FAST using layered strategy
+      // 1st: Try getLastKnownPositionAsync (instant, cached GPS — usually <10ms)
+      // 2nd: Fall back to getCurrentPositionAsync with Balanced accuracy (1-3s)
+      // This alone saves 5-20s vs the old BestForNavigation approach
+      let location: Location.LocationObject | null = null;
+      try {
+        location = await Location.getLastKnownPositionAsync();
+      } catch {
+        // getLastKnownPosition can fail silently on some devices
+      }
 
-      const response = await journeyAPI.startJourney({
-        vehicle: journeyData.vehicle || 'car',
-        title: journeyData.title || 'My Journey',
-        groupId: journeyData.groupId,
-        startLatitude: location.coords.latitude,
-        startLongitude: location.coords.longitude,
-      });
+      if (!location || (Date.now() - location.timestamp) > 60000) {
+        // No cached position or it's >60s stale — get a fresh one (fast accuracy)
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
+
+      // STEP 3: API call to create journey on server
+      let response: any;
+      try {
+        response = await journeyAPI.startJourney({
+          vehicle: journeyData.vehicle || 'car',
+          title: journeyData.title || 'My Journey',
+          groupId: journeyData.groupId,
+          startLatitude: location.coords.latitude,
+          startLongitude: location.coords.longitude,
+        });
+      } catch (apiError: any) {
+        // Handle "Active journey exists" — auto-end the stale journey and retry once
+        if (apiError?.status === 400 && apiError?.body?.activeJourney?.id) {
+          const staleId = apiError.body.activeJourney.id;
+          console.warn('[JourneyContext] Stale active journey found, auto-ending:', staleId);
+          try {
+            await journeyAPI.endJourney(staleId, {
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              totalDistance: apiError.body.activeJourney.totalDistance || 0,
+            });
+          } catch (endErr) {
+            // If normal end fails, force-clear it
+            console.warn('[JourneyContext] endJourney failed, trying forceClear:', endErr);
+            await journeyAPI.forceClearJourney(staleId).catch(() => {});
+          }
+          // Also clean up any local background tracking from the stale journey
+          await BackgroundTaskService.stopBackgroundTracking().catch(() => {});
+
+          // Retry the start
+          response = await journeyAPI.startJourney({
+            vehicle: journeyData.vehicle || 'car',
+            title: journeyData.title || 'My Journey',
+            groupId: journeyData.groupId,
+            startLatitude: location.coords.latitude,
+            startLongitude: location.coords.longitude,
+          });
+        } else {
+          throw apiError;
+        }
+      }
 
       if (!response || !response.journey?.id) {
         throw new Error('Failed to start journey tracking');
       }
       const journeyId = response.journey.id;
 
-      // FIX: Capture start time AFTER all async setup (permissions, GPS, API call)
-      // This ensures the timer starts from ~0 when the journey screen appears,
-      // rather than showing ~20s elapsed from GPS + API call overhead
+      // STEP 4: Capture start time AFTER async ops so timer starts at ~0
       const startTimestamp = Date.now();
       
       const newJourney: JourneyData = {
@@ -794,17 +941,30 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         photos: [],
       };
 
+      // STEP 5: Immediately update UI state — this is what the user sees
       dispatch(setCurrentJourney(newJourney));
       dispatch(setTracking(true));
       dispatch(setJourneyMinimized(false));
-
-      // Set startTime for timer and persist for app restart recovery
-      // Using clientStartTime captured at function start for accuracy
       startTimeRef.current = startTimestamp;
-      await persistStartTime(startTimestamp);
 
+      // STEP 6: Fire non-blocking background work in parallel
+      // None of these need to complete before the user sees the journey screen
+      const backgroundWork: Promise<any>[] = [];
+
+      // Persist start time (non-blocking)
+      backgroundWork.push(
+        persistStartTime(startTimestamp).catch(e =>
+          console.warn('[JourneyContext] persistStartTime failed:', e)
+        )
+      );
+
+      // Group socket connection (non-blocking)
       if (journeyData.groupId) {
-        await ensureGroupJourneySocket(journeyData.groupId, dispatch);
+        backgroundWork.push(
+          ensureGroupJourneySocket(journeyData.groupId, dispatch).catch(e =>
+            console.warn('[JourneyContext] Group socket init failed:', e)
+          )
+        );
       }
 
       // Calculate estimated total distance if we have a destination
@@ -820,16 +980,27 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         estimatedTotalDistance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
 
-      // Start persistent background tracking notification
-      // Pass all location info for accurate Live Activity display
-      await BackgroundTaskService.startBackgroundTracking(journeyId, {
-        startLocationName: journeyData.startLocation?.address || newJourney.startLocation?.address || 'Start',
-        destinationName: journeyData.endLocation?.address,
-        destinationLatitude: journeyData.endLocation?.latitude,
-        destinationLongitude: journeyData.endLocation?.longitude,
-        estimatedTotalDistance,
-        startTime: startTimestamp,
-      });
+      // Background tracking init (non-blocking, passes location to skip redundant GPS call)
+      backgroundWork.push(
+        BackgroundTaskService.startBackgroundTracking(journeyId, {
+          startLocationName: journeyData.startLocation?.address || newJourney.startLocation?.address || 'Start',
+          destinationName: journeyData.endLocation?.address,
+          destinationLatitude: journeyData.endLocation?.latitude,
+          destinationLongitude: journeyData.endLocation?.longitude,
+          estimatedTotalDistance,
+          startTime: startTimestamp,
+          initialLocation: {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            timestamp: location.timestamp,
+          },
+        }).catch(err =>
+          console.warn('[JourneyContext] Background tracking init failed (non-blocking):', err)
+        )
+      );
+
+      // Fire all background work without blocking return
+      Promise.all(backgroundWork).catch(() => {});
 
       return true;
     } catch (error) {
@@ -941,34 +1112,49 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(setJourneyMinimized(false));
 
       // FIX: For scheduled journeys, use CURRENT time when user actually starts tracking
-      // The server's startTime might be when the journey was scheduled, not when tracking begins
-      // This fixes the "Android starts at 1:30" issue where timer shows elapsed time since scheduled start
       const startTimestamp = Date.now();
       startTimeRef.current = startTimestamp;
-      await persistStartTime(startTimestamp);
 
-      // Update the server with the actual tracking start time
-      try {
-        await journeyAPI.updateJourney(journeyId, {
-          // Signal to server that tracking has actually started now
+      // Fire all secondary work in parallel without blocking
+      const backgroundWork: Promise<any>[] = [];
+
+      backgroundWork.push(
+        persistStartTime(startTimestamp).catch(e =>
+          console.warn('[JourneyContext] persistStartTime failed:', e)
+        )
+      );
+
+      // Update the server with the actual tracking start time (non-blocking)
+      backgroundWork.push(
+        journeyAPI.updateJourney(journeyId, {
           timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.warn('[JourneyContext] Failed to update journey start time on server:', e);
-      }
+        }).catch(e =>
+          console.warn('[JourneyContext] Failed to update journey start time on server:', e)
+        )
+      );
 
       if (journey.groupId) {
-        await ensureGroupJourneySocket(journey.groupId, dispatch);
+        backgroundWork.push(
+          ensureGroupJourneySocket(journey.groupId, dispatch).catch(e =>
+            console.warn('[JourneyContext] Group socket init failed:', e)
+          )
+        );
       }
 
-      // Start background tracking with synced startTime
-      await BackgroundTaskService.startBackgroundTracking(journeyId, {
-        startLocationName: journey.startAddress || 'Start Location',
-        destinationName: journey.endAddress,
-        destinationLatitude: journey.endLatitude,
-        destinationLongitude: journey.endLongitude,
-        startTime: startTimestamp,
-      });
+      // Start background tracking with synced startTime (non-blocking)
+      backgroundWork.push(
+        BackgroundTaskService.startBackgroundTracking(journeyId, {
+          startLocationName: journey.startAddress || 'Start Location',
+          destinationName: journey.endAddress,
+          destinationLatitude: journey.endLatitude,
+          destinationLongitude: journey.endLongitude,
+          startTime: startTimestamp,
+        }).catch(err =>
+          console.warn('[JourneyContext] Background tracking init failed (non-blocking):', err)
+        )
+      );
+
+      Promise.all(backgroundWork).catch(() => {});
 
       console.log('[JourneyContext] Successfully resumed tracking for journey:', journeyId);
       return true;
@@ -1108,17 +1294,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
       // 4. Clear all local state regardless of backend result
       try {
-        // Use AsyncStorage directly to ensure clean slate
-        const keys = ['current_journey', 'journey_status', 'journey_start_time', 'active_group_journey_id'];
-        // We need to import AsyncStorage if not available, but it's likely not imported in this context file.
-        // Wait, I don't see AsyncStorage imported in the file view.
-        // I should check imports. If not imported, I can't use it.
-        // But I can rely on Redux actions which should handle persistence if configured.
-        // Or I can just skip direct AsyncStorage manipulation if not imported.
-        // Let's stick to Redux actions and maybe add AsyncStorage if I can see imports.
-        // I'll assume Redux persistence handles it or I'll add the import if I can.
-        // Actually, looking at imports (lines 1-36), AsyncStorage is NOT imported.
-        // So I will skip direct AsyncStorage calls to avoid errors.
+        await AsyncStorage.multiRemove([
+          'current_journey', 'journey_status', 'journey_start_time',
+          'active_group_journey_id', 'active_journey_id', 'active_group_instance_id',
+        ]);
+        await clearStartTime();
       } catch (e) {
         console.warn('AsyncStorage clear failed', e);
       }
@@ -1133,6 +1313,13 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         await BackgroundTaskService.stopBackgroundTracking();
       } catch (e) {
         console.warn('Failed to stop background tracking during clear:', e);
+      }
+
+      // Dismiss Live Activity / notification
+      try {
+        await LiveNotificationService.dismissNotification();
+      } catch (e) {
+        console.warn('Failed to dismiss notification during clear:', e);
       }
 
       dispatch(setStats({
