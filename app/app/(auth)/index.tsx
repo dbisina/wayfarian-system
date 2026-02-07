@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 export default function OnboardingScreen() {
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, hasCompletedOnboarding, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
@@ -27,6 +27,16 @@ export default function OnboardingScreen() {
     await completeOnboarding();
     router.replace('/register');
   };
+
+  // Don't render onboarding content if user already completed it or is authenticated
+  // The auth layout will redirect, but this prevents a flash of content
+  if (hasCompletedOnboarding || isAuthenticated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <StatusBar barStyle="light-content" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

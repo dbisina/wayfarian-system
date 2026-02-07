@@ -66,7 +66,6 @@ export default function JourneyScreen(): React.JSX.Element {
     resumeJourney,
     resumeActiveJourney,
     endJourney,
-    clearStuckJourney,
     addPhoto,
     minimizeJourney,
     loadGroupMembers,
@@ -605,29 +604,6 @@ export default function JourneyScreen(): React.JSX.Element {
     }
   };
 
-  const handleClearStuckJourney = () => {
-    Alert.alert(
-      t('alerts.clearStuckJourneyTitle'),
-      t('alerts.clearStuckJourneyMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('alerts.clear'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearStuckJourney();
-              Alert.alert(t('alerts.success'), t('alerts.journeyCleared'));
-              router.back();
-            } catch {
-              Alert.alert(t('alerts.error'), t('alerts.failedToClear'));
-            }
-          },
-        },
-      ]
-    );
-  };
-
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -887,33 +863,12 @@ export default function JourneyScreen(): React.JSX.Element {
                 />
               </TouchableOpacity>
             </View>
-            <View style={styles.headerRight}>
-            
-              <TouchableOpacity onPress={handleTakePhoto} style={styles.cameraButton}>
-                <MaterialIcons
-                  name="camera-alt"
-                  size={22}
-                  color="#000"
-                />
-              </TouchableOpacity>
-            </View>
+            <View style={styles.headerRight} />
           </View>
 
-          {/* SOS Button */}
-          <TouchableOpacity style={styles.sosButton}>
-            <Image
-              source={require("../assets/images/2025-09-26/cGkBkJPGTf.png")}
-              style={styles.sosBackground}
-            />
-            <Text style={styles.sosText}>{t('journey.sos')}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={handleClearStuckJourney}
-            style={styles.clearButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.clearButtonText}>{t('journey.clearStuckJourney')}</Text>
+          {/* Floating Camera Button */}
+          <TouchableOpacity onPress={handleTakePhoto} style={styles.floatingCameraButton}>
+            <MaterialIcons name="camera-alt" size={22} color="#fff" />
           </TouchableOpacity>
 
           {/* Bottom Panel */}
@@ -1123,21 +1078,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  clearButton: {
-    position: "absolute",
+  floatingCameraButton: {
+    position: 'absolute',
     right: 15,
     top: 532,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(255, 87, 34, 0.1)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FF5722',
-  },
-  clearButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FF5722',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
   profileImage: {
     width: 45,
@@ -1162,21 +1117,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 11,
     top: 2.5,
-  },
-  cameraButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 10,
-    // Shadow for visibility
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
   },
   memberMarker: {
     position: "relative",
@@ -1243,27 +1183,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 3,
   },
-  sosButton: {
-    position: "absolute",
-    right: 15,
-    top: 582,
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sosBackground: {
-    position: "absolute",
-    width: 30,
-    height: 30,
-  },
-  sosText: {
-    fontFamily: "Poppins",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 15,
-    color: "#FFFFFF",
-  },
+
   bottomPanel: {
     position: "absolute",
     bottom: 0,

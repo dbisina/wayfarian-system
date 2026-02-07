@@ -18,7 +18,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 
 export default function OnboardingScreen2() {
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, hasCompletedOnboarding, isAuthenticated } = useAuth();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
@@ -34,6 +34,15 @@ export default function OnboardingScreen2() {
       return () => subscription.remove();
     }, [])
   );
+
+  // Don't render onboarding content if user already completed it or is authenticated
+  if (hasCompletedOnboarding || isAuthenticated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <StatusBar barStyle="light-content" />
+      </View>
+    );
+  }
 
   const handleNext = () => {
     router.push('/step3');

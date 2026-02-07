@@ -18,7 +18,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export default function OnboardingScreen3() {
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, hasCompletedOnboarding, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
@@ -34,6 +34,15 @@ export default function OnboardingScreen3() {
       return () => subscription.remove();
     }, [])
   );
+
+  // Don't render onboarding content if user already completed it or is authenticated
+  if (hasCompletedOnboarding || isAuthenticated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <StatusBar barStyle="light-content" />
+      </View>
+    );
+  }
 
   const completeAndContinue = async () => {
     await completeOnboarding();

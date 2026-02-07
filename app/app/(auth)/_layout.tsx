@@ -4,25 +4,25 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useEffect, useRef } from 'react';
 
 export default function AuthLayout() {
-  const { hasCompletedOnboarding, loading, isInitializing } = useAuth();
+  const { hasCompletedOnboarding, isAuthenticated, loading, isInitializing } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const hasNavigatedRef = useRef(false);
 
-  // Navigate away from onboarding if user has completed it
+  // Navigate away from onboarding if user has completed it OR is already authenticated
   // initialRouteName only works on first mount, so we need useEffect for subsequent state changes
   useEffect(() => {
     if (loading || isInitializing) return;
 
     const currentScreen = segments[segments.length - 1] as any;
-    const isOnOnboardingScreen = currentScreen === 'index' || currentScreen === 'step2' || currentScreen === 'step3';
+    const isOnOnboardingScreen = currentScreen === 'index' || currentScreen === 'step2' || currentScreen === 'step3' || currentScreen === '(auth)';
 
-    if (hasCompletedOnboarding && isOnOnboardingScreen && !hasNavigatedRef.current) {
-      console.log('[AuthLayout] User completed onboarding but on onboarding screen, redirecting to login');
+    if ((hasCompletedOnboarding || isAuthenticated) && isOnOnboardingScreen && !hasNavigatedRef.current) {
+      console.log('[AuthLayout] User completed onboarding or is authenticated, redirecting to login');
       hasNavigatedRef.current = true;
       router.replace('/(auth)/login');
     }
-  }, [hasCompletedOnboarding, segments, router, loading, isInitializing]);
+  }, [hasCompletedOnboarding, isAuthenticated, segments, router, loading, isInitializing]);
 
   // Reset navigation flag when onboarding status changes
   useEffect(() => {
