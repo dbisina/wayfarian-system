@@ -16,6 +16,7 @@ const {
   getActiveForGroup,
   joinGroupJourney,
   getMyActiveInstance,
+  getGroupJourneySummary,
 } = require('../controllers/groupJourneyControllerV2');
 const {
   createRideEvent,
@@ -106,6 +107,23 @@ router.get(
   ],
   handleValidationErrors,
   getActiveForGroup
+);
+
+/**
+ * @route GET /api/group-journey/:id/summary
+ * @desc Get post-ride group journey summary with aggregated stats
+ * @access Private (Group members only)
+ */
+router.get(
+  '/:id/summary',
+  [
+    param('id')
+      .isString()
+      .notEmpty()
+      .withMessage('Valid group journey ID required')
+  ],
+  handleValidationErrors,
+  getGroupJourneySummary
 );
 
 /**

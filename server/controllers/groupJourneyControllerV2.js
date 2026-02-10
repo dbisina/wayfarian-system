@@ -977,6 +977,28 @@ const completeInstance = async (req, res) => {
       }
     }
 
+    // Check achievements and update streak (fire-and-forget)
+    try {
+      const achievementService = require('../services/achievementService');
+      const newAchievements = await achievementService.checkAndAwardAchievements(userId, {
+        completedAt: new Date(),
+      });
+      await achievementService.updateStreak(userId);
+
+      // Emit achievement events via socket for live celebrations
+      if (io && newAchievements.length > 0) {
+        for (const achievement of newAchievements) {
+          io.to(`user-${userId}`).emit('achievement:unlocked', {
+            achievementId: achievement.achievementId,
+            xpAwarded: achievement.xpAwarded,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (achError) {
+      logger.warn('[Instance] Achievement check failed (non-blocking):', achError.message);
+    }
+
     // CHECK IF ALL MEMBERS HAVE COMPLETED
     // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
     // AND if all group members have created an instance (optional, maybe just check active ones)
@@ -1317,6 +1339,128 @@ const getMyActiveInstance = async (req, res) => {
   }
 };
 
+/**
+ * Get group journey summary (post-ride stats aggregation)
+ */
+const getGroupJourneySummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const groupJourney = await prisma.groupJourney.findUnique({
+      where: { id },
+      include: {
+        group: {
+          include: {
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    displayName: true,
+                    photoURL: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        instances: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              },
+            },
+          },
+        },
+        events: {
+          where: { type: 'PHOTO' },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!groupJourney) {
+      return res.status(404).json({ error: 'Group journey not found' });
+    }
+
+    // Verify membership
+    const isMember = groupJourney.group.members.some(m => m.userId === userId);
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    // Calculate aggregated group stats
+    const totalGroupDistance = groupJourney.instances.reduce(
+      (sum, inst) => sum + (inst.totalDistance || 0), 0
+    );
+    const totalGroupTime = groupJourney.instances.reduce(
+      (sum, inst) => sum + (inst.totalTime || 0), 0
+    );
+    const groupTopSpeed = Math.max(
+      ...groupJourney.instances.map(inst => inst.topSpeed || 0), 0
+    );
+
+    // Calculate duration from first start to last end
+    const startTimes = groupJourney.instances
+      .filter(i => i.startTime)
+      .map(i => new Date(i.startTime).getTime());
+    const endTimes = groupJourney.instances
+      .filter(i => i.endTime)
+      .map(i => new Date(i.endTime).getTime());
+
+    const journeyStart = startTimes.length > 0 ? Math.min(...startTimes) : null;
+    const journeyEnd = endTimes.length > 0 ? Math.max(...endTimes) : null;
+    const duration = journeyStart && journeyEnd
+      ? Math.floor((journeyEnd - journeyStart) / 1000)
+      : totalGroupTime;
+
+    // Format member stats
+    const memberStats = groupJourney.instances.map(inst => ({
+      userId: inst.userId,
+      displayName: inst.user?.displayName || 'Unknown',
+      photoURL: inst.user?.photoURL,
+      totalDistance: inst.totalDistance || 0,
+      totalTime: inst.totalTime || 0,
+      avgSpeed: inst.avgSpeed || 0,
+      topSpeed: inst.topSpeed || 0,
+      status: inst.status,
+    }));
+
+    res.json({
+      success: true,
+      summary: {
+        id: groupJourney.id,
+        title: groupJourney.title,
+        description: groupJourney.description,
+        status: groupJourney.status,
+        startedAt: groupJourney.startedAt,
+        completedAt: groupJourney.completedAt,
+        groupId: groupJourney.groupId,
+        groupName: groupJourney.group.name,
+        groupStats: {
+          totalDistance: totalGroupDistance,
+          totalTime: totalGroupTime,
+          duration,
+          topSpeed: groupTopSpeed,
+          totalPhotos: groupJourney.events.length,
+          membersCount: groupJourney.instances.length,
+        },
+        memberStats,
+      },
+    });
+  } catch (error) {
+    logger.error('Get group journey summary error:', error);
+    res.status(500).json({
+      error: 'Failed to get summary',
+      message: error.message,
+    });
+  }
+};
+
 // Cancel endpoint removed per product decision: prefer pause/resume semantics
 
 module.exports = {
@@ -1331,4 +1475,5 @@ module.exports = {
   getActiveForGroup,
   joinGroupJourney,
   getMyActiveInstance,
+  getGroupJourneySummary,
 };

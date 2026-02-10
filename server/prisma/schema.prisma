@@ -43,6 +43,8 @@ model User {
   groupMemberships GroupMember[]
   createdGroups    Group[]           @relation("GroupCreator")
   rideEvents       RideEvent[]
+  achievements     UserAchievement[]
+  streak           UserStreak?
 
   @@map("users")
 }
@@ -321,6 +323,32 @@ model JourneyReminder {
   @@unique([journeyId, type])
   @@index([journeyId])
   @@map("journey_reminders")
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+  xpAwarded     Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@map("user_achievements")
+}
+
+model UserStreak {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  currentStreak Int       @default(0)
+  longestStreak Int       @default(0)
+  lastRideDate  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_streaks")
 }
 
 // Enums

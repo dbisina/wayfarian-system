@@ -12,6 +12,7 @@ const {
   deletePhoto,
   updatePhotoMetadata,
   getPhotoById,
+  getGroupJourneyPhotos,
 } = require('../controllers/galleryController');
 
 const router = express.Router();
@@ -171,6 +172,22 @@ router.delete(
   ],
   handleValidationErrors,
   deletePhoto
+);
+
+/**
+ * @route GET /api/gallery/group-journey/:groupJourneyId
+ * @desc Get all photos from a group journey (all members aggregated)
+ * @access Private (Group members only)
+ */
+router.get(
+  '/group-journey/:groupJourneyId',
+  [
+    param('groupJourneyId')
+      .isString()
+      .withMessage('Invalid group journey ID'),
+  ],
+  handleValidationErrors,
+  getGroupJourneyPhotos
 );
 
 /**

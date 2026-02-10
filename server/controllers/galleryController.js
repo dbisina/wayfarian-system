@@ -4,7 +4,7 @@
 const prisma = require('../prisma/client');
 const { uploadToStorage, deleteFromStorage } = require('../services/Firebase');
 const { getThumbnailUrl } = require('../services/CloudinaryService');
-const { hydratePhoto, hydratePhotos } = require('../utils/photoFormatter');
+const { hydratePhoto, hydratePhotos, buildStorageUrl } = require('../utils/photoFormatter');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
@@ -422,6 +422,137 @@ const getPhotoById = async (req, res) => {
   }
 };
 
+/**
+ * Get all photos from a group journey (all members' photos aggregated)
+ * Uses RideEvent table (type PHOTO) which already has userId, mediaUrl, latitude, longitude, createdAt
+ */
+const getGroupJourneyPhotos = async (req, res) => {
+  try {
+    const { groupJourneyId } = req.params;
+    const userId = req.user.id;
+
+    // Verify the group journey exists and user is a member
+    const groupJourney = await prisma.groupJourney.findUnique({
+      where: { id: groupJourneyId },
+      include: {
+        group: {
+          include: {
+            members: { select: { userId: true } },
+          },
+        },
+      },
+    });
+
+    if (!groupJourney) {
+      return res.status(404).json({
+        error: 'Group journey not found',
+      });
+    }
+
+    const isMember = groupJourney.group.members.some(m => m.userId === userId);
+    if (!isMember) {
+      return res.status(403).json({
+        error: 'Not a member of this group',
+      });
+    }
+
+    // Get all PHOTO events for this group journey with user attribution
+    const photoEvents = await prisma.rideEvent.findMany({
+      where: {
+        groupJourneyId,
+        type: 'PHOTO',
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            photoURL: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Also get JourneyPhotos from instances of this group journey
+    const journeyPhotos = await prisma.journeyPhoto.findMany({
+      where: {
+        instance: {
+          groupJourneyId,
+        },
+      },
+      include: {
+        instance: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                photoURL: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { takenAt: 'asc' },
+    });
+
+    // Combine both sources, dedup by mediaUrl/firebasePath
+    const seenUrls = new Set();
+    const photos = [];
+
+    // Add ride event photos
+    for (const event of photoEvents) {
+      if (event.mediaUrl && !seenUrls.has(event.mediaUrl)) {
+        seenUrls.add(event.mediaUrl);
+        photos.push({
+          id: event.id,
+          imageUrl: event.mediaUrl,
+          userId: event.userId,
+          userName: event.user.displayName || 'Unknown',
+          userPhotoURL: event.user.photoURL,
+          latitude: event.latitude,
+          longitude: event.longitude,
+          takenAt: event.createdAt,
+        });
+      }
+    }
+
+    // Add journey photos (from instance uploads)
+    for (const photo of journeyPhotos) {
+      const url = photo.firebasePath;
+      if (url && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        photos.push({
+          id: photo.id,
+          imageUrl: buildStorageUrl(photo.firebasePath),
+          userId: photo.userId,
+          userName: photo.instance?.user?.displayName || 'Unknown',
+          userPhotoURL: photo.instance?.user?.photoURL,
+          latitude: photo.latitude,
+          longitude: photo.longitude,
+          takenAt: photo.takenAt,
+        });
+      }
+    }
+
+    // Sort all photos chronologically
+    photos.sort((a, b) => new Date(a.takenAt) - new Date(b.takenAt));
+
+    res.json({
+      success: true,
+      photos,
+      total: photos.length,
+    });
+  } catch (error) {
+    console.error('Get group journey photos error:', error);
+    res.status(500).json({
+      error: 'Failed to get group journey photos',
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   upload: upload.single('photo'),
   uploadPhoto,
@@ -430,4 +561,5 @@ module.exports = {
   deletePhoto,
   updatePhotoMetadata,
   getPhotoById,
+  getGroupJourneyPhotos,
 };

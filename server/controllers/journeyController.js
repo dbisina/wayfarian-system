@@ -394,6 +394,20 @@ const endJourney = async (req, res) => {
       },
     });
 
+    // Check achievements and update streak (fire-and-forget)
+    try {
+      const achievementService = require('../services/achievementService');
+      const newAchievements = await achievementService.checkAndAwardAchievements(userId, {
+        completedAt: new Date(),
+      });
+      await achievementService.updateStreak(userId);
+      if (newAchievements.length > 0) {
+        console.log(`[Journey] ${userId} unlocked ${newAchievements.length} achievement(s)`);
+      }
+    } catch (achError) {
+      console.warn('[Journey] Achievement check failed (non-blocking):', achError.message);
+    }
+
     res.json({
       success: true,
       message: 'Journey completed successfully',

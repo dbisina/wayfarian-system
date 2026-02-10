@@ -438,6 +438,14 @@ export const userAPI = {
     return apiRequest('/user/achievements', 'GET');
   },
 
+  getStreak: async () => {
+    return apiRequest('/user/streak', 'GET');
+  },
+
+  getUnlockedAchievements: async () => {
+    return apiRequest('/user/unlocked-achievements', 'GET');
+  },
+
   getFriends: async () => {
     const result = await apiRequest('/user/friends', 'GET');
     return result;
@@ -837,6 +845,10 @@ export const galleryAPI = {
   deletePhoto: async (photoId: string) => {
     return apiRequest(`/gallery/photo/${photoId}`, 'DELETE');
   },
+
+  getGroupJourneyPhotos: async (groupJourneyId: string) => {
+    return apiRequest(`/gallery/group-journey/${groupJourneyId}`, 'GET');
+  },
 };
 
 // Map/Places API (uses external APIs but through our backend)
@@ -930,6 +942,10 @@ export const groupJourneyAPI = {
     }
   ) => {
     return internalApiRequest(`/group-journey/${groupJourneyId}/events`, 'POST', payload);
+  },
+
+  getSummary: async (groupJourneyId: string) => {
+    return internalApiRequest(`/group-journey/${groupJourneyId}/summary`, 'GET');
   },
 };
 

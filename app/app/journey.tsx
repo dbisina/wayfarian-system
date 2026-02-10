@@ -34,6 +34,7 @@ import { getSocket } from '../services/socket';
 import { useJourneyState, useJourneyMembers, useJourneyStats } from '../hooks/useJourneyState';
 import { useSettings } from '../contexts/SettingsContext';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
+import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -90,6 +91,8 @@ export default function JourneyScreen(): React.JSX.Element {
   const [groupView, setGroupView] = useState<{ start?: { latitude: number; longitude: number }; end?: { latitude: number; longitude: number } } | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
   const [isStartBusy, setIsStartBusy] = useState(false);
+  const [celebrationEvent, setCelebrationEvent] = useState<CelebrationEvent | null>(null);
+  const lastMilestoneRef = useRef(0);
   const startIconAnimation = useRef(new Animated.Value(0)).current;
 
   // Real-time events for group journeys
@@ -295,6 +298,26 @@ export default function JourneyScreen(): React.JSX.Element {
     const value = isTracking && stats ? stats.totalDistance : 0;
     return splitMeasurement(convertDistance(value));
   }, [convertDistance, isTracking, stats]);
+
+  // Distance milestone celebrations
+  useEffect(() => {
+    if (!isTracking || !stats?.totalDistance) return;
+    const distKm = stats.totalDistance;
+    const milestones = [5, 10, 25, 50, 100];
+    for (const km of milestones) {
+      if (distKm >= km && lastMilestoneRef.current < km) {
+        lastMilestoneRef.current = km;
+        setCelebrationEvent({
+          id: `dist-${km}`,
+          title: `${km} km reached!`,
+          subtitle: 'Keep going!',
+          xp: km >= 50 ? 50 : 25,
+          icon: 'trophy',
+        });
+        break;
+      }
+    }
+  }, [isTracking, stats?.totalDistance]);
 
   const bikeTranslation = startIconAnimation.interpolate({
     inputRange: [0, 1],
@@ -842,6 +865,12 @@ export default function JourneyScreen(): React.JSX.Element {
           {currentLocation && (
             <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} />
           )}
+
+          {/* Ride Celebration Toast */}
+          <RideCelebration
+            event={celebrationEvent}
+            onDismiss={() => setCelebrationEvent(null)}
+          />
 
           {/* Header - with SafeArea top padding */}
           <View style={[styles.header, { paddingTop: insets.top + 8 }]}>

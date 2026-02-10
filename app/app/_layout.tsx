@@ -159,6 +159,7 @@ function RootLayoutContent() {
         <Stack.Screen name="new-group" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="new-journey" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="group-journey-detail" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
       

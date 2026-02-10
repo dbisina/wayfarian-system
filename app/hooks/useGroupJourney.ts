@@ -65,13 +65,19 @@ export const useGroupJourney = ({
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const lastEmitRef = useRef(0);
   const myInstanceRef = useRef<JourneyInstance | null>(null);
+  // Track when the client actually started tracking (not server startTime which has latency)
+  const clientStartTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
     if (myInstance && myInstance.startTime) {
+      // Set client start time on first activation (avoids server latency offset)
+      if (!clientStartTimeRef.current) {
+        clientStartTimeRef.current = Date.now();
+      }
       // Update timer every second
       const updateTimer = () => {
-        const startTime = new Date(myInstance.startTime!).getTime();
+        const startTime = clientStartTimeRef.current!;
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
         
@@ -225,6 +231,7 @@ export const useGroupJourney = ({
   const stopLocationTracking = useCallback(() => {
     locationSubscriptionRef.current?.remove();
     locationSubscriptionRef.current = null;
+    clientStartTimeRef.current = null;
     dispatch(setGroupTracking({ isTracking: false, instanceId: null }));
   }, [dispatch]);
 

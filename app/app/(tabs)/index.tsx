@@ -24,6 +24,7 @@ import { scale, verticalScale, moderateScale } from '../../utils/responsive';
 import { useSettings } from '../../contexts/SettingsContext';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
 import AnimatedLogoButton from '../../components/AnimatedLogoButton';
+import XPProgress from '../../components/ui/XPProgress';
 
 
 export default function HomeScreen(): React.JSX.Element {
@@ -188,47 +189,12 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {/* Level Progress Section (KM-based) */}
-        <View style={styles.xpSection}>
-          {(() => {
-            const totalKm = normalizeDistance(dashboardData?.user?.totalDistance || 0);
-            const kmLevel = Math.max(1, Math.floor(totalKm / 100) + 1);
-            const currentThreshold = (kmLevel - 1) * 100;
-            const nextThreshold = kmLevel * 100;
-            const progressKm = totalKm - currentThreshold;
-            const progressPercent = Math.min(100, (progressKm / (nextThreshold - currentThreshold)) * 100);
-            const kmRemaining = Math.max(0, nextThreshold - totalKm);
-
-            return (
-              <>
-                <View style={styles.xpHeader}>
-                  <Text style={styles.xpTitle}>
-                    {t('home.level')} {kmLevel}
-                  </Text>
-                  <Text style={styles.xpValue}>
-                    {Math.round(totalKm)} km
-                  </Text>
-                </View>
-                <View style={styles.progressBarContainer}>
-                  <View style={styles.progressBarBackground}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        { width: `${progressPercent}%` },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <Text style={styles.nextBadge}>
-                  {loading ? (
-                    <SkeletonLine width={160} height={12} />
-                  ) : (
-                    `${Math.round(kmRemaining)} km to Level ${kmLevel + 1}`
-                  )}
-                </Text>
-              </>
-            );
-          })()}
+        {/* XP & Streak Card */}
+        <View style={styles.streakCard}>
+          <XPProgress
+            xp={dashboardData?.user?.xp || 0}
+            level={dashboardData?.user?.level || 1}
+          />
         </View>
 
         {/* Achievements Section */}
@@ -617,55 +583,16 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: verticalScale(30),
   },
-  xpSection: {
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    gap: verticalScale(12),
-  },
-  xpHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  xpTitle: {
-    fontFamily: 'Space Grotesk',
-    fontSize: moderateScale(18),
-    fontWeight: '700',
-    color: '#000000',
-    lineHeight: verticalScale(24),
-  },
-  xpValue: {
-    fontFamily: 'Space Grotesk',
-    fontSize: moderateScale(16),
-    fontWeight: '600',
-    color: '#6366f1',
-    lineHeight: verticalScale(24),
-  },
-  progressBarContainer: {
-    height: verticalScale(12),
-  },
-  progressBarBackground: {
-    width: '100%',
-    height: verticalScale(12),
-    backgroundColor: '#E5E7EB',
-    borderRadius: scale(6),
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#6366f1',
-    borderRadius: scale(6),
-  },
-  progressBar: {
-    width: '100%',
-    height: verticalScale(8),
-  },
-  nextBadge: {
-    fontFamily: 'Space Grotesk',
-    fontSize: moderateScale(14),
-    fontWeight: '400',
-    color: '#757575',
-    lineHeight: verticalScale(21),
+  streakCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: scale(16),
+    marginBottom: verticalScale(8),
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   sectionContainer: {
     paddingHorizontal: scale(16),

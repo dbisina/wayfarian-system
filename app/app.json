@@ -78,7 +78,8 @@
         }
       ],
       "./plugins/withWidgetXcodeFix",
-      "./plugins/withPodfileFix"
+      "./plugins/withPodfileFix",
+      "./plugins/withNotificationIcon"
     ],
     "ios": {
       "supportsTablet": true,

@@ -32,6 +32,8 @@ import JourneyCamera from '../components/JourneyCamera';
 import LocationPicker from '../components/LocationPicker';
 import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
+import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
+import PhotoChallengeCard from '../components/PhotoChallengeCard';
 
 interface GroupJourneyData {
   id: string;
@@ -94,6 +96,9 @@ export default function GroupJourneyScreen() {
 
   const [showCamera, setShowCamera] = useState(false);
   const [showStartLocationModal, setShowStartLocationModal] = useState(false);
+  const [celebrationEvent, setCelebrationEvent] = useState<CelebrationEvent | null>(null);
+  const lastMilestoneRef = useRef(0);
+  const [photosTaken, setPhotosTaken] = useState(0);
   const [userStartLocation, setUserStartLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
 
   const handlePhotoTaken = useCallback(
@@ -138,6 +143,7 @@ export default function GroupJourneyScreen() {
           }),
         });
 
+        setPhotosTaken(prev => prev + 1);
         Alert.alert(t('alerts.success'), t('groupJourney.photoShared'));
       } catch (error) {
         console.warn('Failed to upload group photo', error);
@@ -252,6 +258,42 @@ export default function GroupJourneyScreen() {
       ),
     [memberLocations, user?.id]
   );
+
+  // Distance milestone celebrations
+  useEffect(() => {
+    if (!myLocation?.totalDistance) return;
+    const distKm = (myLocation.totalDistance || 0) / 1000;
+    const milestones = [5, 10, 25, 50, 100];
+    for (const km of milestones) {
+      if (distKm >= km && lastMilestoneRef.current < km) {
+        lastMilestoneRef.current = km;
+        setCelebrationEvent({
+          id: `dist-${km}`,
+          title: `${km} km reached!`,
+          subtitle: 'Keep riding!',
+          xp: km >= 50 ? 50 : 25,
+          icon: 'trophy',
+        });
+        break;
+      }
+    }
+  }, [myLocation?.totalDistance]);
+
+  // Listen for achievement:unlocked socket events
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: { achievementId: string; xpAwarded: number }) => {
+      setCelebrationEvent({
+        id: data.achievementId,
+        title: 'Achievement Unlocked!',
+        subtitle: data.achievementId.replace(/_/g, ' '),
+        xp: data.xpAwarded,
+        icon: 'ribbon',
+      });
+    };
+    socket.on('achievement:unlocked', handler);
+    return () => { socket.off('achievement:unlocked', handler); };
+  }, [socket]);
 
   // Direction origin: Only show route for current user from their current/start location
   const directionOrigin = useMemo(() => {
@@ -729,6 +771,24 @@ export default function GroupJourneyScreen() {
         <SpeedLimitSign latitude={myLocation.latitude} longitude={myLocation.longitude} />
       )}
 
+      {/* Ride Celebration Toast */}
+      <RideCelebration
+        event={celebrationEvent}
+        onDismiss={() => setCelebrationEvent(null)}
+      />
+
+      {/* Photo Challenge Card - positioned above bottom controls */}
+      {myInstance && myInstance.status !== 'COMPLETED' && (
+        <View style={styles.challengeCardContainer}>
+          <PhotoChallengeCard
+            photoCount={photosTaken}
+            isGroupRide={true}
+            distanceKm={myLocation ? (myLocation.totalDistance || 0) / 1000 : 0}
+            onTakePhoto={() => setShowCamera(true)}
+          />
+        </View>
+      )}
+
       <View style={styles.topPanel}>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
@@ -1042,6 +1102,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: -4,
     bottom: -4,
+  },
+  challengeCardContainer: {
+    position: 'absolute',
+    bottom: 180,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   startButton: {
     position: 'absolute',

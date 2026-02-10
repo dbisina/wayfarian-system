@@ -503,6 +503,40 @@ router.get('/achievements', async (req, res) => {
 });
 
 /**
+ * @route GET /api/user/streak
+ * @desc Get user's ride streak info
+ * @access Private
+ */
+router.get('/streak', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { getUserStreak } = require('../services/achievementService');
+    const streak = await getUserStreak(userId);
+    res.json({ success: true, streak });
+  } catch (error) {
+    console.error('Get streak error:', error);
+    res.status(500).json({ error: 'Failed to get streak', message: error.message });
+  }
+});
+
+/**
+ * @route GET /api/user/unlocked-achievements
+ * @desc Get user's unlocked achievements from the database
+ * @access Private
+ */
+router.get('/unlocked-achievements', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { getUserAchievements } = require('../services/achievementService');
+    const achievements = await getUserAchievements(userId);
+    res.json({ success: true, achievements });
+  } catch (error) {
+    console.error('Get unlocked achievements error:', error);
+    res.status(500).json({ error: 'Failed to get achievements', message: error.message });
+  }
+});
+
+/**
  * @route GET /api/user/friends
  * @desc Get user's friends list
  * @access Private

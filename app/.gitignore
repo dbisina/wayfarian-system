@@ -17,9 +17,9 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
-*.plist
+
 *.pem
-google-services.json
+
 
 # Metro
 .metro-health-check*

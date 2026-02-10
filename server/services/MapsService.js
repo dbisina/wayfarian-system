@@ -398,8 +398,11 @@ class MapsService {
         types: p.types,
       }));
     } catch (error) {
-      console.error('Autocomplete service error:', error);
-      throw new Error('Failed to get autocomplete predictions');
+      console.error('Autocomplete service error:', error.message);
+      if (error.response) {
+        console.error('Autocomplete API response:', error.response.status, error.response.data);
+      }
+      throw new Error(`Failed to get autocomplete predictions: ${error.message}`);
     }
   }
 }
