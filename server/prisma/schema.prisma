@@ -186,6 +186,11 @@ model JourneyPhoto {
   longitude Float?
   takenAt   DateTime
 
+  // Capture stats (rider stats at time of photo)
+  captureSpeed    Float? // km/h at time of capture
+  captureDistance  Float? // total distance covered at capture time (km)
+  captureHeading   Float? // heading/bearing at capture
+
   createdAt DateTime @default(now())
 
   // Relationships
@@ -217,6 +222,11 @@ model Photo {
   // Processing
   thumbnailPath String?
   isProcessed   Boolean @default(false)
+
+  // Capture stats (rider stats at time of photo)
+  captureSpeed    Float? // km/h at time of capture
+  captureDistance  Float? // total distance covered at capture time (km)
+  captureHeading   Float? // heading/bearing at capture
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -272,6 +282,10 @@ model RideEvent {
   longitude Float?
   mediaUrl  String?
   data      Json?
+
+  // Capture stats (for PHOTO events)
+  captureSpeed    Float? // km/h at time of capture
+  captureDistance  Float? // total distance covered at capture time (km)
 
   createdAt DateTime @default(now())
 

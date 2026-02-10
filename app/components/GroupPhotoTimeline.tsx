@@ -18,12 +18,16 @@ export interface GroupTimelinePhoto {
   latitude?: number;
   longitude?: number;
   takenAt: string;
+  captureSpeed?: number;
+  captureDistance?: number;
 }
 
 interface Props {
   photos: GroupTimelinePhoto[];
   onPhotoPress: (index: number) => void;
   memberColors: Record<string, string>;
+  convertSpeed?: (kmh: number) => string;
+  convertDistance?: (km: number) => string;
 }
 
 const MEMBER_COLOR_PALETTE = [
@@ -40,7 +44,7 @@ export const assignMemberColors = (userIds: string[]): Record<string, string> =>
   return colors;
 };
 
-const GroupPhotoTimeline: React.FC<Props> = ({ photos, onPhotoPress, memberColors }) => {
+const GroupPhotoTimeline: React.FC<Props> = ({ photos, onPhotoPress, memberColors, convertSpeed, convertDistance }) => {
   if (photos.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -60,6 +64,8 @@ const GroupPhotoTimeline: React.FC<Props> = ({ photos, onPhotoPress, memberColor
           minute: '2-digit',
         });
         const hasLocation = photo.latitude && photo.longitude;
+        const hasCaptureStats = (photo.captureSpeed != null && photo.captureSpeed > 0) ||
+          (photo.captureDistance != null && photo.captureDistance > 0);
         const isLast = index >= photos.length - 1;
         const isFirst = index === 0;
         const dotColor = memberColors[photo.userId] || '#F4E04D';
@@ -119,16 +125,6 @@ const GroupPhotoTimeline: React.FC<Props> = ({ photos, onPhotoPress, memberColor
                   </Text>
                 </View>
 
-                {/* Location Badge */}
-                {hasLocation && (
-                  <View style={styles.locationBadge}>
-                    <Ionicons name="location" size={10} color="#fff" />
-                    <Text style={styles.locationText}>
-                      {photo.latitude?.toFixed(3)}, {photo.longitude?.toFixed(3)}
-                    </Text>
-                  </View>
-                )}
-
                 {/* Start/Finish Marker */}
                 {isFirst && (
                   <View style={styles.markerBadge}>
@@ -138,6 +134,36 @@ const GroupPhotoTimeline: React.FC<Props> = ({ photos, onPhotoPress, memberColor
                 {isLast && photos.length > 1 && (
                   <View style={[styles.markerBadge, styles.finishBadge]}>
                     <Text style={styles.markerText}>FINISH</Text>
+                  </View>
+                )}
+
+                {/* Stats Bar - below the photo image */}
+                {(hasCaptureStats || hasLocation) && (
+                  <View style={styles.statsBar}>
+                    {photo.captureSpeed != null && photo.captureSpeed > 0 && (
+                      <View style={styles.statChip}>
+                        <Ionicons name="speedometer-outline" size={12} color="#F9A825" />
+                        <Text style={styles.statChipText}>
+                          {convertSpeed ? convertSpeed(photo.captureSpeed) : `${photo.captureSpeed.toFixed(0)} km/h`}
+                        </Text>
+                      </View>
+                    )}
+                    {photo.captureDistance != null && photo.captureDistance > 0 && (
+                      <View style={styles.statChip}>
+                        <Ionicons name="navigate-outline" size={12} color="#4CAF50" />
+                        <Text style={styles.statChipText}>
+                          {convertDistance ? convertDistance(photo.captureDistance) : `${photo.captureDistance.toFixed(1)} km`}
+                        </Text>
+                      </View>
+                    )}
+                    {hasLocation && (
+                      <View style={styles.statChip}>
+                        <Ionicons name="location-outline" size={12} color="#2196F3" />
+                        <Text style={styles.statChipText}>
+                          {photo.latitude?.toFixed(3)}, {photo.longitude?.toFixed(3)}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 )}
               </TouchableOpacity>
@@ -235,22 +261,24 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     maxWidth: 100,
   },
-  locationBadge: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
+  statsBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: 'rgba(30, 30, 30, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  statChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    gap: 3,
+    gap: 4,
   },
-  locationText: {
-    fontSize: 10,
+  statChipText: {
+    fontSize: 11,
     color: '#fff',
     fontFamily: 'Space Grotesk',
+    fontWeight: '500',
   },
   markerBadge: {
     position: 'absolute',

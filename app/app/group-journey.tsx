@@ -117,7 +117,17 @@ export default function GroupJourneyScreen() {
         formData.append('latitude', String(photoData.latitude));
         formData.append('longitude', String(photoData.longitude));
         formData.append('journeyId', groupJourneyId);
-        
+
+        // Include capture stats (speed in km/h, distance in km)
+        const currentSpeed = myLocation?.speed || 0;
+        const currentDistance = (myLocation?.totalDistance || 0) / 1000;
+        if (currentSpeed > 0) {
+          formData.append('speed', String(currentSpeed));
+        }
+        if (currentDistance > 0) {
+          formData.append('distance', String(currentDistance));
+        }
+
         // Use the dedicated gallery API function
         const uploadResponse = await galleryAPI.uploadPhoto(formData);
 
@@ -130,7 +140,7 @@ export default function GroupJourneyScreen() {
           uploadResponse?.photo?.firebasePath ||
           photoData.uri;
 
-        // Create ride event for the photo
+        // Create ride event for the photo (with capture stats)
         await apiRequest(`/group-journey/${groupJourneyId}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -140,6 +150,8 @@ export default function GroupJourneyScreen() {
             latitude: photoData.latitude,
             longitude: photoData.longitude,
             mediaUrl,
+            captureSpeed: currentSpeed || undefined,
+            captureDistance: currentDistance || undefined,
           }),
         });
 
@@ -152,7 +164,7 @@ export default function GroupJourneyScreen() {
         setShowCamera(false);
       }
     },
-    [groupJourneyId]
+    [groupJourneyId, myLocation]
   );
 
   const initialMapRegion = useMemo<Region | null>(() => {

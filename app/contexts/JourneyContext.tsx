@@ -1370,12 +1370,18 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     try {
       dispatch(updateUploadStatus({ id: uploadId, status: 'uploading', progress: 0 }));
       
+      const captureStats = {
+        speed: derivedStats.currentSpeed || undefined,
+        distance: officialDistance || undefined,
+      };
+
       const response = await galleryAPI.uploadPhotoWithProgress(
         photoUri,
         journeyId,
         (progress) => {
           dispatch(updateUploadStatus({ id: uploadId, status: 'uploading', progress }));
-        }
+        },
+        captureStats
       ) as { success?: boolean; photo?: { imageUrl?: string; firebasePath?: string; thumbnailPath?: string } };
 
       if (!response || !response.photo) {
@@ -1422,6 +1428,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             mediaUrl: uploadedPhotoUri,
             latitude: photoLatitude,
             longitude: photoLongitude,
+            captureSpeed: derivedStats.currentSpeed || undefined,
+            captureDistance: officialDistance || undefined,
           });
         } catch (eventError) {
           console.warn('[JourneyContext] Failed to broadcast group photo event:', eventError);

@@ -32,7 +32,7 @@ const upload = multer({
 const uploadPhoto = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { journeyId, latitude, longitude, takenAt } = req.body;
+    const { journeyId, latitude, longitude, takenAt, speed, distance } = req.body;
     
     if (!req.file) {
       return res.status(400).json({
@@ -114,6 +114,8 @@ const uploadPhoto = async (req, res) => {
         latitude: latitude ? parseFloat(latitude) : null,
         longitude: longitude ? parseFloat(longitude) : null,
         takenAt: takenAt ? new Date(takenAt) : new Date(),
+        captureSpeed: speed ? parseFloat(speed) : null,
+        captureDistance: distance ? parseFloat(distance) : null,
         deviceInfo: {
           userAgent: req.headers['user-agent'],
           uploadedAt: new Date().toISOString(),
@@ -514,6 +516,8 @@ const getGroupJourneyPhotos = async (req, res) => {
           latitude: event.latitude,
           longitude: event.longitude,
           takenAt: event.createdAt,
+          captureSpeed: event.captureSpeed || null,
+          captureDistance: event.captureDistance || null,
         });
       }
     }
@@ -532,6 +536,8 @@ const getGroupJourneyPhotos = async (req, res) => {
           latitude: photo.latitude,
           longitude: photo.longitude,
           takenAt: photo.takenAt,
+          captureSpeed: photo.captureSpeed || null,
+          captureDistance: photo.captureDistance || null,
         });
       }
     }

@@ -772,7 +772,8 @@ export const galleryAPI = {
   uploadPhotoWithProgress: async (
     photoUri: string,
     journeyId: string,
-    onProgress: (progress: number) => void
+    onProgress: (progress: number) => void,
+    captureStats?: { speed?: number; distance?: number }
   ) => {
     const token = await getAuthToken();
     const url = `${getCurrentApiUrl()}/gallery/upload`;
@@ -785,6 +786,12 @@ export const galleryAPI = {
       name: `journey_photo_${Date.now()}.jpg`,
     } as any);
     formData.append('journeyId', journeyId);
+    if (captureStats?.speed != null) {
+      formData.append('speed', String(captureStats.speed));
+    }
+    if (captureStats?.distance != null) {
+      formData.append('distance', String(captureStats.distance));
+    }
 
     // Use XMLHttpRequest for progress tracking since fetch doesn't support it
     return new Promise((resolve, reject) => {
@@ -939,6 +946,8 @@ export const groupJourneyAPI = {
       longitude?: number;
       mediaUrl?: string;
       data?: any;
+      captureSpeed?: number;
+      captureDistance?: number;
     }
   ) => {
     return internalApiRequest(`/group-journey/${groupJourneyId}/events`, 'POST', payload);

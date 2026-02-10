@@ -50,7 +50,9 @@ const createRideEvent = async (req, res) => {
       latitude,
       longitude,
       mediaUrl,
-      data
+      data,
+      captureSpeed,
+      captureDistance,
     } = req.body;
 
     const { groupJourney, instance } = await requireParticipant(userId, groupJourneyId);
@@ -72,6 +74,8 @@ const createRideEvent = async (req, res) => {
         longitude: typeof longitude === 'number' ? longitude : null,
         mediaUrl: mediaUrl || null,
         data: data || null,
+        captureSpeed: typeof captureSpeed === 'number' ? captureSpeed : null,
+        captureDistance: typeof captureDistance === 'number' ? captureDistance : null,
       },
       include: {
         user: { select: { id: true, displayName: true, photoURL: true } }

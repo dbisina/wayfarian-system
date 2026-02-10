@@ -1378,7 +1378,7 @@ const getGroupJourneySummary = async (req, res) => {
         },
         events: {
           where: { type: 'PHOTO' },
-          select: { id: true },
+          select: { id: true, userId: true },
         },
       },
     });
@@ -1418,6 +1418,12 @@ const getGroupJourneySummary = async (req, res) => {
       ? Math.floor((journeyEnd - journeyStart) / 1000)
       : totalGroupTime;
 
+    // Count photos per member
+    const photoCountByUser = {};
+    for (const event of groupJourney.events) {
+      photoCountByUser[event.userId] = (photoCountByUser[event.userId] || 0) + 1;
+    }
+
     // Format member stats
     const memberStats = groupJourney.instances.map(inst => ({
       userId: inst.userId,
@@ -1428,6 +1434,7 @@ const getGroupJourneySummary = async (req, res) => {
       avgSpeed: inst.avgSpeed || 0,
       topSpeed: inst.topSpeed || 0,
       status: inst.status,
+      photoCount: photoCountByUser[inst.userId] || 0,
     }));
 
     res.json({

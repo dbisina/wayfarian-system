@@ -55,6 +55,14 @@ router.post(
       .optional()
       .isISO8601()
       .withMessage('Invalid date format'),
+    body('speed')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Speed must be a non-negative number'),
+    body('distance')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Distance must be a non-negative number'),
   ],
   handleValidationErrors,
   uploadPhoto

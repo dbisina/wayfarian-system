@@ -10,6 +10,9 @@ import {
   Modal,
   FlatList,
   StatusBar,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -24,6 +27,10 @@ import GroupPhotoTimeline, {
   assignMemberColors,
 } from '../components/GroupPhotoTimeline';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface MemberStat {
@@ -35,6 +42,7 @@ interface MemberStat {
   avgSpeed: number;
   topSpeed: number;
   status: string;
+  photoCount?: number;
 }
 
 interface GroupSummary {
@@ -56,6 +64,100 @@ interface GroupSummary {
   };
   memberStats: MemberStat[];
 }
+
+const ExpandableMemberCard = ({
+  member,
+  color,
+  convertDistance,
+  convertSpeed,
+  formatTime,
+}: {
+  member: MemberStat;
+  color: string;
+  convertDistance: (km: number) => string;
+  convertSpeed: (kmh: number) => string;
+  formatTime: (seconds: number) => string;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const toggleExpand = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(!expanded);
+  };
+
+  return (
+    <TouchableOpacity
+      style={[styles.expandableCard, { borderLeftColor: color }]}
+      activeOpacity={0.7}
+      onPress={toggleExpand}
+    >
+      {/* Collapsed: Avatar + Name + Distance */}
+      <View style={styles.expandableCardHeader}>
+        <View style={[styles.expandableAvatarRing, { borderColor: color }]}>
+          {member.photoURL ? (
+            <Image
+              source={{ uri: member.photoURL }}
+              style={styles.expandableAvatar}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={[styles.expandableAvatarPlaceholder, { backgroundColor: color }]}>
+              <Text style={styles.expandableInitial}>
+                {(member.displayName || '?')[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.expandableNameSection}>
+          <Text style={styles.expandableName} numberOfLines={1}>
+            {member.displayName}
+          </Text>
+          <Text style={styles.expandableDistance}>
+            {convertDistance(member.totalDistance)}
+          </Text>
+        </View>
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={20}
+          color="#757575"
+        />
+      </View>
+
+      {/* Expanded: Full Stats Grid */}
+      {expanded && (
+        <View style={styles.expandedStatsGrid}>
+          <View style={styles.expandedStatItem}>
+            <Ionicons name="navigate-outline" size={16} color="#F9A825" />
+            <Text style={styles.expandedStatValue}>{convertDistance(member.totalDistance)}</Text>
+            <Text style={styles.expandedStatLabel}>Distance</Text>
+          </View>
+          <View style={styles.expandedStatItem}>
+            <Ionicons name="time-outline" size={16} color="#F9A825" />
+            <Text style={styles.expandedStatValue}>{formatTime(member.totalTime)}</Text>
+            <Text style={styles.expandedStatLabel}>Time</Text>
+          </View>
+          <View style={styles.expandedStatItem}>
+            <Ionicons name="speedometer-outline" size={16} color="#F9A825" />
+            <Text style={styles.expandedStatValue}>{convertSpeed(member.avgSpeed)}</Text>
+            <Text style={styles.expandedStatLabel}>Avg Speed</Text>
+          </View>
+          <View style={styles.expandedStatItem}>
+            <Ionicons name="flash-outline" size={16} color="#F9A825" />
+            <Text style={styles.expandedStatValue}>{convertSpeed(member.topSpeed)}</Text>
+            <Text style={styles.expandedStatLabel}>Top Speed</Text>
+          </View>
+          {member.photoCount != null && (
+            <View style={styles.expandedStatItem}>
+              <Ionicons name="camera-outline" size={16} color="#F9A825" />
+              <Text style={styles.expandedStatValue}>{member.photoCount}</Text>
+              <Text style={styles.expandedStatLabel}>Photos</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
 
 const GroupJourneyDetailScreen = (): React.JSX.Element => {
   const router = useRouter();
@@ -131,6 +233,9 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
   const heroUri = heroPhoto
     ? getFirebaseDownloadUrl(heroPhoto.imageUrl) || heroPhoto.imageUrl
     : null;
+
+  // Current selected photo for viewer
+  const selectedPhoto = selectedPhotoIndex !== null ? photos[selectedPhotoIndex] : null;
 
   if (loading) {
     return (
@@ -228,47 +333,23 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
           </View>
         </View>
 
-        {/* Member Stats Row */}
+        {/* Expandable Member Cards */}
         {summary.memberStats.length > 0 && (
           <View style={styles.memberSection}>
             <Text style={styles.sectionTitle}>Riders</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.memberScroll}
-            >
-              {summary.memberStats.map((member) => {
-                const color = memberColors[member.userId] || '#F9A825';
-                return (
-                  <View key={member.userId} style={styles.memberCard}>
-                    <View style={[styles.memberAvatarRing, { borderColor: color }]}>
-                      {member.photoURL ? (
-                        <Image
-                          source={{ uri: member.photoURL }}
-                          style={styles.memberAvatar}
-                          contentFit="cover"
-                        />
-                      ) : (
-                        <View style={[styles.memberAvatarPlaceholder, { backgroundColor: color }]}>
-                          <Text style={styles.memberInitial}>
-                            {(member.displayName || '?')[0].toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.memberName} numberOfLines={1}>
-                      {member.displayName}
-                    </Text>
-                    <Text style={styles.memberStat}>
-                      {convertDistance(member.totalDistance)}
-                    </Text>
-                    <Text style={styles.memberStatLabel}>
-                      {formatTime(member.totalTime)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
+            {summary.memberStats.map((member) => {
+              const color = memberColors[member.userId] || '#F9A825';
+              return (
+                <ExpandableMemberCard
+                  key={member.userId}
+                  member={member}
+                  color={color}
+                  convertDistance={convertDistance}
+                  convertSpeed={convertSpeed}
+                  formatTime={formatTime}
+                />
+              );
+            })}
           </View>
         )}
 
@@ -284,6 +365,8 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
             photos={photos}
             onPhotoPress={(index) => setSelectedPhotoIndex(index)}
             memberColors={memberColors}
+            convertSpeed={convertSpeed}
+            convertDistance={convertDistance}
           />
         </View>
 
@@ -299,7 +382,7 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
       >
         <View style={styles.viewerContainer}>
           <TouchableOpacity
-            style={styles.viewerClose}
+            style={[styles.viewerClose, { top: insets.top + 10 }]}
             onPress={() => setSelectedPhotoIndex(null)}
           >
             <Ionicons name="close" size={28} color="#fff" />
@@ -341,22 +424,76 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
                   );
                 }}
               />
-              <View style={styles.viewerInfo}>
-                <Text style={styles.viewerName}>
-                  {photos[selectedPhotoIndex]?.userName}
-                </Text>
-                {photos[selectedPhotoIndex]?.takenAt && (
-                  <Text style={styles.viewerTime}>
-                    {new Date(photos[selectedPhotoIndex].takenAt).toLocaleTimeString(
-                      'en-US',
-                      { hour: '2-digit', minute: '2-digit' }
+
+              {/* Enhanced stats overlay */}
+              <View style={[styles.viewerStatsOverlay, { paddingBottom: insets.bottom + 16 }]}>
+                {/* Member info row */}
+                <View style={styles.viewerMemberRow}>
+                  {selectedPhoto?.userPhotoURL ? (
+                    <Image
+                      source={{ uri: selectedPhoto.userPhotoURL }}
+                      style={styles.viewerMemberAvatar}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={[styles.viewerMemberAvatarPlaceholder, {
+                      backgroundColor: memberColors[selectedPhoto?.userId || ''] || '#F9A825'
+                    }]}>
+                      <Text style={styles.viewerMemberInitial}>
+                        {(selectedPhoto?.userName || '?')[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.viewerMemberInfo}>
+                    <Text style={styles.viewerName}>
+                      {selectedPhoto?.userName}
+                    </Text>
+                    {selectedPhoto?.takenAt && (
+                      <Text style={styles.viewerTime}>
+                        {new Date(selectedPhoto.takenAt).toLocaleTimeString(
+                          'en-US',
+                          { hour: '2-digit', minute: '2-digit' }
+                        )}
+                      </Text>
                     )}
-                  </Text>
+                  </View>
+                </View>
+
+                {/* Capture stats row */}
+                {(selectedPhoto?.captureSpeed || selectedPhoto?.captureDistance || selectedPhoto?.latitude) && (
+                  <View style={styles.viewerStatsRow}>
+                    {selectedPhoto.captureSpeed != null && selectedPhoto.captureSpeed > 0 && (
+                      <View style={styles.viewerStatItem}>
+                        <Ionicons name="speedometer-outline" size={14} color="#F9A825" />
+                        <Text style={styles.viewerStatText}>
+                          {convertSpeed(selectedPhoto.captureSpeed)}
+                        </Text>
+                      </View>
+                    )}
+                    {selectedPhoto.captureDistance != null && selectedPhoto.captureDistance > 0 && (
+                      <View style={styles.viewerStatItem}>
+                        <Ionicons name="navigate-outline" size={14} color="#4CAF50" />
+                        <Text style={styles.viewerStatText}>
+                          {convertDistance(selectedPhoto.captureDistance)}
+                        </Text>
+                      </View>
+                    )}
+                    {selectedPhoto.latitude && selectedPhoto.longitude && (
+                      <View style={styles.viewerStatItem}>
+                        <Ionicons name="location-outline" size={14} color="#2196F3" />
+                        <Text style={styles.viewerStatText}>
+                          {selectedPhoto.latitude.toFixed(3)}, {selectedPhoto.longitude.toFixed(3)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 )}
+
+                {/* Counter */}
+                <Text style={styles.viewerCounter}>
+                  {selectedPhotoIndex + 1} / {photos.length}
+                </Text>
               </View>
-              <Text style={styles.viewerCounter}>
-                {selectedPhotoIndex + 1} / {photos.length}
-              </Text>
             </>
           )}
         </View>
@@ -506,7 +643,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     marginTop: 2,
   },
-  // Member Section
+  // Member Section - Expandable Cards
   memberSection: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
@@ -519,58 +656,84 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  memberScroll: {
-    gap: 16,
+  expandableCard: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 4,
   },
-  memberCard: {
+  expandableCardHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    width: 80,
   },
-  memberAvatarRing: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 2.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  memberAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  memberAvatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  expandableAvatarRing: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  memberInitial: {
-    fontSize: 18,
+  expandableAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  expandableAvatarPlaceholder: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expandableInitial: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#fff',
     fontFamily: 'Space Grotesk',
   },
-  memberName: {
-    fontSize: 12,
+  expandableNameSection: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  expandableName: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#3E4751',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    textAlign: 'center',
   },
-  memberStat: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#000',
-    fontFamily: 'Space Grotesk',
-    marginTop: 2,
-  },
-  memberStatLabel: {
-    fontSize: 10,
+  expandableDistance: {
+    fontSize: 13,
     color: '#757575',
     fontFamily: 'Space Grotesk',
+    marginTop: 1,
+  },
+  expandedStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+  },
+  expandedStatItem: {
+    width: '33.33%',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  expandedStatValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    fontFamily: 'Space Grotesk',
+    marginTop: 4,
+  },
+  expandedStatLabel: {
+    fontSize: 10,
+    color: '#9E9E9E',
+    fontFamily: 'Space Grotesk',
+    marginTop: 2,
   },
   // Timeline Section
   timelineSection: {
@@ -623,10 +786,42 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     height: SCREEN_WIDTH * 1.2,
   },
-  viewerInfo: {
+  // Enhanced viewer overlay
+  viewerStatsOverlay: {
     position: 'absolute',
-    bottom: 80,
-    left: 20,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  viewerMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  viewerMemberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  viewerMemberAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerMemberInitial: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    fontFamily: 'Space Grotesk',
+  },
+  viewerMemberInfo: {
+    marginLeft: 12,
+    flex: 1,
   },
   viewerName: {
     fontSize: 16,
@@ -638,15 +833,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.7)',
     fontFamily: 'Space Grotesk',
-    marginTop: 2,
+    marginTop: 1,
+  },
+  viewerStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginBottom: 10,
+  },
+  viewerStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  viewerStatText: {
+    fontSize: 13,
+    color: '#fff',
+    fontFamily: 'Space Grotesk',
+    fontWeight: '500',
   },
   viewerCounter: {
-    position: 'absolute',
-    bottom: 40,
-    alignSelf: 'center',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
     fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
 
