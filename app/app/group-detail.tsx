@@ -1618,7 +1618,7 @@ const styles = StyleSheet.create({
   },
   modalField: {
     marginBottom: 12,
-    zIndex: 10,
+    zIndex: 100,
   },
   modalLabel: {
     fontSize: 13,

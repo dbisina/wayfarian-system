@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -46,6 +46,11 @@ export default function LocationPicker({
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync internal query state with value prop
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
 
   const fetchAutocomplete = useCallback(async (text: string) => {
     if (!text.trim()) {
@@ -192,33 +197,31 @@ export default function LocationPicker({
 
   return (
     <View style={[styles.container, style]}>
-      <View style={styles.inputContainer}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder={placeholder}
-            value={query}
-            onChangeText={handleTextChange}
-            onSubmitEditing={handleSubmit}
-            onFocus={() => setShowSuggestions(!!currentLocation)}
-            placeholderTextColor="#999999"
-            returnKeyType="search"
-          />
-          
-          {loading && (
-            <Skeleton width={16} height={16} borderRadius={8} style={styles.loadingIndicator} />
-          )}
-          
-          {query.length > 0 && !loading && (
-            <TouchableOpacity onPress={clearInput} style={styles.clearButton}>
-              <MaterialIcons name="clear" size={20} color="#999999" />
-            </TouchableOpacity>
-          )}
-          
-          <TouchableOpacity onPress={handleSubmit} style={styles.searchButton}>
-            <MaterialIcons name="search" size={20} color="#000000" />
+      <View style={styles.inputWrapper}>
+        <TextInput
+          style={styles.input}
+          placeholder={placeholder}
+          value={query}
+          onChangeText={handleTextChange}
+          onSubmitEditing={handleSubmit}
+          onFocus={() => setShowSuggestions(!!currentLocation)}
+          placeholderTextColor="#999999"
+          returnKeyType="search"
+        />
+        
+        {loading && (
+          <Skeleton width={16} height={16} borderRadius={8} style={styles.loadingIndicator} />
+        )}
+        
+        {query.length > 0 && !loading && (
+          <TouchableOpacity onPress={clearInput} style={styles.clearButton}>
+            <MaterialIcons name="clear" size={20} color="#999999" />
           </TouchableOpacity>
-        </View>
+        )}
+        
+        <TouchableOpacity onPress={handleSubmit} style={styles.searchButton}>
+          <MaterialIcons name="search" size={20} color="#000000" />
+        </TouchableOpacity>
       </View>
 
       {showSuggestions && (suggestions.length > 0 || !!currentLocation) && (
@@ -257,9 +260,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 10000,
   },
-  inputContainer: {
-    marginBottom: 0,
-  },
   inputWrapper: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -294,20 +294,19 @@ const styles = StyleSheet.create({
   },
   suggestionsContainer: {
     position: 'absolute',
-    bottom: 60,
+    top: 65,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    maxHeight: 200,
+    maxHeight: 250,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 4,
     },
     shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 12,
+    shadowRadius: 8,    elevation: 12,
     zIndex: 10001,
   },
   suggestionItem: {

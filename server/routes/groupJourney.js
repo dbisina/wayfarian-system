@@ -111,6 +111,17 @@ router.get(
 );
 
 /**
+ * @route GET /api/group-journey/my-active-instance
+ * @desc Get current user's active or paused group journey instance
+ * @access Private
+ * NOTE: Must be defined BEFORE /:id to avoid Express matching 'my-active-instance' as an :id param
+ */
+router.get(
+  '/my-active-instance',
+  getMyActiveInstance
+);
+
+/**
  * @route GET /api/group-journey/:id/summary
  * @desc Get post-ride group journey summary with aggregated stats
  * @access Private (Group members only)
@@ -200,16 +211,6 @@ router.post(
   ],
   handleValidationErrors,
   joinGroupJourney
-);
-
-/**
- * @route GET /api/group-journey/my-active-instance
- * @desc Get current user's active or paused group journey instance
- * @access Private
- */
-router.get(
-  '/my-active-instance',
-  getMyActiveInstance
 );
 
 /**

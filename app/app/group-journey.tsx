@@ -409,6 +409,9 @@ export default function GroupJourneyScreen() {
 
   // Fetch directions for iOS or when Google Maps API is not available
   // Android uses MapViewDirections which automatically updates when origin changes
+  const lastDirectionsOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const directionsThrottleRef = useRef<number>(0);
+
   useEffect(() => {
     if (!destination || !directionOrigin) {
       setManualRouteCoords([]);
@@ -422,6 +425,28 @@ export default function GroupJourneyScreen() {
       setManualRouteCoords([]);
       return;
     }
+
+    // Throttle: skip if less than 10s since last fetch
+    const now = Date.now();
+    if (now - directionsThrottleRef.current < 10000) return;
+
+    // Distance gate: skip if user hasn't moved >100m since last fetch
+    const lastOrig = lastDirectionsOriginRef.current;
+    if (lastOrig) {
+      const R = 6371000;
+      const dLat = ((directionOrigin.latitude - lastOrig.latitude) * Math.PI) / 180;
+      const dLon = ((directionOrigin.longitude - lastOrig.longitude) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lastOrig.latitude * Math.PI) / 180) *
+          Math.cos((directionOrigin.latitude * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
+      const dist = 2 * R * Math.asin(Math.sqrt(a));
+      if (dist < 100) return;
+    }
+
+    directionsThrottleRef.current = now;
+    lastDirectionsOriginRef.current = directionOrigin;
 
     let isMounted = true;
 
@@ -439,7 +464,6 @@ export default function GroupJourneyScreen() {
         }
       } catch (error) {
         console.warn('Failed to fetch directions for group journey', error);
-        // Keep previous route coords on error to avoid flickering
       }
     })();
 
@@ -783,7 +807,7 @@ export default function GroupJourneyScreen() {
         directionOrigin ? (
           googleKey ? (
             <MapViewDirections
-              key={`${directionOrigin.latitude}-${directionOrigin.longitude}-${destination.latitude}-${destination.longitude}`}
+              key={`directions-${destination.latitude}-${destination.longitude}`}
               origin={directionOrigin}
               destination={destination}
               apikey={googleKey}
@@ -791,10 +815,7 @@ export default function GroupJourneyScreen() {
               strokeColor="#F9A825"
               mode="DRIVING"
               optimizeWaypoints={true}
-              onReady={(result) => {
-                // Optional: Log when route is ready
-                console.log('[GroupJourney] Route ready:', result.distance, result.duration);
-              }}
+              resetOnChange={false}
               onError={(errorMessage) => {
                 console.warn('[GroupJourney] Directions error:', errorMessage);
               }}

@@ -243,7 +243,7 @@ export default function NewJourneyScreen() {
         </View>
 
         {/* Start Location */}
-        <View style={[styles.locationSection, { zIndex: 1 }]}>
+        <View style={[styles.locationSection, { zIndex: 10 }]}>
           <LocationPicker
             placeholder="Start Location"
             value={startLocation?.address || ''}
@@ -259,7 +259,7 @@ export default function NewJourneyScreen() {
         </View>
 
         {/* End Location */}
-        <View style={[styles.locationSection, { zIndex: 2 }]}>
+        <View style={[styles.locationSection, { zIndex: 5 }]}>
           <LocationPicker
             placeholder="End Location"
             value={endLocation?.address || ''}

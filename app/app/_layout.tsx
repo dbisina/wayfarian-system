@@ -156,7 +156,9 @@ function RootLayoutContent() {
         ) : (
           <Stack.Screen name="(tabs)" />
         )}
-        <Stack.Screen name="group-detail" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="group-detail" options={{ presentation: 'card', headerShown: false }} />
+        <Stack.Screen name="journey" options={{ presentation: 'card', headerShown: false }} />
+        <Stack.Screen name="group-journey" options={{ presentation: 'card', headerShown: false }} />
         <Stack.Screen name="new-group" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="new-journey" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />

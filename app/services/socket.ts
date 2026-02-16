@@ -5,6 +5,8 @@ import { io, Socket } from 'socket.io-client';
 import { getAuthToken, getCurrentApiUrl } from './api';
 
 let socket: Socket | null = null;
+let connectingPromise: Promise<Socket> | null = null;
+
 function computeBaseUrl(): string {
   // Prefer explicit socket URL, else derive from the same runtime API host
   const envSocket = process.env.EXPO_PUBLIC_SOCKET_URL;
@@ -16,34 +18,52 @@ function computeBaseUrl(): string {
 }
 
 export async function connectSocket(): Promise<Socket> {
+  // Return existing connected socket
   if (socket && socket.connected) return socket;
 
-  const token = await getAuthToken(); // Firebase idToken stored in AsyncStorage
-  const url = computeBaseUrl();
+  // If a connection is already in progress, wait for it instead of creating another
+  if (connectingPromise) return connectingPromise;
 
-  socket = io(url, {
-    transports: ['websocket'],
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    auth: { token },
-  });
-
-  // Refresh token before each reconnection attempt to prevent stale token issues
-  socket.on('reconnect_attempt', async () => {
+  connectingPromise = (async () => {
     try {
-      const freshToken = await getAuthToken();
-      if (socket && freshToken) {
-        socket.auth = { token: freshToken };
-        console.log('[Socket] Refreshed auth token before reconnection');
+      // Disconnect any stale socket before creating a new one
+      if (socket) {
+        try { socket.disconnect(); } catch { }
+        socket = null;
       }
-    } catch (error) {
-      console.warn('[Socket] Failed to refresh token on reconnect:', error);
-    }
-  });
 
-  return socket;
+      const token = await getAuthToken(); // Firebase idToken stored in AsyncStorage
+      const url = computeBaseUrl();
+
+      socket = io(url, {
+        transports: ['websocket'],
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        auth: { token },
+      });
+
+      // Refresh token before each reconnection attempt to prevent stale token issues
+      socket.on('reconnect_attempt', async () => {
+        try {
+          const freshToken = await getAuthToken();
+          if (socket && freshToken) {
+            socket.auth = { token: freshToken };
+            console.log('[Socket] Refreshed auth token before reconnection');
+          }
+        } catch (error) {
+          console.warn('[Socket] Failed to refresh token on reconnect:', error);
+        }
+      });
+
+      return socket;
+    } finally {
+      connectingPromise = null;
+    }
+  })();
+
+  return connectingPromise;
 }
 
 export function getSocket(): Socket | null {
