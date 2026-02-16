@@ -17,6 +17,7 @@ const {
   joinGroupJourney,
   getMyActiveInstance,
   getGroupJourneySummary,
+  adminEndJourney,
 } = require('../controllers/groupJourneyControllerV2');
 const {
   createRideEvent,
@@ -124,6 +125,23 @@ router.get(
   ],
   handleValidationErrors,
   getGroupJourneySummary
+);
+
+/**
+ * @route POST /api/group-journey/:id/end
+ * @desc Admin soft-end a group journey (marks COMPLETED, does not modify instances)
+ * @access Private (Group creator/admin only)
+ */
+router.post(
+  '/:id/end',
+  [
+    param('id')
+      .isString()
+      .notEmpty()
+      .withMessage('Valid group journey ID required')
+  ],
+  handleValidationErrors,
+  adminEndJourney
 );
 
 /**

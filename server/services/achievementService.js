@@ -42,6 +42,10 @@ const ACHIEVEMENT_DEFINITIONS = {
   badge_hunter: { type: 'social', check: 'tenGroupJourneys' },
 };
 
+// Minimum quality gates — rides below these don't count toward milestones
+const MIN_JOURNEY_DISTANCE_KM = 0.5; // Must ride at least 500m
+const MIN_JOURNEY_TIME_SECS = 300;   // Must ride at least 5 minutes
+
 /**
  * Check and award achievements for a user after journey completion
  * @param {string} userId
@@ -65,6 +69,16 @@ async function checkAndAwardAchievements(userId, journeyData = {}) {
 
     if (!user) return [];
 
+    // Count only qualifying journeys (above minimum distance and time)
+    const qualifyingTrips = await prisma.journey.count({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        totalDistance: { gte: MIN_JOURNEY_DISTANCE_KM },
+        totalTime: { gte: MIN_JOURNEY_TIME_SECS },
+      },
+    });
+
     // Get already unlocked achievements
     const existingAchievements = await prisma.userAchievement.findMany({
       where: { userId },
@@ -86,7 +100,7 @@ async function checkAndAwardAchievements(userId, journeyData = {}) {
 
       switch (definition.type) {
         case 'journeys':
-          qualified = user.totalTrips >= definition.threshold;
+          qualified = qualifyingTrips >= definition.threshold;
           break;
         case 'distance':
           qualified = user.totalDistance >= definition.threshold;

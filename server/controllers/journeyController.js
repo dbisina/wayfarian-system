@@ -301,12 +301,12 @@ const endJourney = async (req, res) => {
 
     const userId = req.user.id;
 
-    // Get current journey
+    // Get current journey (also accept COMPLETED for idempotent retries)
     const journey = await prisma.journey.findFirst({
       where: {
         id: journeyId,
         userId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'COMPLETED'] },
       },
     });
 
@@ -314,6 +314,15 @@ const endJourney = async (req, res) => {
       return res.status(404).json({
         error: 'Journey not found',
         message: 'Active journey not found for this user',
+      });
+    }
+
+    // Idempotent: if already completed, return success without re-processing
+    if (journey.status === 'COMPLETED') {
+      return res.json({
+        success: true,
+        message: 'Journey already completed',
+        journey,
       });
     }
 

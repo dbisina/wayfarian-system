@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useMemo, useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,13 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useUserData } from '../../hooks/useUserData';
 import { userAPI, leaderboardAPI } from '../../services/api';
+import XPProgress from '../../components/ui/XPProgress';
 
-// User XP data for consistent display with home page
-interface UserXpData {
-  xp: number;
-  level: number;
-}
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { useTranslation } from 'react-i18next';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
@@ -51,10 +49,11 @@ export default function RideLogScreen(): React.JSX.Element {
   const { t, i18n } = useTranslation();
   const { convertDistance } = useSettings(); // MUST be called before any conditional hooks
   
+  // Use the shared user data hook — same source of truth as home screen
+  const { dashboardData, refreshData: refreshUserData } = useUserData();
+
   const [activeTab, setActiveTab] = useState('solo');
   const [rank, setRank] = useState<number | null>(null);
-  const [xpProgress, setXpProgress] = useState<number>(0);
-  const [userXp, setUserXp] = useState<UserXpData>({ xp: 0, level: 1 }); // Synced with home page
   const [nextBadge, setNextBadge] = useState<string>('');
   const [badges, setBadges] = useState<{ id: string; title: string; achievementId: string }[]>([]);
   const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
@@ -62,23 +61,11 @@ export default function RideLogScreen(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
 
   // Separate function to process and set data to state
-  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any, dashboardRes?: any) => {
+  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
     const position = positionRes?.position ?? positionRes?.rank ?? null;
     if (typeof position === 'number') setRank(position);
 
-    // FIX: Use dashboard XP data to stay in sync with home page
-    // Both screens now use the same source of truth for XP
-    if (dashboardRes?.user) {
-      const xp = dashboardRes.user.xp || 0;
-      const level = dashboardRes.user.level || 1;
-      setUserXp({ xp, level });
-      // Calculate progress within current level (same formula as home page)
-      setXpProgress(xp % 100);
-    } else {
-      // Fallback to achievements progress if dashboard unavailable
-      const progressPct = parseFloat(achievementsRes?.summary?.progress || '0');
-      setXpProgress(Number.isFinite(progressPct) ? progressPct : 0);
-    }
+    // XP is now handled by the shared useUserData() hook — no local state needed
 
     // Find next locked tier name as next badge
     let nextName = t('log.nextMilestone');
@@ -108,14 +95,14 @@ export default function RideLogScreen(): React.JSX.Element {
 
   const loadData = React.useCallback(async (useCache = true) => {
     if (!isAuthenticated) return;
-    
+
     // 1. Try to load from cache first for instant render
     if (useCache) {
       try {
         const cached = await AsyncStorage.getItem(CACHE_KEY_LOG_DATA);
         if (cached) {
           const parsed = JSON.parse(cached);
-          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes, parsed.dashboardRes);
+          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes);
         }
       } catch (e) {
         console.warn('Failed to load log cache', e);
@@ -127,23 +114,21 @@ export default function RideLogScreen(): React.JSX.Element {
          setLoading(true);
       }
 
-      // 2. Fetch fresh data (including dashboard for synced XP)
-      const [positionRes, achievementsRes, historyRes, dashboardRes] = await Promise.all([
+      // 2. Fetch fresh data (XP comes from the shared useUserData hook)
+      const [positionRes, achievementsRes, historyRes] = await Promise.all([
         leaderboardAPI.getUserPosition(),
         userAPI.getAchievements(),
         userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
-        userAPI.getDashboard(), // FIX: Fetch dashboard to sync XP with home page
       ]);
 
       // 3. Update state with fresh data
-      processAndSetData(positionRes, achievementsRes, historyRes, dashboardRes);
+      processAndSetData(positionRes, achievementsRes, historyRes);
 
       // 4. Update cache
       AsyncStorage.setItem(CACHE_KEY_LOG_DATA, JSON.stringify({
         positionRes,
         achievementsRes,
         historyRes,
-        dashboardRes, // Include dashboard data in cache
         timestamp: Date.now()
       })).catch(e => console.warn('Failed to save log cache', e));
 
@@ -154,11 +139,13 @@ export default function RideLogScreen(): React.JSX.Element {
     }
   }, [isAuthenticated, soloJourneys.length, groupJourneys.length, processAndSetData]);
 
-  useEffect(() => {
-    loadData(true);
-  }, [isAuthenticated]);
-
-  const formattedProgressWidth = useMemo(() => `${Math.min(100, Math.max(0, xpProgress))}%`, [xpProgress]);
+  // Refresh data on screen focus (matches home screen behavior)
+  useFocusEffect(
+    useCallback(() => {
+      loadData(true);
+      refreshUserData(); // Sync XP with home screen
+    }, [loadData, refreshUserData])
+  );
 
   const normalizeDistance = (value?: number) => {
     if (!value || value <= 0) return 0;
@@ -207,17 +194,16 @@ export default function RideLogScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Progress Card with Rank and XP from backend */}
+        {/* Progress Card — shared XP source with home screen */}
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <Text style={styles.explorerBadge}>{rank ? t('log.rank', { rank }) : t('log.rankPlaceholder')}</Text>
           </View>
-          <Text style={styles.progressSubtitle}>{t('log.motivation')}</Text>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarBackground}>
-              <View style={[styles.progressBarFill, { width: formattedProgressWidth as any }]} />
-            </View>
-          </View>
+          <XPProgress
+            xp={dashboardData?.user?.xp || 0}
+            level={dashboardData?.user?.level || 1}
+            compact
+          />
           <Text style={styles.nextBadgeText}>{t('log.nextBadge')} <Text style={styles.trailblazerText}>{nextBadge || '—'}</Text></Text>
         </View>
         
@@ -445,27 +431,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     fontFamily: 'Poppins',
-  },
-  progressSubtitle: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    marginBottom: 16,
-  },
-  progressBarContainer: {
-    marginBottom: 8,
-  },
-  progressBarBackground: {
-    height: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-  },
-  progressBarFill: {
-    height: '100%',
-    width: '63.6%', // 203/319 from Figma
-    backgroundColor: '#000000',
-    borderRadius: 10,
   },
   nextBadgeText: {
     fontSize: 10,

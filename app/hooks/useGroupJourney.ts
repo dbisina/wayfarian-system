@@ -67,6 +67,8 @@ export const useGroupJourney = ({
   const myInstanceRef = useRef<JourneyInstance | null>(null);
   // Track when the client actually started tracking (not server startTime which has latency)
   const clientStartTimeRef = useRef<number | null>(null);
+  // Track current speed from GPS for stats display
+  const currentSpeedRef = useRef<number>(0);
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
@@ -87,7 +89,7 @@ export const useGroupJourney = ({
           movingTime: myInstance.totalTime || 0,
           avgSpeed: myInstance.avgSpeed || 0,
           topSpeed: myInstance.topSpeed || 0,
-          currentSpeed: 0,
+          currentSpeed: currentSpeedRef.current,
           activeMembersCount: members.filter(m => m.isOnline).length,
           completedMembersCount: Object.values(journeyState.memberInstances).filter(inst => inst.status === 'COMPLETED').length,
         }));
@@ -135,7 +137,11 @@ export const useGroupJourney = ({
           totalTime: instance?.totalTime,
           speed: location?.speed,
           heading: location?.heading,
-          lastUpdate: instance?.lastUpdate || (location?.timestamp ? location.timestamp.toISOString() : undefined),
+          lastUpdate: instance?.lastUpdate || (location?.timestamp
+            ? (typeof location.timestamp === 'number'
+              ? new Date(location.timestamp).toISOString()
+              : String(location.timestamp))
+            : undefined),
         } as MemberLocation;
       })
       .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
@@ -190,7 +196,10 @@ export const useGroupJourney = ({
           lastEmitRef.current = now;
 
           const { latitude, longitude, speed, heading } = location.coords;
+          // Store current speed (m/s -> km/h) for stats display
+          currentSpeedRef.current = (speed ?? 0) > 0 ? (speed ?? 0) * 3.6 : 0;
           const userId = myInstanceRef.current?.userId;
+          if (!socket?.connected) return;
           socket.emit('instance:location-update', {
             instanceId,
             latitude,
@@ -232,6 +241,7 @@ export const useGroupJourney = ({
     locationSubscriptionRef.current?.remove();
     locationSubscriptionRef.current = null;
     clientStartTimeRef.current = null;
+    currentSpeedRef.current = 0;
     dispatch(setGroupTracking({ isTracking: false, instanceId: null }));
   }, [dispatch]);
 
@@ -284,6 +294,14 @@ export const useGroupJourney = ({
         photoURL: payload.photoURL,
         lastUpdate: payload.lastUpdate,
       }));
+
+      // Update myInstance totalDistance from server when this is our own location update
+      const current = myInstanceRef.current;
+      if (current && payload.instanceId === current.id && payload.totalDistance !== undefined) {
+        setMyInstance(prev =>
+          prev ? { ...prev, totalDistance: payload.totalDistance } : prev,
+        );
+      }
     };
 
     const handleMemberStatus = (payload: Partial<MemberLocation> & { userId: string; status: MemberLocation['status'] }) => {

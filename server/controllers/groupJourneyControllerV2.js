@@ -217,6 +217,7 @@ const startGroupJourney = async (req, res) => {
     });
   } catch (error) {
     logger.error('Start group journey error:', error);
+    if (res.headersSent) return;
     res.status(500).json({
       error: 'Failed to start group journey',
       message: error.message
@@ -338,54 +339,29 @@ const startMyInstance = async (req, res) => {
       }
     }
 
-    // Check for existing instance
-    let instance = await prisma.journeyInstance.findUnique({
+    // Upsert to prevent race conditions from double-clicks / duplicate requests
+    const instance = await prisma.journeyInstance.upsert({
       where: {
         groupJourneyId_userId: { groupJourneyId, userId }
-      }
+      },
+      update: {
+        status: 'ACTIVE',
+        currentLatitude: startLatitude,
+        currentLongitude: startLongitude,
+        lastLocationUpdate: new Date(),
+        startAddress,
+      },
+      create: {
+        groupJourneyId,
+        userId,
+        status: 'ACTIVE',
+        currentLatitude: startLatitude,
+        currentLongitude: startLongitude,
+        lastLocationUpdate: new Date(),
+        startAddress,
+        routePoints: [{ latitude: startLatitude, longitude: startLongitude, timestamp: new Date().toISOString() }],
+      },
     });
-
-    if (instance) {
-      if (instance.status === 'ACTIVE') {
-        return res.status(400).json({
-          error: 'Journey already started',
-          message: 'You have already started this journey'
-        });
-      }
-      // If paused or cancelled, allow restart/resume logic could go here, 
-      // but for now we'll create a new one or update existing? 
-      // The original code just continued to create a new instance which might fail unique constraint 
-      // or it relied on the check above. 
-      // Let's assume we update the existing one to ACTIVE if it exists but is not active.
-
-      instance = await prisma.journeyInstance.update({
-        where: { id: instance.id },
-        data: {
-          status: 'ACTIVE',
-          currentLatitude: startLatitude,
-          currentLongitude: startLongitude,
-          lastLocationUpdate: new Date(),
-          startAddress,
-          // Don't overwrite routePoints if resuming, but maybe we should?
-          // For a fresh start feel, let's append a gap or just continue.
-          // If it was COMPLETED, we probably shouldn't be here unless re-riding.
-        }
-      });
-    } else {
-      // Create new instance with member's start location
-      instance = await prisma.journeyInstance.create({
-        data: {
-          groupJourneyId,
-          userId,
-          status: 'ACTIVE',
-          currentLatitude: startLatitude,
-          currentLongitude: startLongitude,
-          lastLocationUpdate: new Date(),
-          startAddress,
-          routePoints: [{ latitude: startLatitude, longitude: startLongitude, timestamp: new Date().toISOString() }]
-        }
-      });
-    }
 
     // Update group member presence and last known location
     try {
@@ -468,6 +444,7 @@ const startMyInstance = async (req, res) => {
     });
   } catch (error) {
     logger.error('Start my instance error:', error);
+    if (res.headersSent) return;
     res.status(500).json({
       error: 'Failed to start journey',
       message: error.message
@@ -485,16 +462,18 @@ const finishGroupJourney = async (groupJourneyId, io) => {
       include: { group: true }
     });
 
-    if (!groupJourney || groupJourney.status === 'COMPLETED') return;
+    if (!groupJourney) return;
 
-    // Update status to COMPLETED
-    const completedJourney = await prisma.groupJourney.update({
-      where: { id: groupJourneyId },
-      data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
-      }
-    });
+    // If not already marked COMPLETED by the caller (race-safe path), update now
+    if (groupJourney.status !== 'COMPLETED') {
+      await prisma.groupJourney.update({
+        where: { id: groupJourneyId },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        }
+      });
+    }
 
     // Clear cache
     await redisService.del(redisService.key('group-journey', groupJourneyId, 'full'));
@@ -516,29 +495,6 @@ const finishGroupJourney = async (groupJourneyId, io) => {
     }
 
     logger.info(`[GroupJourney] All members finished. Journey ${groupJourneyId} completed.`);
-
-    // AUTO-DELETE GROUP Logic
-    // "Once the journey ends for everyone the group should be deleted automatically"
-    if (groupJourney.groupId) {
-      try {
-        // We use soft-delete (isActive: false) to preserve journey history and timeline.
-        await prisma.group.update({
-          where: { id: groupJourney.groupId },
-          data: { isActive: false }
-        });
-
-        if (io) {
-          io.to(`group-${groupJourney.groupId}`).emit('group:archived', {
-            groupId: groupJourney.groupId
-          });
-        }
-
-        logger.info(`[GroupJourney] Group ${groupJourney.groupId} automatically archived (soft deleted).`);
-
-      } catch (e) {
-        logger.error(`[GroupJourney] Failed to auto-delete group ${groupJourney.groupId}`, e);
-      }
-    }
 
   } catch (e) {
     logger.error(`[GroupJourney] Error finishing journey ${groupJourneyId}`, e);
@@ -643,6 +599,7 @@ const getGroupJourney = async (req, res) => {
     });
   } catch (error) {
     logger.error('Get group journey error:', error);
+    if (res.headersSent) return;
     res.status(500).json({
       error: 'Failed to get group journey',
       message: error.message
@@ -851,29 +808,105 @@ const completeInstance = async (req, res) => {
       ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
       : 0;
 
-    const updatedInstance = await prisma.journeyInstance.update({
-      where: { id: instanceId },
-      data: {
-        status: 'COMPLETED',
-        endTime: new Date(),
-        totalDistance: instance.totalDistance || 0,
-        totalTime: duration,
-        // Update end location if provided
-        ...(endLatitude && endLongitude ? {
-          currentLatitude: endLatitude,
-          currentLongitude: endLongitude,
-        } : {}),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            photoURL: true,
+    // Wrap instance completion + journey record creation in a transaction
+    // to prevent inconsistent state if any step fails mid-way
+    let updatedInstance;
+    if (instance.groupJourney?.group) {
+      const groupName = instance.groupJourney.group.name;
+
+      // Extract start location from routePoints or use current location
+      let startLat = 0;
+      let startLng = 0;
+      if (instance.routePoints && Array.isArray(instance.routePoints) && instance.routePoints.length > 0) {
+        const firstPoint = instance.routePoints[0];
+        startLat = firstPoint.latitude || firstPoint.lat || 0;
+        startLng = firstPoint.longitude || firstPoint.lng || firstPoint.lon || 0;
+      }
+      if (startLat === 0 && startLng === 0) {
+        startLat = instance.currentLatitude || 0;
+        startLng = instance.currentLongitude || 0;
+      }
+
+      const txResult = await prisma.$transaction(async (tx) => {
+        const completed = await tx.journeyInstance.update({
+          where: { id: instanceId },
+          data: {
+            status: 'COMPLETED',
+            endTime: new Date(),
+            totalDistance: instance.totalDistance || 0,
+            totalTime: duration,
+            ...(endLatitude && endLongitude ? {
+              currentLatitude: endLatitude,
+              currentLongitude: endLongitude,
+            } : {}),
+          },
+          include: {
+            user: {
+              select: { id: true, displayName: true, photoURL: true },
+            },
+          },
+        });
+
+        await tx.journey.create({
+          data: {
+            userId: instance.userId,
+            title: groupName,
+            groupId: instance.groupJourney.groupId,
+            startTime: instance.startTime,
+            endTime: completed.endTime || new Date(),
+            status: 'COMPLETED',
+            totalDistance: completed.totalDistance || 0,
+            totalTime: duration,
+            avgSpeed: completed.avgSpeed || 0,
+            topSpeed: completed.topSpeed || 0,
+            startLatitude: startLat,
+            startLongitude: startLng,
+            endLatitude: completed.currentLatitude,
+            endLongitude: completed.currentLongitude,
+            routePoints: instance.routePoints || null,
+          },
+        });
+
+        const distanceInKm = (completed.totalDistance || 0) / 1000;
+        await tx.user.update({
+          where: { id: instance.userId },
+          data: {
+            totalDistance: { increment: distanceInKm },
+            totalTime: { increment: duration },
+            totalTrips: { increment: 1 },
+            topSpeed: completed.topSpeed && completed.topSpeed > 0
+              ? { set: Math.max(completed.topSpeed, 0) }
+              : undefined,
+          },
+        });
+
+        return completed;
+      });
+
+      updatedInstance = txResult;
+      logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
+    } else {
+      // No group context - just complete the instance without journey record
+      updatedInstance = await prisma.journeyInstance.update({
+        where: { id: instanceId },
+        data: {
+          status: 'COMPLETED',
+          endTime: new Date(),
+          totalDistance: instance.totalDistance || 0,
+          totalTime: duration,
+          ...(endLatitude && endLongitude ? {
+            currentLatitude: endLatitude,
+            currentLongitude: endLongitude,
+          } : {}),
+        },
+        include: {
+          user: {
+            select: { id: true, displayName: true, photoURL: true },
           },
         },
-      },
-    });
+      });
+      logger.info(`[Instance] Completed (no group): ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
+    }
 
     // Update cache
     const instanceKey = redisService.key('instance', instanceId);
@@ -908,96 +941,29 @@ const completeInstance = async (req, res) => {
       });
     }
 
-    logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
-
-    // Create a Journey record from the completed instance so it shows up in journey history
-    // Use the group name as the title
-    if (instance.groupJourney?.group) {
+    // Check achievements and update streak (true fire-and-forget - don't block response)
+    setImmediate(async () => {
       try {
-        const groupName = instance.groupJourney.group.name;
-
-        // Extract start location from routePoints or use current location
-        let startLat = 0;
-        let startLng = 0;
-        if (instance.routePoints && Array.isArray(instance.routePoints) && instance.routePoints.length > 0) {
-          const firstPoint = instance.routePoints[0];
-          startLat = firstPoint.latitude || firstPoint.lat || 0;
-          startLng = firstPoint.longitude || firstPoint.lng || firstPoint.lon || 0;
-        }
-
-        // Fallback to current location if routePoints don't have start
-        if (startLat === 0 && startLng === 0) {
-          startLat = instance.currentLatitude || 0;
-          startLng = instance.currentLongitude || 0;
-        }
-
-        await prisma.journey.create({
-          data: {
-            userId: instance.userId,
-            title: groupName, // Use group name as title
-            groupId: instance.groupJourney.groupId,
-            startTime: instance.startTime,
-            endTime: updatedInstance.endTime || new Date(),
-            status: 'COMPLETED',
-            totalDistance: updatedInstance.totalDistance || 0,
-            totalTime: duration,
-            avgSpeed: updatedInstance.avgSpeed || 0,
-            topSpeed: updatedInstance.topSpeed || 0,
-            startLatitude: startLat,
-            startLongitude: startLng,
-            endLatitude: updatedInstance.currentLatitude,
-            endLongitude: updatedInstance.currentLongitude,
-            routePoints: instance.routePoints || null,
-          },
+        const achievementService = require('../services/achievementService');
+        const newAchievements = await achievementService.checkAndAwardAchievements(userId, {
+          completedAt: new Date(),
         });
-        logger.info(`[Instance] Created Journey record for instance ${instanceId} with group name: ${groupName}`);
+        await achievementService.updateStreak(userId);
 
-        // Update user stats for leaderboard consistency
-        try {
-          const distanceInKm = (updatedInstance.totalDistance || 0) / 1000;
-          await prisma.user.update({
-            where: { id: instance.userId },
-            data: {
-              totalDistance: { increment: distanceInKm },
-              totalTime: { increment: duration },
-              totalTrips: { increment: 1 },
-              topSpeed: updatedInstance.topSpeed && updatedInstance.topSpeed > 0 
-                ? { set: Math.max(updatedInstance.topSpeed, 0) }
-                : undefined,
-            },
-          });
-          logger.info(`[Instance] Updated user stats for ${instance.userId}: +${distanceInKm.toFixed(2)}km, +${duration}s`);
-        } catch (statsError) {
-          logger.warn(`[Instance] Failed to update user stats for ${instance.userId}:`, statsError);
-          // Don't fail the completion if stats update fails
+        // Emit achievement events via socket for live celebrations
+        if (io && newAchievements.length > 0) {
+          for (const achievement of newAchievements) {
+            io.to(`user-${userId}`).emit('achievement:unlocked', {
+              achievementId: achievement.achievementId,
+              xpAwarded: achievement.xpAwarded,
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
-      } catch (journeyError) {
-        // Log but don't fail the completion if journey creation fails
-        logger.error(`[Instance] Failed to create Journey record for instance ${instanceId}:`, journeyError);
+      } catch (achError) {
+        logger.warn('[Instance] Achievement check failed (non-blocking):', achError.message);
       }
-    }
-
-    // Check achievements and update streak (fire-and-forget)
-    try {
-      const achievementService = require('../services/achievementService');
-      const newAchievements = await achievementService.checkAndAwardAchievements(userId, {
-        completedAt: new Date(),
-      });
-      await achievementService.updateStreak(userId);
-
-      // Emit achievement events via socket for live celebrations
-      if (io && newAchievements.length > 0) {
-        for (const achievement of newAchievements) {
-          io.to(`user-${userId}`).emit('achievement:unlocked', {
-            achievementId: achievement.achievementId,
-            xpAwarded: achievement.xpAwarded,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-    } catch (achError) {
-      logger.warn('[Instance] Achievement check failed (non-blocking):', achError.message);
-    }
+    });
 
     // CHECK IF ALL MEMBERS HAVE COMPLETED
     // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
@@ -1013,19 +979,17 @@ const completeInstance = async (req, res) => {
     });
 
     if (activeInstancesCount === 0) {
-      // All active instances are done.
-      // But wait, what if some members haven't started yet?
-      // If the journey is "ACTIVE" but some members haven't started, should we close it?
-      // The user said "once the journey ends for everyone".
-      // Usually this means everyone who started has finished.
-      // Or maybe the creator explicitly ends it?
-      // Let's assume if everyone who STARTED has FINISHED, we can consider it done?
-      // Or maybe we should wait for the creator?
-      // The prompt says "can end the journey where ever you want other users will see where you end... once the journey ends for everyone the group should be deleted".
-      // This implies an automatic trigger.
-      // Let's stick to: If NO active instances remain, we mark the group journey as completed.
+      // All started instances are done - atomically mark group journey as COMPLETED
+      // Use updateMany with status guard so only one concurrent caller succeeds
+      const result = await prisma.groupJourney.updateMany({
+        where: { id: instance.groupJourneyId, status: 'ACTIVE' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
 
-      await finishGroupJourney(instance.groupJourneyId, io);
+      if (result.count > 0) {
+        // This caller won the race - emit completion events
+        await finishGroupJourney(instance.groupJourneyId, io);
+      }
     }
 
     res.json({
@@ -1174,6 +1138,7 @@ const getMyInstance = async (req, res) => {
     res.json({ instance });
   } catch (error) {
     logger.error('[Instance] Error getting my instance:', error);
+    if (res.headersSent) return;
     res.status(500).json({ error: 'Failed to get instance' });
   }
 };
@@ -1230,6 +1195,7 @@ const getActiveForGroup = async (req, res) => {
     });
   } catch (error) {
     logger.error('[GroupJourney] Error getting active journey:', error);
+    if (res.headersSent) return;
     res.status(500).json({
       success: false,
       error: 'Failed to get active journey'
@@ -1291,6 +1257,7 @@ const joinGroupJourney = async (req, res) => {
     });
   } catch (error) {
     logger.error('[GroupJourney] Error joining:', error);
+    if (res.headersSent) return;
     res.status(500).json({ error: 'Failed to join journey' });
   }
 };
@@ -1335,6 +1302,7 @@ const getMyActiveInstance = async (req, res) => {
     });
   } catch (error) {
     logger.error('[GroupJourney] Error getting my active instance:', error);
+    if (res.headersSent) return;
     res.status(500).json({ error: 'Failed to get active instance' });
   }
 };
@@ -1461,6 +1429,7 @@ const getGroupJourneySummary = async (req, res) => {
     });
   } catch (error) {
     logger.error('Get group journey summary error:', error);
+    if (res.headersSent) return;
     res.status(500).json({
       error: 'Failed to get summary',
       message: error.message,
@@ -1469,6 +1438,110 @@ const getGroupJourneySummary = async (req, res) => {
 };
 
 // Cancel endpoint removed per product decision: prefer pause/resume semantics
+
+/**
+ * Admin soft-end a group journey
+ * Marks the GroupJourney as COMPLETED without modifying individual instances.
+ * Only the group creator or admin can call this.
+ */
+const adminEndJourney = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Fetch the group journey with group membership info
+    const groupJourney = await prisma.groupJourney.findUnique({
+      where: { id },
+      include: {
+        group: {
+          include: {
+            members: {
+              where: { userId },
+              select: { role: true, userId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!groupJourney) {
+      return res.status(404).json({ error: 'Group journey not found' });
+    }
+
+    if (groupJourney.status === 'COMPLETED') {
+      return res.status(400).json({ error: 'Journey is already completed' });
+    }
+
+    // Check permissions: must be group creator or admin
+    const membership = groupJourney.group?.members?.[0];
+    const isCreator = groupJourney.creatorId === userId;
+    const isAdmin = membership?.role === 'ADMIN' || membership?.role === 'OWNER';
+
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: 'Only the group creator or admin can end this journey' });
+    }
+
+    // Mark journey as COMPLETED (individual instances stay as-is)
+    await prisma.groupJourney.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+      },
+    });
+
+    // Clear Redis caches
+    await redisService.del(redisService.key('group-journey', id, 'full'));
+    await redisService.del(redisService.key('group', groupJourney.groupId, 'active-journey'));
+
+    // Emit socket event to all participants
+    const io = req.app.get('io');
+    if (io) {
+      const payload = {
+        groupJourneyId: id,
+        groupId: groupJourney.groupId,
+        endedByAdmin: true,
+        timestamp: new Date().toISOString(),
+      };
+      io.to(`group-journey-${id}`).emit('group-journey:completed', payload);
+      io.to(`group-${groupJourney.groupId}`).emit('group-journey:completed', payload);
+    }
+
+    // Queue push notifications to members
+    try {
+      const groupMembers = await prisma.groupMember.findMany({
+        where: { groupId: groupJourney.groupId },
+        select: { userId: true },
+      });
+      const memberIds = groupMembers.map(m => m.userId).filter(uid => uid !== userId);
+      memberIds.forEach(uid => {
+        jobQueue.add('send-notification', {
+          userId: uid,
+          type: 'group-journey-ended',
+          data: {
+            groupJourneyId: id,
+            groupId: groupJourney.groupId,
+            title: groupJourney.title || 'Group Ride',
+          },
+        }, { priority: 5 });
+      });
+    } catch (notifErr) {
+      logger.warn('[GroupJourney] Failed to queue admin-end notifications:', notifErr);
+    }
+
+    logger.info(`[GroupJourney] Journey ${id} ended by admin ${userId}`);
+
+    return res.json({
+      success: true,
+      message: 'Journey ended successfully',
+      groupJourneyId: id,
+    });
+  } catch (error) {
+    logger.error('[GroupJourney] adminEndJourney error:', error);
+    if (res.headersSent) return;
+    return res.status(500).json({ error: 'Failed to end journey' });
+  }
+};
 
 module.exports = {
   startGroupJourney,
@@ -1483,4 +1556,5 @@ module.exports = {
   joinGroupJourney,
   getMyActiveInstance,
   getGroupJourneySummary,
+  adminEndJourney,
 };

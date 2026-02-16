@@ -27,7 +27,7 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
 
   useEffect(() => {
     if (isTracking) {
-      Animated.loop(
+      const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 0.4,
@@ -40,7 +40,11 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      loop.start();
+      return () => {
+        loop.stop();
+      };
     } else {
       pulseAnim.setValue(1);
     }
@@ -101,7 +105,7 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
         </View>
 
         {/* Expand Icon */}
-        <MaterialIcons name="keyboard-arrow-down" size={20} color="#6B7280" />
+        <MaterialIcons name="keyboard-arrow-up" size={20} color="#6B7280" />
       </View>
     </TouchableOpacity>
   );
@@ -110,9 +114,9 @@ export default function FloatingJourneyStatus({ homeOnly = false }: { homeOnly?:
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 42 : 54,
-    left: 16,
-    right: 16,
+    bottom: 110,
+    left: 0,
+    right: 0,
     zIndex: 2000,
     alignItems: 'center',
   },

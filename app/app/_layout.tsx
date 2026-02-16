@@ -18,6 +18,7 @@ import { SettingsProvider } from '../contexts/SettingsContext';
 import { AlertProvider } from '../contexts/AlertContext';
 import { LiquidAlert } from '../components/ui/LiquidAlert';
 import GroupJourneyGlobalListener from '../components/GroupJourneyGlobalListener';
+import StaleRideRecovery from '../components/StaleRideRecovery';
 import { store, persistor } from '../store';
 import { initSentry } from '../services/sentry';
 import { initI18n } from '../i18n';
@@ -105,7 +106,7 @@ function RootLayoutContent() {
         // Navigate to the group journey
         if (data.groupJourneyId) {
           router.push({
-            pathname: '/journey',
+            pathname: '/group-journey',
             params: { groupJourneyId: data.groupJourneyId },
           } as any);
         }
@@ -165,6 +166,7 @@ function RootLayoutContent() {
       
       {/* Global listener for group journey start events */}
       <GroupJourneyGlobalListener />
+      <StaleRideRecovery />
       <LiquidAlert />
     </ThemeProvider>
   );

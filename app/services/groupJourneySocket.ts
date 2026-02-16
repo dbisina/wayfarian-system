@@ -208,7 +208,7 @@ function bindSocketListeners(dispatch: AppDispatch) {
     { event: 'group-locations', handler: handleGroupLocations },
     { event: 'member-started', handler: handleMemberStarted },
     { event: 'member-completed', handler: handleMemberCompleted },
-    { event: 'ride-event', handler: handleRideEvent },
+    { event: 'group-journey:event', handler: handleRideEvent },
   ];
 
   listeners.forEach(({ event, handler }) => socketOn(event, handler));

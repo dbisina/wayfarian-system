@@ -44,12 +44,11 @@ export default function GroupJourneyGlobalListener() {
               onPress: () => {
                 try {
                   if (data?.groupId && data?.groupJourneyId) {
-                    router.push({ 
-                      pathname: '/journey', 
-                      params: { 
-                        groupId: String(data.groupId), 
-                        groupJourneyId: String(data.groupJourneyId) 
-                      } 
+                    router.push({
+                      pathname: '/group-journey',
+                      params: {
+                        groupJourneyId: String(data.groupJourneyId)
+                      }
                     });
                   } else {
                     console.warn('[GroupJourney] Missing groupId or groupJourneyId in alert data');

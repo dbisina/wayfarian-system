@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     zIndex: 10000,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 0,
   },
   inputWrapper: {
     backgroundColor: '#FFFFFF',
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   },
   suggestionsContainer: {
     position: 'absolute',
-    top: 70,
+    bottom: 60,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',

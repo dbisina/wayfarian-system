@@ -364,6 +364,31 @@ export default function GroupDetailScreen() {
     })();
   }, []);
 
+  const handleAdminEndJourney = () => {
+    if (!activeGroupJourneyId) return;
+    Alert.alert(
+      'End Journey',
+      'Are you sure you want to end this group journey? Members who are still riding will be notified.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Journey',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await groupJourneyAPI.adminEndJourney(activeGroupJourneyId);
+              setActiveGroupJourneyId(null);
+              Alert.alert('Journey Ended', 'The group journey has been ended.');
+            } catch (err: any) {
+              console.error('[GroupDetail] Admin end journey error:', err);
+              Alert.alert('Error', err?.message || 'Failed to end the journey.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleStartGroupJourney = async () => {
     if (!groupId || !group) return;
     // Open modal to pick start/destination and title
@@ -490,7 +515,7 @@ export default function GroupDetailScreen() {
                   setActiveSoloJourney(null);
                   router.replace({
                     pathname: '/group-journey',
-                    params: { id: activeGroupJourneyId }
+                    params: { groupJourneyId: String(activeGroupJourneyId) }
                   });
                 } else {
                   Alert.alert('Error', response.message || 'Failed to start group journey');
@@ -549,14 +574,13 @@ export default function GroupDetailScreen() {
           await AsyncStorage.setItem('cachedMyGroupInstance', JSON.stringify(cached));
         } catch {}
 
-        // Navigate immediately to the Journey screen
+        // Navigate immediately to the Group Journey screen
         try {
-          router.replace({ 
-            pathname: '/journey', 
-            params: { 
-              groupId: String(groupId), 
-              groupJourneyId: String(activeGroupJourneyId) 
-            } 
+          router.replace({
+            pathname: '/group-journey',
+            params: {
+              groupJourneyId: String(activeGroupJourneyId)
+            }
           });
         } catch (navError) {
           console.error('[Group Detail] Navigation error:', navError);
@@ -904,6 +928,13 @@ export default function GroupDetailScreen() {
               <Text style={styles.activeJourneyHint}>
                 Journey is active. Members can start riding.
               </Text>
+              <TouchableOpacity
+                style={styles.endJourneyButton}
+                onPress={handleAdminEndJourney}
+              >
+                <MaterialIcons name="stop-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.endJourneyText}>End Journey</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1465,6 +1496,23 @@ const styles = StyleSheet.create({
     color: '#047857',
     fontFamily: 'Space Grotesk',
   },
+  endJourneyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+    marginTop: 12,
+  },
+  endJourneyText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    fontFamily: 'Space Grotesk',
+  },
   cancelJourneyButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1570,6 +1618,7 @@ const styles = StyleSheet.create({
   },
   modalField: {
     marginBottom: 12,
+    zIndex: 10,
   },
   modalLabel: {
     fontSize: 13,

@@ -6,64 +6,64 @@
  * Structure: { achievementId: xpReward }
  */
 const ACHIEVEMENT_XP = {
-  // Journey Milestones (10-100 XP)
-  first_journey: 50,
-  ten_journeys: 100,
-  fifty_journeys: 300,
-  hundred_journeys: 500,
-  
-  // Distance Achievements (100-500 XP)
-  hundred_km: 100,
-  five_hundred_km: 250,
-  thousand_km: 500,
-  five_thousand_km: 1000,
-  ten_thousand_km: 2000,
-  
-  // Speed Achievements (150-400 XP)
-  speed_demon: 150,
-  velocity_master: 300,
-  apex_controller: 400,
-  wind_reaper: 500,
-  
-  // Time Achievements (100-500 XP)
-  hour_rider: 100,
-  ten_hours: 250,
-  fifty_hours: 500,
-  hundred_hours: 1000,
-  
-  // Special Achievements (200-600 XP)
-  night_rider: 200,
-  drift_master: 350,
-  rhythm_cruise: 250,
-  street_sprinter: 300,
-  turbo_pulse: 300,
-  nitro_surge: 350,
-  shadow_line: 400,
-  flowstate_pilot: 450,
-  
-  // Performance Achievements (300-700 XP)
-  performance_king: 600,
-  iron_enduro: 500,
-  rhythm_master: 400,
-  arena_elite: 700,
-  
-  // Social Achievements (150-400 XP)
-  ace_of_friends: 300,
-  badge_hunter: 400,
-  
-  // Vehicle/Style Achievements (100-300 XP)
-  mustang: 200,
-  racer: 250,
-  racing_car: 300,
-  drifting: 300,
-  tire_master: 150,
-  track_champion: 400,
-  speedometer_pro: 200,
-  travel_expert: 250,
-  miles_master: 300,
-  
-  // Legendary (1000+ XP)
-  x_legend: 1500,
+  // Journey Milestones — low XP, these are easy to hit
+  first_journey: 10,
+  ten_journeys: 40,
+  fifty_journeys: 150,
+  hundred_journeys: 300,
+
+  // Distance Achievements — reward real riding
+  hundred_km: 60,
+  five_hundred_km: 150,
+  thousand_km: 350,
+  five_thousand_km: 800,
+  ten_thousand_km: 1500,
+
+  // Speed Achievements
+  speed_demon: 80,
+  velocity_master: 180,
+  apex_controller: 300,
+  wind_reaper: 400,
+
+  // Time Achievements — reward dedication
+  hour_rider: 40,
+  ten_hours: 120,
+  fifty_hours: 300,
+  hundred_hours: 600,
+
+  // Special Achievements
+  night_rider: 100,
+  drift_master: 200,
+  rhythm_cruise: 120,
+  street_sprinter: 150,
+  turbo_pulse: 150,
+  nitro_surge: 200,
+  shadow_line: 250,
+  flowstate_pilot: 300,
+
+  // Performance Achievements
+  performance_king: 400,
+  iron_enduro: 350,
+  rhythm_master: 250,
+  arena_elite: 500,
+
+  // Social Achievements
+  ace_of_friends: 150,
+  badge_hunter: 250,
+
+  // Vehicle/Style Achievements
+  mustang: 100,
+  racer: 120,
+  racing_car: 150,
+  drifting: 150,
+  tire_master: 80,
+  track_champion: 250,
+  speedometer_pro: 100,
+  travel_expert: 120,
+  miles_master: 180,
+
+  // Legendary
+  x_legend: 1000,
 };
 
 /**

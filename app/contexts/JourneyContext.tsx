@@ -5,6 +5,7 @@ import React, { createContext, useContext, useEffect, useMemo, ReactNode, useCal
 import { locationService, JourneyStats, LocationPoint } from '../services/locationService';
 import { journeyAPI, groupJourneyAPI, galleryAPI } from '../services/api';
 import { ensureGroupJourneySocket, teardownGroupJourneySocket } from '../services/groupJourneySocket';
+import { on as socketOn, off as socketOff } from '../services/socket';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useAppDispatch } from '../store/hooks';
 import { useSmartTracking } from '../hooks/useSmartTracking';
@@ -319,9 +320,15 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     });
   }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
 
-  // Backend & Socket Updates
+  // Backend & Socket Updates (throttled to every 5 seconds)
+  const backendUpdateThrottleRef = useRef<number>(0);
   useEffect(() => {
     if (!journeyState.isTracking || !liveRawLocation || !journeyState.currentJourney) return;
+
+    // Throttle backend updates to every 5 seconds to avoid flooding the server
+    const now = Date.now();
+    if (now - backendUpdateThrottleRef.current < 5000) return;
+    backendUpdateThrottleRef.current = now;
 
     const updateBackend = async () => {
        try {
@@ -335,18 +342,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
        }
     };
 
-    // Throttle backend updates? useSmartTracking updates liveRawLocation frequently.
-    // For now, we update on every location change (approx 2s).
     updateBackend();
-
-    // Socket update
-    if (journeyState.currentJourney.groupId) {
-      // Use the imported shareGroupLocation (need to ensure it's imported from socket service correctly)
-      // Wait, I imported it from groupJourneySocket? No, it's in socket.ts.
-      // I need to check where I imported it from.
-      // I imported it from '../services/groupJourneySocket' in the previous edit, but it might not be there.
-      // Let's check imports.
-    }
 
   }, [liveRawLocation, journeyState.isTracking, journeyState.currentJourney]);
   // Keys for persisting journey/instance IDs
@@ -526,104 +522,19 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           }
         }
         
-        // 3. Check for orphaned group journey instance
+        // 3. Orphaned group journey instances are handled by StaleRideRecovery component
+        // Just clean up stale persisted IDs if no active instance found
         const persistedInstanceId = await AsyncStorage.getItem(GROUP_INSTANCE_ID_KEY);
         if (persistedInstanceId && !journeyState.currentJourney && !journeyState.myInstance) {
-          console.log('[JourneyContext] Found orphaned group instance ID:', persistedInstanceId);
-          
-          // Fetch active instance from backend
-          const myInst = await groupJourneyAPI.getMyActiveInstance();
-          const inst = myInst?.instance || myInst?.myInstance || myInst?.data || myInst?.journeyInstance;
-          
-          if (inst && (inst.status === 'ACTIVE' || inst.status === 'PAUSED')) {
-            // Calculate time elapsed
-            const startTime = new Date(inst.startTime).getTime();
-            const elapsedMs = Date.now() - startTime;
-            const elapsedMinutes = Math.floor(elapsedMs / 60000);
-            const elapsedHours = Math.floor(elapsedMinutes / 60);
-            const timeAgo = elapsedHours > 0 
-              ? `${elapsedHours}h ${elapsedMinutes % 60}m`
-              : `${elapsedMinutes}m`;
-            
-            // Show dialog for group journey
-            Alert.alert(
-              'Unfinished Group Journey',
-              `You have an active group ride from ${timeAgo} ago. Would you like to resume tracking or complete this journey?`,
-              [
-                {
-                  text: 'Complete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      // Complete the instance on backend
-                      await groupJourneyAPI.completeInstance(inst.id, {});
-                      // Clear persisted state
-                      await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY);
-                      await AsyncStorage.removeItem(JOURNEY_ID_KEY);
-                      await clearStartTime();
-                      console.log('[JourneyContext] Orphaned group instance completed by user');
-                    } catch (e) {
-                      console.error('[JourneyContext] Error completing orphaned group instance:', e);
-                    }
-                  },
-                },
-                {
-                  text: 'Resume',
-                  style: 'default',
-                  onPress: async () => {
-                    try {
-                      // Set up instance and journey state
-                      dispatch(setMyInstance(inst));
-                      dispatch(setCurrentJourney({
-                        id: inst.id,
-                        title: inst.groupJourney?.title || 'Group Ride',
-                        startLocation: inst.startLatitude ? {
-                          latitude: inst.startLatitude,
-                          longitude: inst.startLongitude,
-                          address: inst.startAddress || 'Start Location',
-                        } : undefined,
-                        endLocation: inst.endLatitude ? {
-                          latitude: inst.endLatitude,
-                          longitude: inst.endLongitude,
-                          address: inst.endAddress || 'End Location',
-                        } : undefined,
-                        groupId: inst.groupId || inst.groupJourney?.groupId,
-                        groupJourneyId: inst.groupJourney?.id,
-                        vehicle: inst.vehicle,
-                        status: 'active',
-                        photos: inst.photos || [],
-                      }));
-                      dispatch(setTracking(true));
-                      dispatch(setJourneyMinimized(false));
-                      
-                      // Recover startTime
-                      if (inst.startTime) {
-                        startTimeRef.current = new Date(inst.startTime).getTime();
-                        await persistStartTime(startTimeRef.current);
-                      }
-                      
-                      // Set up socket and restart background tracking
-                      const gid = inst.groupId || inst.groupJourney?.groupId;
-                      if (gid) {
-                        await ensureGroupJourneySocket(gid, dispatch);
-                      }
-                      
-                      const isActive = await BackgroundTaskService.isBackgroundTrackingActive();
-                      if (!isActive) {
-                        await BackgroundTaskService.startBackgroundTracking(inst.id, {});
-                      }
-                      console.log('[JourneyContext] Orphaned group instance resumed by user');
-                    } catch (e) {
-                      console.error('[JourneyContext] Error resuming orphaned group instance:', e);
-                    }
-                  },
-                },
-              ],
-              { cancelable: false }
-            );
-          } else {
-            // Instance doesn't exist or already completed - clear persisted ID
-            await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY);
+          try {
+            const myInst = await groupJourneyAPI.getMyActiveInstance();
+            const inst = myInst?.instance || myInst?.myInstance || myInst?.data || myInst?.journeyInstance;
+            if (!inst || (inst.status !== 'ACTIVE' && inst.status !== 'PAUSED')) {
+              // Instance doesn't exist or already completed - clear persisted ID
+              await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY);
+            }
+          } catch {
+            // Silently fail - StaleRideRecovery component will handle this
           }
         }
       }
@@ -748,101 +659,144 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     return () => subscription?.remove();
   }, [recoverJourneyOnForeground, syncToBackgroundOnSuspend, mergeBackgroundStateOnForeground]);
 
+  // Listen for admin-end group journey completion via socket
+  // This ensures full client cleanup when an admin ends the group journey externally
+  useEffect(() => {
+    const handleGroupJourneyCompleted = async (data: any) => {
+      const activeGroupJourneyId = journeyState.currentJourney?.groupJourneyId || journeyState.myInstance?.groupJourneyId;
+      if (!activeGroupJourneyId) return;
+      if (data?.groupJourneyId !== activeGroupJourneyId) return;
+
+      console.log('[JourneyContext] Group journey ended externally, cleaning up...');
+
+      // Stop tracking
+      dispatch(setTracking(false));
+      dispatch(setJourneyMinimized(false));
+
+      // Teardown group socket
+      if (journeyState.currentJourney?.groupId) {
+        teardownGroupJourneySocket(journeyState.currentJourney.groupId);
+      }
+
+      // Stop background tracking
+      try { await BackgroundTaskService.stopBackgroundTracking(); } catch {}
+
+      // Dismiss notification / Live Activity
+      try { await LiveNotificationService.dismissNotification(); } catch {}
+
+      // Clear persisted keys
+      await clearStartTime();
+      await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
+      await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
+
+      // Clear Redux state
+      dispatch(setMyInstance(null));
+      dispatch(setStats({
+        totalDistance: 0, totalTime: 0, movingTime: 0,
+        avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
+        activeMembersCount: 0, completedMembersCount: 0,
+      }));
+      dispatch(clearRoutePoints());
+      dispatch(clearJourney());
+      startTimeRef.current = null;
+      setLocalElapsedTime(0);
+    };
+
+    socketOn('group-journey:completed', handleGroupJourneyCompleted);
+    return () => { socketOff('group-journey:completed', handleGroupJourneyCompleted); };
+  }, [dispatch, journeyState.currentJourney?.groupJourneyId, journeyState.currentJourney?.groupId, journeyState.myInstance?.groupJourneyId, clearStartTime]);
+
   useEffect(() => {
     let cancelled = false;
 
       const loadActiveJourney = async () => {
         dispatch(setHydrated(false));
-        try {
-          // Check for explicitly passed active journey ID (e.g. from scheduled start)
-          // We can't access route params directly here in context easily without passing them in.
-          // However, we can check if we already have a journey in state that matches param if we could.
-          
-          // Better approach: Rely on backend.
-          const response = await journeyAPI.getActiveJourney();
-          if (cancelled) return;
-          
-          if (response?.journey) {
-            dispatch(setCurrentJourney({
-              id: response.journey.id,
-              title: response.journey.title,
-              startLocation: response.journey.startLatitude ? {
-                latitude: response.journey.startLatitude,
-                longitude: response.journey.startLongitude,
-                address: response.journey.startAddress || 'Start Location',
-              } : undefined,
-              endLocation: response.journey.endLatitude ? {
-                latitude: response.journey.endLatitude,
-                longitude: response.journey.endLongitude,
-                address: response.journey.endAddress || 'End Location',
-              } : undefined,
-              groupId: response.journey.groupId,
-              vehicle: response.journey.vehicle,
-              status: response.journey.status === 'active' ? 'active' : 'paused',
-              photos: response.journey.photos || [],
-            }));
-            
-            // Only set tracking if actually active
-            if (response.journey.status === 'active') {
-               // Ensure we have a valid start time for the timer
-               if (response.journey.startTime) {
-                 const startTime = new Date(response.journey.startTime).getTime();
-                 startTimeRef.current = startTime;
-                 await persistStartTime(startTime);
-               }
-               dispatch(setTracking(true));
-            }
-            
-            if (response.journey.groupId) {
-              await ensureGroupJourneySocket(response.journey.groupId, dispatch);
-            }
-          } else {
-            // Only clear if we really don't have one on backend.
-            // This prevents race condition where local state might be ahead/behind.
-            dispatch(setCurrentJourney(null));
+
+        // Fetch both solo and group journeys in parallel to avoid races
+        const [soloResult, groupResult] = await Promise.all([
+          journeyAPI.getActiveJourney().catch((error) => {
+            console.error('Error loading active journey:', error);
+            return null;
+          }),
+          groupJourneyAPI.getMyActiveInstance().catch((error) => {
+            console.warn('Error hydrating group journey instance:', error);
+            return null;
+          }),
+        ]);
+
+        if (cancelled) return;
+
+        const soloJourney = soloResult?.journey || null;
+        const groupInst = (() => {
+          const inst = groupResult?.instance || groupResult?.myInstance || groupResult?.data || groupResult?.journeyInstance;
+          return inst && (inst.status === 'ACTIVE' || inst.status === 'PAUSED') ? inst : null;
+        })();
+
+        // Prefer group instance if both are active
+        if (groupInst) {
+          dispatch(setMyInstance(groupInst));
+          const isInstanceActive = groupInst.status === 'ACTIVE';
+          dispatch(setCurrentJourney({
+            id: groupInst.id,
+            title: groupInst.groupJourney?.title || 'Group Ride',
+            startLocation: groupInst.startLatitude ? {
+              latitude: groupInst.startLatitude,
+              longitude: groupInst.startLongitude,
+              address: groupInst.startAddress || 'Start Location',
+            } : undefined,
+            endLocation: groupInst.endLatitude ? {
+              latitude: groupInst.endLatitude,
+              longitude: groupInst.endLongitude,
+              address: groupInst.endAddress || 'End Location',
+            } : undefined,
+            groupId: groupInst.groupId || groupInst.groupJourney?.groupId,
+            groupJourneyId: groupInst.groupJourney?.id,
+            vehicle: groupInst.vehicle,
+            status: isInstanceActive ? 'active' : 'paused',
+            photos: groupInst.photos || [],
+          }));
+          dispatch(setTracking(isInstanceActive));
+          dispatch(setJourneyMinimized(true));
+          const gid = groupInst.groupId || groupInst.groupJourney?.groupId;
+          if (gid) {
+            await ensureGroupJourneySocket(gid, dispatch);
           }
-        } catch (error) {
-          console.error('Error loading active journey:', error);
-        }
-  
-        try {
-          const myInst = await groupJourneyAPI.getMyActiveInstance();
-          const inst = myInst?.instance || myInst?.myInstance || myInst?.data || myInst?.journeyInstance;
-          if (cancelled) return;
-          if (inst && (inst.status === 'ACTIVE' || inst.status === 'PAUSED')) {
-            dispatch(setMyInstance(inst));
-            dispatch(setCurrentJourney({
-              id: inst.id,
-              title: inst.groupJourney?.title || 'Group Ride',
-              startLocation: inst.startLatitude ? {
-                latitude: inst.startLatitude,
-                longitude: inst.startLongitude,
-                address: inst.startAddress || 'Start Location',
-              } : undefined,
-              endLocation: inst.endLatitude ? {
-                latitude: inst.endLatitude,
-                longitude: inst.endLongitude,
-                address: inst.endAddress || 'End Location',
-              } : undefined,
-              groupId: inst.groupId || inst.groupJourney?.groupId,
-              groupJourneyId: inst.groupJourney?.id,
-              vehicle: inst.vehicle,
-              status: 'paused',
-              photos: inst.photos || [],
-            }));
-            // Prioritize group instance tracking state? 
-            // Usually group instances are managed via socket updates for locations
-            dispatch(setTracking(false)); 
-            dispatch(setJourneyMinimized(true));
-            const gid = inst.groupId || inst.groupJourney?.groupId;
-            if (gid) {
-              await ensureGroupJourneySocket(gid, dispatch);
+        } else if (soloJourney) {
+          dispatch(setCurrentJourney({
+            id: soloJourney.id,
+            title: soloJourney.title,
+            startLocation: soloJourney.startLatitude ? {
+              latitude: soloJourney.startLatitude,
+              longitude: soloJourney.startLongitude,
+              address: soloJourney.startAddress || 'Start Location',
+            } : undefined,
+            endLocation: soloJourney.endLatitude ? {
+              latitude: soloJourney.endLatitude,
+              longitude: soloJourney.endLongitude,
+              address: soloJourney.endAddress || 'End Location',
+            } : undefined,
+            groupId: soloJourney.groupId,
+            vehicle: soloJourney.vehicle,
+            status: soloJourney.status === 'active' ? 'active' : 'paused',
+            photos: soloJourney.photos || [],
+          }));
+
+          if (soloJourney.status === 'active') {
+            if (soloJourney.startTime) {
+              const startTime = new Date(soloJourney.startTime).getTime();
+              startTimeRef.current = startTime;
+              await persistStartTime(startTime);
             }
+            dispatch(setTracking(true));
           }
-        } catch (error) {
-          console.warn('Error hydrating group journey instance:', error);
+
+          if (soloJourney.groupId) {
+            await ensureGroupJourneySocket(soloJourney.groupId, dispatch);
+          }
+        } else {
+          dispatch(setCurrentJourney(null));
         }
-  
+
         if (!cancelled) {
           dispatch(setHydrated(true));
         }
@@ -887,25 +841,167 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           startLongitude: location.coords.longitude,
         });
       } catch (apiError: any) {
-        // Handle "Active journey exists" — auto-end the stale journey and retry once
+        // Handle "Active journey exists" — ask user what to do
         if (apiError?.status === 400 && apiError?.body?.activeJourney?.id) {
-          const staleId = apiError.body.activeJourney.id;
-          console.warn('[JourneyContext] Stale active journey found, auto-ending:', staleId);
+          const staleJourney = apiError.body.activeJourney;
+          const staleId = staleJourney.id;
+
+          // Sanity check: auto-terminate if stats look like garbage / zombie journey
+          const staleElapsedMs = staleJourney.startTime
+            ? Date.now() - new Date(staleJourney.startTime).getTime()
+            : 0;
+          const staleElapsedHrs = staleElapsedMs / 3_600_000;
+          const staleDist = staleJourney.totalDistance ?? -1;
+          const staleAvgSpeed = staleJourney.avgSpeed ?? -1;
+          const staleTopSpeed = staleJourney.topSpeed ?? -1;
+
+          const isZombie =
+            // No start time at all
+            !staleJourney.startTime ||
+            // Running >6 hours with essentially no distance (<0.1 km)
+            (staleElapsedHrs > 6 && staleDist < 0.1) ||
+            // Running >2 hours with null/zero distance AND null/zero speed
+            (staleElapsedHrs > 2 && staleDist <= 0 && staleAvgSpeed <= 0 && staleTopSpeed <= 0) ||
+            // Null distance or negative values (corrupt data)
+            staleDist < 0 ||
+            // Impossibly high speed (>500 km/h) suggests corrupt data
+            staleTopSpeed > 500 ||
+            // Running >24 hours — definitely stale
+            staleElapsedHrs > 24;
+
+          if (isZombie) {
+            console.log('[JourneyContext] Zombie journey detected, auto-terminating:', staleId,
+              { elapsedHrs: staleElapsedHrs.toFixed(1), dist: staleDist, avgSpd: staleAvgSpeed, topSpd: staleTopSpeed });
+            try {
+              await journeyAPI.endJourney(staleId, {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+                totalDistance: Math.max(staleDist, 0),
+              });
+            } catch {
+              await journeyAPI.forceClearJourney(staleId).catch(() => {});
+            }
+            await BackgroundTaskService.stopBackgroundTracking().catch(() => {});
+            try { await LiveNotificationService.dismissNotification(); } catch {}
+            await clearStartTime();
+            await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
+            await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
+
+            // Retry the start immediately — no user prompt needed
+            response = await journeyAPI.startJourney({
+              vehicle: journeyData.vehicle || 'car',
+              title: journeyData.title || 'My Journey',
+              groupId: journeyData.groupId,
+              startLatitude: location.coords.latitude,
+              startLongitude: location.coords.longitude,
+            });
+          } else {
+          // Journey looks legitimate — ask the user
+
+          // Calculate how long ago the stale journey started
+          let timeAgo = '';
+          if (staleJourney.startTime) {
+            const mins = Math.floor(staleElapsedMs / 60000);
+            const hrs = Math.floor(mins / 60);
+            timeAgo = hrs > 0 ? ` from ${hrs}h ${mins % 60}m ago` : ` from ${mins}m ago`;
+          }
+
+          // Prompt user: continue the existing journey or end it?
+          const userChoice = await new Promise<'continue' | 'end'>((resolve) => {
+            Alert.alert(
+              'Active Journey Found',
+              `You have an unfinished journey${timeAgo}. Would you like to continue it or end it and start a new one?`,
+              [
+                {
+                  text: 'Continue Existing',
+                  style: 'default',
+                  onPress: () => resolve('continue'),
+                },
+                {
+                  text: 'End & Start New',
+                  style: 'destructive',
+                  onPress: () => resolve('end'),
+                },
+              ],
+              { cancelable: false },
+            );
+          });
+
+          if (userChoice === 'continue') {
+            // Hydrate the existing journey from server and resume tracking
+            try {
+              const existing = await journeyAPI.getJourney(staleId);
+              const journey = existing?.journey;
+              if (journey) {
+                const recoveredStartTime = journey.startTime
+                  ? new Date(journey.startTime).getTime()
+                  : Date.now();
+
+                dispatch(setCurrentJourney({
+                  id: journey.id,
+                  title: journey.title || 'My Journey',
+                  startLocation: journey.startLatitude ? {
+                    latitude: journey.startLatitude,
+                    longitude: journey.startLongitude,
+                    address: journey.startAddress || 'Start Location',
+                  } : undefined,
+                  endLocation: journey.endLatitude ? {
+                    latitude: journey.endLatitude,
+                    longitude: journey.endLongitude,
+                    address: journey.endAddress || 'End Location',
+                  } : undefined,
+                  groupId: journey.groupId,
+                  vehicle: journey.vehicle || 'car',
+                  status: journey.status === 'PAUSED' ? 'paused' : 'active',
+                  photos: journey.photos || [],
+                }));
+
+                startTimeRef.current = recoveredStartTime;
+                await persistStartTime(recoveredStartTime);
+
+                const isActive = journey.status !== 'PAUSED';
+                dispatch(setTracking(isActive));
+                dispatch(setJourneyMinimized(false));
+
+                // Restart background tracking if not already running
+                const bgActive = await BackgroundTaskService.isBackgroundTrackingActive();
+                if (!bgActive && isActive) {
+                  BackgroundTaskService.startBackgroundTracking(journey.id, {
+                    startTime: recoveredStartTime,
+                  }).catch(() => {});
+                }
+
+                if (journey.groupId) {
+                  ensureGroupJourneySocket(journey.groupId, dispatch).catch(() => {});
+                }
+              }
+            } catch (e) {
+              console.error('[JourneyContext] Error resuming existing journey:', e);
+            }
+            // Return true — journey is active, callers will navigate to journey screen
+            return true;
+          }
+
+          // User chose "End & Start New" — terminate the old one gracefully
+          console.log('[JourneyContext] User chose to end stale journey:', staleId);
           try {
             await journeyAPI.endJourney(staleId, {
               latitude: location.coords.latitude,
               longitude: location.coords.longitude,
-              totalDistance: apiError.body.activeJourney.totalDistance || 0,
+              totalDistance: staleJourney.totalDistance || 0,
             });
           } catch (endErr) {
-            // If normal end fails, force-clear it
             console.warn('[JourneyContext] endJourney failed, trying forceClear:', endErr);
             await journeyAPI.forceClearJourney(staleId).catch(() => {});
           }
-          // Also clean up any local background tracking from the stale journey
+          // Clean up any local state from the stale journey
           await BackgroundTaskService.stopBackgroundTracking().catch(() => {});
+          try { await LiveNotificationService.dismissNotification(); } catch {}
+          await clearStartTime();
+          await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
+          await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
 
-          // Retry the start
+          // Now retry the start with a clean slate
           response = await journeyAPI.startJourney({
             vehicle: journeyData.vehicle || 'car',
             title: journeyData.title || 'My Journey',
@@ -913,6 +1009,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             startLatitude: location.coords.latitude,
             startLongitude: location.coords.longitude,
           });
+          } // end else (non-zombie — user prompt path)
         } else {
           throw apiError;
         }
@@ -1036,13 +1133,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      // @ts-ignore - status update is valid backend-side
-      await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'PAUSED' });
+      await journeyAPI.pauseJourney(journeyState.currentJourney.id);
       dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'paused' }));
       dispatch(setTracking(false));
     } catch (error) {
-      // FIX: Re-throw error so callers can handle it (e.g., show user notification)
-      // Silent swallowing can leave users confused when pause doesn't work
       console.error('[JourneyContext] Error pausing journey:', error);
       throw error;
     }
@@ -1054,13 +1148,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      // @ts-ignore - status update is valid backend-side
-      await journeyAPI.updateJourney(journeyState.currentJourney.id, { status: 'ACTIVE' });
+      await journeyAPI.resumeJourney(journeyState.currentJourney.id);
       dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'active' }));
       dispatch(setTracking(true));
     } catch (error) {
-      // FIX: Re-throw error so callers can handle it (e.g., show user notification)
-      // Silent swallowing can leave users confused when resume doesn't work
       console.error('[JourneyContext] Error resuming journey:', error);
       throw error;
     }
@@ -1218,6 +1309,20 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         totalTime: finalTotalTime, // Send client-calculated time for accuracy
       });
 
+      // Sync group journey instance completion to backend
+      if (journeyState.myInstance?.id) {
+        try {
+          const endCoords = endLocation.endLatitude && endLocation.endLongitude
+            ? { endLatitude: endLocation.endLatitude, endLongitude: endLocation.endLongitude }
+            : {};
+          await groupJourneyAPI.completeInstance(journeyState.myInstance.id, endCoords);
+          console.log('[JourneyContext] Group instance completed:', journeyState.myInstance.id);
+        } catch (groupErr) {
+          // Non-blocking - solo journey already ended, stale timeout is the safety net
+          console.warn('[JourneyContext] Failed to complete group instance (non-blocking):', groupErr);
+        }
+      }
+
       // Clean up group journey socket if applicable
       if (journeyState.currentJourney?.groupId) {
         teardownGroupJourneySocket(journeyState.currentJourney.groupId);
@@ -1230,7 +1335,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
       // Stop background tracking
       await BackgroundTaskService.stopBackgroundTracking();
-      
+
+      // Dismiss Live Activity / notification so it stops counting
+      try {
+        await LiveNotificationService.dismissNotification();
+      } catch (e) {
+        console.warn('[JourneyContext] Failed to dismiss notification on end:', e);
+      }
+
       // Clear persisted startTime, journey ID, and group instance ID
       await clearStartTime();
       await AsyncStorage.removeItem(JOURNEY_ID_KEY);
@@ -1239,23 +1351,26 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // Clear group instance state
       dispatch(setMyInstance(null));
       
-      // Clear stats after a delay to allow UI to show completion
-      setTimeout(() => {
-        dispatch(setStats({
-          totalDistance: 0,
-          totalTime: 0,
-          movingTime: 0,
-          avgSpeed: 0,
-          topSpeed: 0,
-          currentSpeed: 0,
-          activeMembersCount: 0,
-          completedMembersCount: 0,
-        }));
-        dispatch(clearRoutePoints());
-        dispatch(clearJourney());
-        startTimeRef.current = null;
-        setLocalElapsedTime(0);
-      }, 2000);
+      // Clear stats and route immediately; currentJourney was already set to 'completed' above
+      // so the UI can read it briefly for transition before clearJourney wipes it
+      dispatch(setStats({
+        totalDistance: 0,
+        totalTime: 0,
+        movingTime: 0,
+        avgSpeed: 0,
+        topSpeed: 0,
+        currentSpeed: 0,
+        activeMembersCount: 0,
+        completedMembersCount: 0,
+      }));
+      dispatch(clearRoutePoints());
+      startTimeRef.current = null;
+      setLocalElapsedTime(0);
+
+      // Clear journey state immediately — no delay to avoid race conditions
+      // where a new journey could start and get wiped by a stale timeout.
+      // Status was already set to 'completed' above for any UI that needs it.
+      dispatch(clearJourney());
       
       // Return journey ID for navigation to detail page
       return journeyIdForNavigation;
@@ -1265,6 +1380,12 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
       await clearStartTime();
+      // Dismiss Live Activity even on error to prevent zombie notifications
+      try {
+        await LiveNotificationService.dismissNotification();
+      } catch (e) {
+        console.warn('[JourneyContext] Failed to dismiss notification on error:', e);
+      }
       return null;
     }
   };

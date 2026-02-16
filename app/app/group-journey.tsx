@@ -33,6 +33,10 @@ import LocationPicker from '../components/LocationPicker';
 import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
+import { useAppDispatch } from '../store/hooks';
+import { clearJourney, setTracking, setJourneyMinimized, setMyInstance as setMyInstanceRedux, setStats, clearRoutePoints } from '../store/slices/journeySlice';
+import LiveNotificationService from '../services/liveNotificationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import PhotoChallengeCard from '../components/PhotoChallengeCard';
 
 interface GroupJourneyData {
@@ -57,6 +61,7 @@ export default function GroupJourneyScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { convertDistance } = useSettings();
+  const reduxDispatch = useAppDispatch();
   const socket = getSocket();
   const googleKey = getGoogleMapsApiKey();
   const { t } = useTranslation();
@@ -93,6 +98,53 @@ export default function GroupJourneyScreen() {
   });
 
   useRealtimeEvents({ groupJourneyId });
+
+  // Listen for admin-ended journey
+  useEffect(() => {
+    if (!socket || !groupJourneyId) return;
+    const handleCompleted = async (data: any) => {
+      if (data?.groupJourneyId !== groupJourneyId) return;
+      const isAdminEnd = data?.endedByAdmin === true;
+
+      // Stop tracking and clean up all state
+      stopLocationTracking();
+      reduxDispatch(setMyInstanceRedux(null));
+      reduxDispatch(clearJourney());
+      reduxDispatch(setTracking(false));
+      reduxDispatch(setJourneyMinimized(false));
+      reduxDispatch(setStats({
+        totalDistance: 0, totalTime: 0, movingTime: 0,
+        avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
+        activeMembersCount: 0, completedMembersCount: 0,
+      }));
+      reduxDispatch(clearRoutePoints());
+      await AsyncStorage.multiRemove([
+        'active_journey_id', 'active_group_instance_id',
+        'journey_start_time', 'active_group_journey_id',
+      ]).catch(() => {});
+      LiveNotificationService.dismissNotification().catch(() => {});
+
+      Alert.alert(
+        isAdminEnd ? 'Journey Ended' : t('groupJourney.journeyComplete'),
+        isAdminEnd ? 'The admin has ended this group journey.' : t('groupJourney.greatRide'),
+        [
+          {
+            text: 'View Summary',
+            onPress: () => {
+              router.replace({
+                pathname: '/group-journey-detail',
+                params: { groupJourneyId },
+              } as any);
+            },
+          },
+        ]
+      );
+    };
+    socket.on('group-journey:completed', handleCompleted);
+    return () => {
+      socket.off('group-journey:completed', handleCompleted);
+    };
+  }, [socket, groupJourneyId, router, t]);
 
   const [showCamera, setShowCamera] = useState(false);
   const [showStartLocationModal, setShowStartLocationModal] = useState(false);
@@ -591,12 +643,49 @@ export default function GroupJourneyScreen() {
               // Clear all journey state for fresh start
               setMyInstance(null);
               setJourneyData(null);
-              // Note: memberLocations is managed by useGroupJourney hook, will clear automatically
               setRegion(null);
               setManualRouteCoords([]);
-              
-              Alert.alert(t('groupJourney.journeyComplete'), t('groupJourney.greatRide'));
-              router.back();
+
+              // Clear Redux journey state so floating pill and timer stop
+              reduxDispatch(setMyInstanceRedux(null));
+              reduxDispatch(clearJourney());
+              reduxDispatch(setTracking(false));
+              reduxDispatch(setJourneyMinimized(false));
+              reduxDispatch(setStats({
+                totalDistance: 0, totalTime: 0, movingTime: 0,
+                avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
+                activeMembersCount: 0, completedMembersCount: 0,
+              }));
+              reduxDispatch(clearRoutePoints());
+
+              // Clear persisted journey IDs
+              await AsyncStorage.multiRemove([
+                'active_journey_id', 'active_group_instance_id',
+                'journey_start_time', 'active_group_journey_id',
+              ]).catch(() => {});
+
+              // Dismiss Live Activity / notification
+              try {
+                await LiveNotificationService.dismissNotification();
+              } catch (e) {
+                console.warn('[GroupJourney] Failed to dismiss notification:', e);
+              }
+
+              Alert.alert(
+                t('groupJourney.journeyComplete'),
+                t('groupJourney.greatRide'),
+                [
+                  {
+                    text: 'View Summary',
+                    onPress: () => {
+                      router.replace({
+                        pathname: '/group-journey-detail',
+                        params: { groupJourneyId: groupJourneyId || '' },
+                      } as any);
+                    },
+                  },
+                ]
+              );
             } catch (error: any) {
               console.error('[GroupJourney] Complete error:', error);
               const errorMessage = error?.response?.data?.message || 
@@ -1196,6 +1285,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
+    overflow: 'visible',
   },
   modalTitle: {
     fontSize: 20,

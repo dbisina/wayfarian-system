@@ -956,6 +956,10 @@ export const groupJourneyAPI = {
   getSummary: async (groupJourneyId: string) => {
     return internalApiRequest(`/group-journey/${groupJourneyId}/summary`, 'GET');
   },
+
+  adminEndJourney: async (groupJourneyId: string) => {
+    return internalApiRequest(`/group-journey/${groupJourneyId}/end`, 'POST');
+  },
 };
 
 export default {

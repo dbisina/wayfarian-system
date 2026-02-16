@@ -114,12 +114,20 @@ module.exports = (io, socket) => {
     }
   });
 
+  // Per-instance throttle for location updates (prevents DB flooding)
+  const lastLocationEmit = {};
+
   socket.on('instance:location-update', async data => {
     try {
       const { instanceId, latitude, longitude, speed, heading } = data || {};
       if (!instanceId || typeof latitude !== 'number' || typeof longitude !== 'number') {
         return;
       }
+
+      // Rate limit: max one DB write per instance every 2 seconds
+      const now = Date.now();
+      if (lastLocationEmit[instanceId] && now - lastLocationEmit[instanceId] < 2000) return;
+      lastLocationEmit[instanceId] = now;
 
       const instance = await prisma.journeyInstance.findUnique({
         where: { id: instanceId },
@@ -180,7 +188,12 @@ module.exports = (io, socket) => {
         userId: socket.userId,
         timestamp: new Date().toISOString(),
       });
+      socket.leave(`group-journey-${socket.currentGroupJourneyId}`);
       socket.currentGroupJourneyId = undefined;
+    }
+    if (socket.currentGroupId) {
+      socket.leave(`group-${socket.currentGroupId}`);
+      socket.currentGroupId = undefined;
     }
   });
 };

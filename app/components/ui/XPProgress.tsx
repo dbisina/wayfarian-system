@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -32,6 +33,7 @@ const getLevelProgress = (xp: number, level: number) => {
 
 const XPProgress = ({ xp = 0, level = 1, compact = false }: Props): React.JSX.Element => {
   const [streak, setStreak] = useState({ currentStreak: 0, isActive: false });
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     userAPI.getStreak().then((res) => {
@@ -41,6 +43,21 @@ const XPProgress = ({ xp = 0, level = 1, compact = false }: Props): React.JSX.El
 
   const { xpInLevel, xpRequired, percentage } = getLevelProgress(xp, level);
 
+  // Animate progress bar changes smoothly
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: percentage,
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [percentage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const animatedWidth = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
+
   if (compact) {
     return (
       <View style={styles.compactRow}>
@@ -48,7 +65,7 @@ const XPProgress = ({ xp = 0, level = 1, compact = false }: Props): React.JSX.El
           <Text style={styles.compactLevelText}>Lv {level}</Text>
         </View>
         <View style={styles.compactBarBg}>
-          <View style={[styles.compactBarFill, { width: `${percentage}%` }]} />
+          <Animated.View style={[styles.compactBarFill, { width: animatedWidth }]} />
         </View>
         {streak.currentStreak > 0 && (
           <View style={styles.streakBadge}>
@@ -71,7 +88,7 @@ const XPProgress = ({ xp = 0, level = 1, compact = false }: Props): React.JSX.El
         </Text>
       </View>
       <View style={styles.progressBarBg}>
-        <View style={[styles.progressBarFill, { width: `${percentage}%` }]} />
+        <Animated.View style={[styles.progressBarFill, { width: animatedWidth }]} />
       </View>
       <View style={styles.footerRow}>
         <Text style={styles.progressText}>

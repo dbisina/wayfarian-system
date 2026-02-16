@@ -12,7 +12,7 @@ const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
 
-const STALE_INSTANCE_ACTIVE_MINUTES = Number(process.env.STALE_INSTANCE_ACTIVE_MINUTES || 60);
+const STALE_INSTANCE_ACTIVE_MINUTES = Number(process.env.STALE_INSTANCE_ACTIVE_MINUTES || 240);
 const STALE_INSTANCE_PAUSED_HOURS = Number(process.env.STALE_INSTANCE_PAUSED_HOURS || 12);
 const MIN_DISTANCE_FOR_AUTO_COMPLETE = Number(process.env.STALE_INSTANCE_MIN_DISTANCE || 200); // meters
 
@@ -724,7 +724,7 @@ const schedulePeriodicJobs = () => {
     jobQueue.add('database-cleanup', { operation: 'old-sessions' }, { priority: 1 });
     jobQueue.add('database-cleanup', { operation: 'incomplete-journeys' }, { priority: 2 });
     jobQueue.add('database-cleanup', { operation: 'orphaned-photos' }, { priority: 1 });
-  }, 6 * 60 * 60 * 1000); // Every 6 hours
+  }, 1 * 60 * 60 * 1000); // Every 1 hour
   
   // Schedule cache warming
   setInterval(() => {
