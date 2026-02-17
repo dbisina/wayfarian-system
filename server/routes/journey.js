@@ -164,9 +164,11 @@ router.put(
   // IDs are Prisma CUID strings, not UUID
   param("journeyId").isString().withMessage("Invalid journey ID"),
     body("latitude")
+      .optional()
       .isFloat({ min: -90, max: 90 })
       .withMessage("Latitude must be between -90 and 90"),
     body("longitude")
+      .optional()
       .isFloat({ min: -180, max: 180 })
       .withMessage("Longitude must be between -180 and 180"),
   ],

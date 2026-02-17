@@ -1376,10 +1376,24 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       return journeyIdForNavigation;
     } catch (error) {
       console.error('Error ending journey:', error);
-      // Still clear local state even if API call fails
+      // Clear ALL local state even if API call fails to prevent stuck journeys
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
+      dispatch(setMyInstance(null));
+      dispatch(setStats({
+        totalDistance: 0, totalTime: 0, movingTime: 0,
+        avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
+        activeMembersCount: 0, completedMembersCount: 0,
+      }));
+      dispatch(clearRoutePoints());
+      dispatch(clearJourney());
+      startTimeRef.current = null;
+      setLocalElapsedTime(0);
       await clearStartTime();
+      await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
+      await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
+      // Stop background tracking
+      await BackgroundTaskService.stopBackgroundTracking().catch(() => {});
       // Dismiss Live Activity even on error to prevent zombie notifications
       try {
         await LiveNotificationService.dismissNotification();
