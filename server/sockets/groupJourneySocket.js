@@ -119,7 +119,7 @@ module.exports = (io, socket) => {
 
   socket.on('instance:location-update', async data => {
     try {
-      const { instanceId, latitude, longitude, speed, heading } = data || {};
+      const { instanceId, latitude, longitude, speed, heading, totalDistance } = data || {};
       if (!instanceId || typeof latitude !== 'number' || typeof longitude !== 'number') {
         return;
       }
@@ -143,22 +143,29 @@ module.exports = (io, socket) => {
         return;
       }
 
-      const updated = await prisma.journeyInstance.update({
-        where: { id: instanceId },
-        data: {
-          currentLatitude: latitude,
-          currentLongitude: longitude,
-          lastLocationUpdate: new Date(),
-          routePoints: {
-            push: {
-              latitude,
-              longitude,
-              timestamp: new Date().toISOString(),
-              speed: speed ?? null,
-              heading: heading ?? null,
-            },
+      // Build update data — include totalDistance from client if provided
+      const updateData = {
+        currentLatitude: latitude,
+        currentLongitude: longitude,
+        lastLocationUpdate: new Date(),
+        routePoints: {
+          push: {
+            latitude,
+            longitude,
+            timestamp: new Date().toISOString(),
+            speed: speed ?? null,
+            heading: heading ?? null,
           },
         },
+      };
+      // Client sends totalDistance from smart tracking (Roads API snapped distance)
+      if (typeof totalDistance === 'number' && totalDistance >= 0) {
+        updateData.totalDistance = totalDistance;
+      }
+
+      const updated = await prisma.journeyInstance.update({
+        where: { id: instanceId },
+        data: updateData,
       });
 
       const payload = {

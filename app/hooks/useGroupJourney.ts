@@ -70,6 +70,9 @@ export const useGroupJourney = ({
   // Track current speed from GPS for stats display
   const currentSpeedRef = useRef<number>(0);
 
+  const statsRef = useRef(journeyState.stats);
+  statsRef.current = journeyState.stats;
+
   useEffect(() => {
     myInstanceRef.current = myInstance;
     if (myInstance && myInstance.startTime) {
@@ -77,18 +80,21 @@ export const useGroupJourney = ({
       if (!clientStartTimeRef.current) {
         clientStartTimeRef.current = Date.now();
       }
-      // Update timer every second
+      // Update timer every second — only update time and member counts.
+      // Distance, speed, and topSpeed come from useSmartTracking via JourneyContext
+      // and must NOT be overwritten with server values (which are always 0).
       const updateTimer = () => {
         const startTime = clientStartTimeRef.current!;
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
-        
+        const currentStats = statsRef.current;
+
         dispatch(setStats({
-          totalDistance: myInstance.totalDistance || 0,
+          totalDistance: currentStats.totalDistance, // preserve smart tracking distance
           totalTime: elapsedSeconds,
-          movingTime: myInstance.totalTime || 0,
-          avgSpeed: myInstance.avgSpeed || 0,
-          topSpeed: myInstance.topSpeed || 0,
+          movingTime: currentStats.movingTime, // preserve smart tracking moving time
+          avgSpeed: currentStats.avgSpeed, // preserve smart tracking avg speed
+          topSpeed: currentStats.topSpeed, // preserve smart tracking top speed
           currentSpeed: currentSpeedRef.current,
           activeMembersCount: members.filter(m => m.isOnline).length,
           completedMembersCount: Object.values(journeyState.memberInstances).filter(inst => inst.status === 'COMPLETED').length,
@@ -200,12 +206,15 @@ export const useGroupJourney = ({
           currentSpeedRef.current = (speed ?? 0) > 0 ? (speed ?? 0) * 3.6 : 0;
           const userId = myInstanceRef.current?.userId;
           if (!socket?.connected) return;
+          // Include distance from smart tracking so other members see real stats
+          const currentDistance = statsRef.current?.totalDistance || 0;
           socket.emit('instance:location-update', {
             instanceId,
             latitude,
             longitude,
             speed: speed ?? 0,
             heading: heading ?? 0,
+            totalDistance: currentDistance,
             timestamp: new Date().toISOString(),
           });
 

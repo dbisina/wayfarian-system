@@ -154,6 +154,8 @@ app.use('/api', createRateLimit(window10s, isDev ? 100 : 50, 'Too many requests'
 app.use(express.json({ 
   limit: '10mb',
   verify: (req, res, buf) => {
+    // Skip validation for empty bodies (e.g. POST with no payload)
+    if (!buf || buf.length === 0) return;
     try {
       JSON.parse(buf);
     } catch (e) {

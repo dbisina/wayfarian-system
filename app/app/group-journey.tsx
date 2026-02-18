@@ -37,7 +37,8 @@ import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
 import { useAppDispatch } from '../store/hooks';
-import { clearJourney, setTracking, setJourneyMinimized, setMyInstance as setMyInstanceRedux, setStats, clearRoutePoints } from '../store/slices/journeySlice';
+import { clearJourney, setCurrentJourney, setTracking, setJourneyMinimized, setMyInstance as setMyInstanceRedux, setStats, clearRoutePoints } from '../store/slices/journeySlice';
+import BackgroundTaskService from '../services/backgroundTaskService';
 import LiveNotificationService from '../services/liveNotificationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PhotoChallengeCard from '../components/PhotoChallengeCard';
@@ -355,7 +356,7 @@ export default function GroupJourneyScreen() {
       const member = memberLocations.find(m => m.userId === selectedMemberId);
       if (member) {
         return {
-          distance: (member.totalDistance || 0) / 1000,
+          distance: member.totalDistance || 0, // already in km from smart tracking
           speed: member.speed || 0,
           time: member.totalTime || 0,
           isMe: false,
@@ -363,10 +364,11 @@ export default function GroupJourneyScreen() {
         };
       }
     }
-    
+
     // Default to my stats from Redux (which has the running timer)
+    // stats.totalDistance is in km from useSmartTracking's officialDistance
     return {
-      distance: (stats.totalDistance || 0) / 1000,
+      distance: stats.totalDistance || 0,
       speed: stats.currentSpeed || 0,
       time: stats.totalTime || 0,
       isMe: true,
@@ -635,8 +637,10 @@ export default function GroupJourneyScreen() {
   useEffect(() => {
     if (myInstance?.status === "ACTIVE" && !isTracking && myInstance.id) {
       startLocationTracking(myInstance.id);
+      // Ensure useSmartTracking is enabled for distance calculation
+      reduxDispatch(setTracking(true));
     }
-  }, [isTracking, myInstance, startLocationTracking]);
+  }, [isTracking, myInstance, startLocationTracking, reduxDispatch]);
 
   const [isStarting, setIsStarting] = useState(false);
   const [isPausing, setIsPausing] = useState(false);
@@ -666,9 +670,44 @@ export default function GroupJourneyScreen() {
       if (!response?.instance) {
         throw new Error(response?.error || response?.message || "Unable to start instance");
       }
-      setMyInstance(response.instance);
-      startLocationTracking(response.instance.id);
+      const instance = response.instance;
+      setMyInstance(instance);
+
+      // Set up Redux journey state so useSmartTracking starts calculating distance
+      reduxDispatch(setMyInstanceRedux(instance));
+      reduxDispatch(setCurrentJourney({
+        id: instance.id,
+        title: journeyData?.title || 'Group Ride',
+        startLocation: {
+          latitude: userStartLocation.latitude,
+          longitude: userStartLocation.longitude,
+          address: userStartLocation.address || 'Start Location',
+        },
+        endLocation: journeyData?.endLatitude && journeyData?.endLongitude ? {
+          latitude: journeyData.endLatitude,
+          longitude: journeyData.endLongitude,
+          address: 'Destination',
+        } : undefined,
+        groupId: journeyData?.groupId,
+        groupJourneyId,
+        vehicle: instance.vehicle || 'car',
+        status: 'active',
+        photos: [],
+      }));
+      reduxDispatch(setTracking(true));
+      reduxDispatch(setJourneyMinimized(true));
+
+      startLocationTracking(instance.id);
       setShowStartLocationModal(false);
+
+      // Start background tracking (non-blocking)
+      BackgroundTaskService.startBackgroundTracking(instance.id, {
+        startLocationName: userStartLocation.address || 'Start',
+        destinationName: journeyData?.endLatitude ? 'Destination' : undefined,
+        destinationLatitude: journeyData?.endLatitude,
+        destinationLongitude: journeyData?.endLongitude,
+        startTime: Date.now(),
+      }).catch(err => console.warn('[GroupJourney] Background tracking init failed:', err));
     } catch (error: any) {
       console.error('Start instance error:', error);
       const errorMessage = error?.response?.data?.message || error?.message || t('groupJourney.tryAgain');
@@ -688,6 +727,7 @@ export default function GroupJourneyScreen() {
     try {
       await apiRequest(`/group-journey/instance/${myInstance.id}/${endpoint}`, {
         method: "POST",
+        body: {},
       });
       if (endpoint === "resume") {
         startLocationTracking(myInstance.id);
@@ -722,8 +762,20 @@ export default function GroupJourneyScreen() {
               // Get current location for end coordinates
               const currentLocation = myLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
               
-              // Prepare request body - only include coordinates if they're valid numbers
-              const requestBody: { endLatitude?: number; endLongitude?: number } = {};
+              // Get final stats from background service as fallback (Android accuracy fix)
+              let finalDistance = stats.totalDistance || 0;
+              try {
+                const bgState = await BackgroundTaskService.getPersistedJourneyState();
+                if (bgState?.totalDistance && bgState.totalDistance > finalDistance) {
+                  finalDistance = bgState.totalDistance;
+                }
+              } catch {}
+
+              // Prepare request body with final stats
+              const requestBody: { endLatitude?: number; endLongitude?: number; totalDistance?: number; totalTime?: number } = {
+                totalDistance: finalDistance,
+                totalTime: stats.totalTime || 0,
+              };
               if (currentLocation?.latitude != null && typeof currentLocation.latitude === 'number' && !isNaN(currentLocation.latitude)) {
                 requestBody.endLatitude = currentLocation.latitude;
               }

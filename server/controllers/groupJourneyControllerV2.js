@@ -800,13 +800,14 @@ const completeInstance = async (req, res) => {
       });
     }
 
-    // Get end location from request body if provided
-    const { endLatitude, endLongitude } = req.body;
+    // Get end location and final stats from request body if provided
+    const { endLatitude, endLongitude, totalDistance: clientDistance, totalTime: clientTime } = req.body;
 
-    // Calculate final stats
-    const duration = instance.startTime
+    // Calculate final stats — use max of server-tracked and client-reported distance
+    const duration = clientTime || (instance.startTime
       ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
-      : 0;
+      : 0);
+    const finalDistance = Math.max(instance.totalDistance || 0, clientDistance || 0);
 
     // Wrap instance completion + journey record creation in a transaction
     // to prevent inconsistent state if any step fails mid-way
@@ -833,7 +834,7 @@ const completeInstance = async (req, res) => {
           data: {
             status: 'COMPLETED',
             endTime: new Date(),
-            totalDistance: instance.totalDistance || 0,
+            totalDistance: finalDistance,
             totalTime: duration,
             ...(endLatitude && endLongitude ? {
               currentLatitude: endLatitude,
@@ -867,11 +868,11 @@ const completeInstance = async (req, res) => {
           },
         });
 
-        const distanceInKm = (completed.totalDistance || 0) / 1000;
+        // totalDistance is already in km (consistent with solo journey handler)
         await tx.user.update({
           where: { id: instance.userId },
           data: {
-            totalDistance: { increment: distanceInKm },
+            totalDistance: { increment: completed.totalDistance || 0 },
             totalTime: { increment: duration },
             totalTrips: { increment: 1 },
             topSpeed: completed.topSpeed && completed.topSpeed > 0
@@ -892,7 +893,7 @@ const completeInstance = async (req, res) => {
         data: {
           status: 'COMPLETED',
           endTime: new Date(),
-          totalDistance: instance.totalDistance || 0,
+          totalDistance: finalDistance,
           totalTime: duration,
           ...(endLatitude && endLongitude ? {
             currentLatitude: endLatitude,
@@ -966,9 +967,10 @@ const completeInstance = async (req, res) => {
     });
 
     // CHECK IF ALL MEMBERS HAVE COMPLETED
-    // We need to check if there are any other ACTIVE or PAUSED instances for this group journey
-    // AND if all group members have created an instance (optional, maybe just check active ones)
-    // Better logic: Check if any instance is still ACTIVE/PAUSED. If not, close the journey.
+    // Only auto-complete the group journey if:
+    // 1. No instances are still ACTIVE or PAUSED
+    // 2. ALL group members have created an instance (everyone has started)
+    // This prevents premature completion when admin finishes before others start.
 
     const activeInstancesCount = await prisma.journeyInstance.count({
       where: {
@@ -979,16 +981,26 @@ const completeInstance = async (req, res) => {
     });
 
     if (activeInstancesCount === 0) {
-      // All started instances are done - atomically mark group journey as COMPLETED
-      // Use updateMany with status guard so only one concurrent caller succeeds
-      const result = await prisma.groupJourney.updateMany({
-        where: { id: instance.groupJourneyId, status: 'ACTIVE' },
-        data: { status: 'COMPLETED', completedAt: new Date() },
+      // Count total instances (any status) vs group member count
+      const totalInstances = await prisma.journeyInstance.count({
+        where: { groupJourneyId: instance.groupJourneyId }
       });
+      const groupMemberCount = instance.groupJourney?.group?.members?.length || 0;
 
-      if (result.count > 0) {
-        // This caller won the race - emit completion events
-        await finishGroupJourney(instance.groupJourneyId, io);
+      // Only auto-complete if every group member has started (has an instance)
+      if (totalInstances >= groupMemberCount && groupMemberCount > 0) {
+        // All members started and all are done - atomically mark group journey as COMPLETED
+        const result = await prisma.groupJourney.updateMany({
+          where: { id: instance.groupJourneyId, status: 'ACTIVE' },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+
+        if (result.count > 0) {
+          // This caller won the race - emit completion events
+          await finishGroupJourney(instance.groupJourneyId, io);
+        }
+      } else {
+        logger.info(`[Instance] Not auto-completing journey ${instance.groupJourneyId}: ${totalInstances}/${groupMemberCount} members have started`);
       }
     }
 
@@ -1481,12 +1493,24 @@ const adminEndJourney = async (req, res) => {
       return res.status(403).json({ error: 'Only the group creator or admin can end this journey' });
     }
 
-    // Mark journey as COMPLETED (individual instances stay as-is)
+    // Mark journey as COMPLETED and complete all active/paused instances
     await prisma.groupJourney.update({
       where: { id },
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
+      },
+    });
+
+    // Also complete all active/paused member instances so they don't remain orphaned
+    await prisma.journeyInstance.updateMany({
+      where: {
+        groupJourneyId: id,
+        status: { in: ['ACTIVE', 'PAUSED'] },
+      },
+      data: {
+        status: 'COMPLETED',
+        endTime: new Date(),
       },
     });
 

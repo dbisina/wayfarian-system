@@ -1328,8 +1328,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         teardownGroupJourneySocket(journeyState.currentJourney.groupId);
       }
 
-      // Update journey status
-      dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'completed' }));
+      // Stop tracking first to prevent any further state updates
       dispatch(setTracking(false));
       dispatch(setJourneyMinimized(false));
 
@@ -1347,30 +1346,12 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       await clearStartTime();
       await AsyncStorage.removeItem(JOURNEY_ID_KEY);
       await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY);
-      
-      // Clear group instance state
-      dispatch(setMyInstance(null));
-      
-      // Clear stats and route immediately; currentJourney was already set to 'completed' above
-      // so the UI can read it briefly for transition before clearJourney wipes it
-      dispatch(setStats({
-        totalDistance: 0,
-        totalTime: 0,
-        movingTime: 0,
-        avgSpeed: 0,
-        topSpeed: 0,
-        currentSpeed: 0,
-        activeMembersCount: 0,
-        completedMembersCount: 0,
-      }));
-      dispatch(clearRoutePoints());
+
+      // Clear ALL journey state atomically to prevent stale endLocation persisting
+      // (previously set status='completed' first which could persist with old endLocation)
+      dispatch(clearJourney());
       startTimeRef.current = null;
       setLocalElapsedTime(0);
-
-      // Clear journey state immediately — no delay to avoid race conditions
-      // where a new journey could start and get wiped by a stale timeout.
-      // Status was already set to 'completed' above for any UI that needs it.
-      dispatch(clearJourney());
       
       // Return journey ID for navigation to detail page
       return journeyIdForNavigation;
