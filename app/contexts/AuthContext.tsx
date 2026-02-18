@@ -285,9 +285,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Warm up the browser for better UX on Android
   useEffect(() => {
     if (Platform.OS === 'android') {
-      WebBrowser.warmUpAsync();
+      WebBrowser.warmUpAsync().catch(() => {});
       return () => {
-        WebBrowser.coolDownAsync();
+        WebBrowser.coolDownAsync().catch(() => {});
       };
     }
   }, []);

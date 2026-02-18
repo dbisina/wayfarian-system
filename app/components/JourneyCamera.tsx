@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
@@ -18,7 +19,7 @@ type FacingDirection = 'back' | 'front';
 interface JourneyCameraProps {
   journeyId: string;
   journeyType: 'solo' | 'group';
-  onPhotoTaken: (photoData: { uri: string; latitude: number; longitude: number }) => void;
+  onPhotoTaken: (photoData: { uri: string; latitude: number; longitude: number }) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -31,6 +32,7 @@ export default function JourneyCamera({
   const { t } = useTranslation();
   const [facing, setFacing] = useState<FacingDirection>('back');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
@@ -88,13 +90,14 @@ export default function JourneyCamera({
   }, [saveToLibraryIfAllowed]);
 
   const handleConfirmPhoto = useCallback(async () => {
-    if (!capturedPhoto) return;
-    
+    if (!capturedPhoto || isUploading) return;
+
+    setIsUploading(true);
     try {
       await ensureLocationPermission();
       const location = await Location.getCurrentPositionAsync({});
 
-      onPhotoTaken({
+      await onPhotoTaken({
         uri: capturedPhoto,
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -102,8 +105,10 @@ export default function JourneyCamera({
     } catch (error) {
       const message = error instanceof Error ? error.message : t('components.journeyCamera.failedProcess');
       Alert.alert(t('components.journeyCamera.error'), message);
+    } finally {
+      setIsUploading(false);
     }
-  }, [capturedPhoto, ensureLocationPermission, onPhotoTaken]);
+  }, [capturedPhoto, isUploading, ensureLocationPermission, onPhotoTaken]);
 
   if (!cameraPermission) {
     return null;
@@ -125,13 +130,17 @@ export default function JourneyCamera({
       <View style={styles.previewContainer} testID={`journey-camera-preview-${journeyId}`}>
         <Image source={{ uri: capturedPhoto }} style={styles.preview} />
         <View style={styles.previewControls}>
-          <TouchableOpacity style={styles.previewButton} onPress={() => setCapturedPhoto(null)}>
-            <Ionicons name="refresh" size={24} color="#fff" />
-            <Text style={styles.previewButtonText}>{t('components.journeyCamera.retake')}</Text>
+          <TouchableOpacity style={[styles.previewButton, isUploading && styles.previewButtonDisabled]} onPress={() => setCapturedPhoto(null)} disabled={isUploading}>
+            <Ionicons name="refresh" size={24} color={isUploading ? '#666' : '#fff'} />
+            <Text style={[styles.previewButtonText, isUploading && styles.previewButtonTextDisabled]}>{t('components.journeyCamera.retake')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.previewButton} onPress={handleConfirmPhoto}>
-            <Ionicons name="checkmark" size={24} color="#fff" />
-            <Text style={styles.previewButtonText}>{t('components.journeyCamera.usePhoto')}</Text>
+          <TouchableOpacity style={[styles.previewButton, isUploading && styles.previewButtonDisabled]} onPress={handleConfirmPhoto} disabled={isUploading}>
+            {isUploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="checkmark" size={24} color="#fff" />
+            )}
+            <Text style={styles.previewButtonText}>{isUploading ? t('components.journeyCamera.uploading', 'Uploading...') : t('components.journeyCamera.usePhoto')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -220,6 +229,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 6,
     fontSize: 13,
+  },
+  previewButtonDisabled: {
+    opacity: 0.5,
+  },
+  previewButtonTextDisabled: {
+    color: '#666',
   },
   permissionContainer: {
     flex: 1,

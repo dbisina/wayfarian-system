@@ -50,7 +50,9 @@ async function buildMemberSnapshot(groupJourneyId) {
     latitude: inst.currentLatitude,
     longitude: inst.currentLongitude,
     totalDistance: inst.totalDistance,
-    totalTime: inst.totalTime,
+    totalTime: inst.totalTime || (inst.status === 'ACTIVE' && inst.startTime
+      ? Math.floor((Date.now() - new Date(inst.startTime).getTime()) / 1000)
+      : 0),
     lastUpdate: inst.lastLocationUpdate?.toISOString?.() || null,
   }));
 }

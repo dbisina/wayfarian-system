@@ -54,6 +54,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const {
     routePoints,
     startJourney,
+    pauseJourney,
     resumeJourney,
     resumeActiveJourney,
     endJourney,
@@ -413,7 +414,7 @@ export default function JourneyScreen(): React.JSX.Element {
 
   const handlePauseJourney = async () => {
     try {
-      await apiRequest(`/journey/${currentJourney?.id}/pause`, { method: 'POST' });
+      await pauseJourney();
     } catch (e) {
       console.warn('Pause error', e);
     }

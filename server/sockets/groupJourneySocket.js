@@ -136,6 +136,9 @@ module.exports = (io, socket) => {
           userId: true,
           status: true,
           groupJourneyId: true,
+          topSpeed: true,
+          totalDistance: true,
+          startTime: true,
         },
       });
 
@@ -163,6 +166,28 @@ module.exports = (io, socket) => {
         updateData.totalDistance = totalDistance;
       }
 
+      // Update topSpeed and avgSpeed so they're available at completion for summary
+      // Note: GPS speed from client is in m/s; convert to km/h for storage
+      const MAX_REASONABLE_SPEED_KMH = 250;
+      if (typeof speed === 'number' && speed > 0) {
+        const speedKmh = speed * 3.6; // m/s → km/h
+        if (speedKmh <= MAX_REASONABLE_SPEED_KMH) {
+          const currentTopSpeed = instance.topSpeed || 0;
+          if (speedKmh > currentTopSpeed) {
+            updateData.topSpeed = speedKmh;
+          }
+        }
+      }
+      // Calculate avgSpeed from distance and elapsed time
+      if (instance.startTime) {
+        const elapsedSeconds = Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000);
+        const currentDistance = updateData.totalDistance ?? instance.totalDistance ?? 0;
+        if (elapsedSeconds > 0 && currentDistance > 0) {
+          const avgSpeedKmh = (currentDistance / elapsedSeconds) * 3600;
+          updateData.avgSpeed = Math.min(avgSpeedKmh, MAX_REASONABLE_SPEED_KMH);
+        }
+      }
+
       const updated = await prisma.journeyInstance.update({
         where: { id: instanceId },
         data: updateData,
@@ -178,7 +203,9 @@ module.exports = (io, socket) => {
         speed: speed ?? undefined,
         heading: heading ?? undefined,
         totalDistance: updated.totalDistance,
-        totalTime: updated.totalTime,
+        totalTime: updated.totalTime || (instance.startTime
+          ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
+          : 0),
         status: updated.status,
         lastUpdate: updated.lastLocationUpdate?.toISOString?.() || new Date().toISOString(),
       };

@@ -591,6 +591,8 @@ const getGroupJourney = async (req, res) => {
         status: groupJourney.status,
         startedAt: groupJourney.startedAt,
         completedAt: groupJourney.completedAt,
+        startLatitude: groupJourney.startLatitude,
+        startLongitude: groupJourney.startLongitude,
         endLatitude: groupJourney.endLatitude,
         endLongitude: groupJourney.endLongitude,
         routePoints: groupJourney.routePoints,
@@ -667,7 +669,8 @@ const updateInstanceLocation = async (req, res) => {
     const MAX_REASONABLE_SPEED_KMH = 250;
     const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
     const newTopSpeed = Math.max(instance.topSpeed || 0, validatedSpeed);
-    const calculatedAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3.6 : 0;
+    // avgSpeed: distance is in km, time in seconds → (km/s) * 3600 = km/h
+    const calculatedAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3600 : 0;
     const newAvgSpeed = Math.min(calculatedAvgSpeed, MAX_REASONABLE_SPEED_KMH); // Cap avgSpeed too
 
     // Update route points
@@ -801,7 +804,7 @@ const completeInstance = async (req, res) => {
     }
 
     // Get end location and final stats from request body if provided
-    const { endLatitude, endLongitude, totalDistance: clientDistance, totalTime: clientTime } = req.body;
+    const { endLatitude, endLongitude, totalDistance: clientDistance, totalTime: clientTime, avgSpeed: clientAvgSpeed, topSpeed: clientTopSpeed } = req.body;
 
     // Calculate final stats — use max of server-tracked and client-reported distance
     const duration = clientTime || (instance.startTime
@@ -829,6 +832,10 @@ const completeInstance = async (req, res) => {
       }
 
       const txResult = await prisma.$transaction(async (tx) => {
+        // Use client-reported speed stats as fallback if server-tracked values are 0
+        const finalAvgSpeed = instance.avgSpeed || clientAvgSpeed || 0;
+        const finalTopSpeed = instance.topSpeed || clientTopSpeed || 0;
+
         const completed = await tx.journeyInstance.update({
           where: { id: instanceId },
           data: {
@@ -836,6 +843,8 @@ const completeInstance = async (req, res) => {
             endTime: new Date(),
             totalDistance: finalDistance,
             totalTime: duration,
+            avgSpeed: finalAvgSpeed,
+            topSpeed: finalTopSpeed,
             ...(endLatitude && endLongitude ? {
               currentLatitude: endLatitude,
               currentLongitude: endLongitude,

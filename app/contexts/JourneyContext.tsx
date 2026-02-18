@@ -321,9 +321,13 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
 
   // Backend & Socket Updates (throttled to every 5 seconds)
+  // Skip for group journeys — group journey location updates are handled via socket in useGroupJourney
   const backendUpdateThrottleRef = useRef<number>(0);
   useEffect(() => {
     if (!journeyState.isTracking || !liveRawLocation || !journeyState.currentJourney) return;
+
+    // Skip solo journey backend updates for group journeys (uses socket instead)
+    if (journeyState.currentJourney.groupJourneyId) return;
 
     // Throttle backend updates to every 5 seconds to avoid flooding the server
     const now = Date.now();
@@ -335,7 +339,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
          await journeyAPI.updateJourney(journeyState.currentJourney!.id, {
            currentLatitude: liveRawLocation.latitude,
            currentLongitude: liveRawLocation.longitude,
-           currentSpeed: liveRawLocation.speed * 3.6,
+           currentSpeed: (liveRawLocation.speed ?? 0) * 3.6,
          });
        } catch (e) {
          console.warn('Backend update failed', e);
@@ -839,6 +843,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           groupId: journeyData.groupId,
           startLatitude: location.coords.latitude,
           startLongitude: location.coords.longitude,
+          ...(journeyData.endLocation ? {
+            endLatitude: journeyData.endLocation.latitude,
+            endLongitude: journeyData.endLocation.longitude,
+            endAddress: journeyData.endLocation.address,
+          } : {}),
         });
       } catch (apiError: any) {
         // Handle "Active journey exists" — ask user what to do
@@ -1008,6 +1017,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             groupId: journeyData.groupId,
             startLatitude: location.coords.latitude,
             startLongitude: location.coords.longitude,
+            ...(journeyData.endLocation ? {
+              endLatitude: journeyData.endLocation.latitude,
+              endLongitude: journeyData.endLocation.longitude,
+              endAddress: journeyData.endLocation.address,
+            } : {}),
           });
           } // end else (non-zombie — user prompt path)
         } else {

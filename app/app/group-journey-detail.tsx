@@ -87,7 +87,7 @@ const ExpandableMemberCard = ({
 
   return (
     <TouchableOpacity
-      style={[styles.expandableCard, { borderLeftColor: color }]}
+      style={styles.expandableCard}
       activeOpacity={0.7}
       onPress={toggleExpand}
     >
@@ -657,11 +657,18 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   expandableCard: {
-    backgroundColor: '#FAFAFA',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderLeftWidth: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16, // Smoother corners for premium feel
+    padding: 16,      // Slightly more padding
+    marginBottom: 12, // More space between cards
+    // Remove borderLeftWidth
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, // Very subtle shadow
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)', // Subtle border definition
   },
   expandableCardHeader: {
     flexDirection: 'row',

@@ -138,7 +138,12 @@ const startJourney = async (req, res) => {
       longitude,
       title,
       vehicle,
-      groupId
+      groupId,
+      endLatitude,
+      endLongitude,
+      endAddress,
+      startLatitude,
+      startLongitude,
     } = req.body;
 
     const userId = req.user.id;
@@ -160,18 +165,24 @@ const startJourney = async (req, res) => {
     }
 
     // Create new journey
+    const resolvedStartLat = startLatitude ?? latitude;
+    const resolvedStartLng = startLongitude ?? longitude;
     const journey = await prisma.journey.create({
       data: {
         userId,
         title: title || 'My Journey',
         startTime: new Date(),
-        startLatitude: latitude,
-        startLongitude: longitude,
+        startLatitude: resolvedStartLat,
+        startLongitude: resolvedStartLng,
+        ...(endLatitude != null && endLongitude != null ? {
+          endLatitude: Number(endLatitude),
+          endLongitude: Number(endLongitude),
+        } : {}),
         vehicle: vehicle || 'car',
         groupId,
         routePoints: [{
-          lat: latitude,
-          lng: longitude,
+          lat: resolvedStartLat,
+          lng: resolvedStartLng,
           timestamp: new Date().toISOString(),
           speed: 0
         }],

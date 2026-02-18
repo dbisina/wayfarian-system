@@ -23,7 +23,9 @@ const journeyPersistConfig = {
     'groupMembers',
     'stats',
     'hydrated',
-    'isTracking',
+    // NOTE: isTracking intentionally NOT persisted — it's restored by
+    // JourneyContext recovery logic based on actual backend/background state.
+    // Persisting it caused stale "tracking active" after app crashes.
     'isMinimized',
     'routePoints',
     'uploadQueue',

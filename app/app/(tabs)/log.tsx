@@ -30,6 +30,7 @@ type JourneyItem = {
   totalDistance?: number;
   totalTime?: number;
   group?: { id: string; name: string } | null;
+  groupJourneyId?: string | null;
   coverPhotoUrl?: string;
   photos?: {
     id: string;
@@ -349,13 +350,20 @@ export default function RideLogScreen(): React.JSX.Element {
 
                     return (
                       <View key={journey.id}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={styles.groupRideRow}
                           onPress={() => {
-                            router.push({
-                              pathname: '/journey-detail',
-                              params: { journeyId: journey.id }
-                            });
+                            if (journey.groupJourneyId) {
+                              router.push({
+                                pathname: '/group-journey-detail',
+                                params: { groupJourneyId: journey.groupJourneyId },
+                              } as any);
+                            } else {
+                              router.push({
+                                pathname: '/journey-detail',
+                                params: { journeyId: journey.id },
+                              });
+                            }
                           }}
                         >
                           {coverUri ? (

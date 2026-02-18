@@ -22,6 +22,7 @@ import {
   useJourneyState,
   useJourneyLocations,
 } from './useJourneyState';
+import LiveNotificationService, { JourneyNotificationData } from '../services/liveNotificationService';
 
 export interface MemberLocation {
   instanceId: string;
@@ -69,44 +70,81 @@ export const useGroupJourney = ({
   const clientStartTimeRef = useRef<number | null>(null);
   // Track current speed from GPS for stats display
   const currentSpeedRef = useRef<number>(0);
+  // Throttle live notification updates
+  const lastNotificationUpdateRef = useRef<number>(0);
 
   const statsRef = useRef(journeyState.stats);
   statsRef.current = journeyState.stats;
+  const currentJourneyRef = useRef(journeyState.currentJourney);
+  currentJourneyRef.current = journeyState.currentJourney;
+
+  // Use refs for frequently-changing values to avoid recreating the timer interval
+  const membersRef = useRef(members);
+  membersRef.current = members;
+  const memberInstancesRef = useRef(journeyState.memberInstances);
+  memberInstancesRef.current = journeyState.memberInstances;
+
+  // Track whether myInstance is active for the timer (stable boolean to avoid interval churn)
+  const isInstanceActive = !!(myInstance && myInstance.startTime);
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
-    if (myInstance && myInstance.startTime) {
-      // Set client start time on first activation (avoids server latency offset)
-      if (!clientStartTimeRef.current) {
-        clientStartTimeRef.current = Date.now();
-      }
-      // Update timer every second — only update time and member counts.
-      // Distance, speed, and topSpeed come from useSmartTracking via JourneyContext
-      // and must NOT be overwritten with server values (which are always 0).
-      const updateTimer = () => {
-        const startTime = clientStartTimeRef.current!;
-        const now = Date.now();
-        const elapsedSeconds = Math.floor((now - startTime) / 1000);
-        const currentStats = statsRef.current;
+  }, [myInstance]);
 
-        dispatch(setStats({
-          totalDistance: currentStats.totalDistance, // preserve smart tracking distance
-          totalTime: elapsedSeconds,
-          movingTime: currentStats.movingTime, // preserve smart tracking moving time
-          avgSpeed: currentStats.avgSpeed, // preserve smart tracking avg speed
-          topSpeed: currentStats.topSpeed, // preserve smart tracking top speed
-          currentSpeed: currentSpeedRef.current,
-          activeMembersCount: members.filter(m => m.isOnline).length,
-          completedMembersCount: Object.values(journeyState.memberInstances).filter(inst => inst.status === 'COMPLETED').length,
-        }));
-      };
+  useEffect(() => {
+    if (!isInstanceActive) return;
 
-      updateTimer(); // Initial update
-      const interval = setInterval(updateTimer, 1000); // Update every second
-
-      return () => clearInterval(interval);
+    // Set client start time on first activation (avoids server latency offset)
+    if (!clientStartTimeRef.current) {
+      clientStartTimeRef.current = Date.now();
     }
-  }, [myInstance, dispatch, members, journeyState.memberInstances]);
+    // Update timer every second — only update time and member counts.
+    // Distance, speed, and topSpeed come from useSmartTracking via JourneyContext
+    // and must NOT be overwritten with server values (which are always 0).
+    const updateTimer = () => {
+      const startTime = clientStartTimeRef.current!;
+      const now = Date.now();
+      const elapsedSeconds = Math.floor((now - startTime) / 1000);
+      const currentStats = statsRef.current;
+
+      dispatch(setStats({
+        totalDistance: currentStats.totalDistance, // preserve smart tracking distance
+        totalTime: elapsedSeconds,
+        movingTime: currentStats.movingTime, // preserve smart tracking moving time
+        avgSpeed: currentStats.avgSpeed, // preserve smart tracking avg speed
+        topSpeed: currentStats.topSpeed, // preserve smart tracking top speed
+        currentSpeed: currentSpeedRef.current,
+        activeMembersCount: membersRef.current.filter(m => m.isOnline).length,
+        completedMembersCount: Object.values(memberInstancesRef.current).filter(inst => inst.status === 'COMPLETED').length,
+      }));
+
+      // Update live notification every 3 seconds (Android foreground / iOS Live Activity)
+      if (now - lastNotificationUpdateRef.current >= 3000) {
+        lastNotificationUpdateRef.current = now;
+        const journey = currentJourneyRef.current;
+        if (journey) {
+          const notifData: JourneyNotificationData = {
+            journeyId: journey.id,
+            startTime: startTime,
+            totalDistance: currentStats.totalDistance,
+            currentSpeed: currentSpeedRef.current,
+            avgSpeed: currentStats.avgSpeed,
+            topSpeed: currentStats.topSpeed,
+            movingTime: currentStats.movingTime,
+            progress: 0,
+            startLocationName: journey.startLocation?.address || 'Start',
+            destinationName: journey.endLocation?.address || 'Group Ride',
+          };
+          LiveNotificationService.updateNotification(notifData).catch(() => {});
+        }
+      }
+    };
+
+    updateTimer(); // Initial update
+    const interval = setInterval(updateTimer, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [isInstanceActive, dispatch]);
 
   const setMyInstance = useCallback((nextValue: JourneyInstance | null | ((prev: JourneyInstance | null) => JourneyInstance | null)) => {
     const resolved = typeof nextValue === 'function' ? nextValue(myInstanceRef.current) : nextValue;

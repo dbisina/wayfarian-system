@@ -142,6 +142,7 @@ export default function GroupJourneyScreen() {
 
       // Stop tracking and clean up all state
       stopLocationTracking();
+      BackgroundTaskService.stopBackgroundTracking().catch(() => {});
       reduxDispatch(setMyInstanceRedux(null));
       reduxDispatch(clearJourney());
       reduxDispatch(setTracking(false));
@@ -165,10 +166,20 @@ export default function GroupJourneyScreen() {
           {
             text: 'View Summary',
             onPress: () => {
-              router.replace({
-                pathname: '/group-journey-detail',
-                params: { groupJourneyId },
-              } as any);
+              // Defer navigation to avoid Android Alert callback timing issues
+              setTimeout(() => {
+                try {
+                  router.replace({
+                    pathname: '/group-journey-detail',
+                    params: { groupJourneyId },
+                  } as any);
+                } catch {
+                  router.push({
+                    pathname: '/group-journey-detail',
+                    params: { groupJourneyId },
+                  } as any);
+                }
+              }, 100);
             },
           },
         ]
@@ -208,7 +219,7 @@ export default function GroupJourneyScreen() {
 
         // Include capture stats (speed in km/h, distance in km)
         const currentSpeed = myLocation?.speed || 0;
-        const currentDistance = (myLocation?.totalDistance || 0) / 1000;
+        const currentDistance = myLocation?.totalDistance || 0; // already in km
         if (currentSpeed > 0) {
           formData.append('speed', String(currentSpeed));
         }
@@ -357,7 +368,7 @@ export default function GroupJourneyScreen() {
       if (member) {
         return {
           distance: member.totalDistance || 0, // already in km from smart tracking
-          speed: member.speed || 0,
+          speed: (member.speed || 0) * 3.6, // m/s from socket → km/h for convertSpeed
           time: member.totalTime || 0,
           isMe: false,
           displayName: member.displayName,
@@ -389,7 +400,7 @@ export default function GroupJourneyScreen() {
   // Distance milestone celebrations
   useEffect(() => {
     if (!myLocation?.totalDistance) return;
-    const distKm = (myLocation.totalDistance || 0) / 1000;
+    const distKm = myLocation.totalDistance || 0; // already in km
     const milestones = [5, 10, 25, 50, 100];
     for (const km of milestones) {
       if (distKm >= km && lastMilestoneRef.current < km) {
@@ -758,6 +769,7 @@ export default function GroupJourneyScreen() {
             try {
               // Stop location tracking first
               stopLocationTracking();
+              BackgroundTaskService.stopBackgroundTracking().catch(() => {});
               
               // Get current location for end coordinates
               const currentLocation = myLocation || (region ? { latitude: region.latitude, longitude: region.longitude } : null);
@@ -771,10 +783,12 @@ export default function GroupJourneyScreen() {
                 }
               } catch {}
 
-              // Prepare request body with final stats
-              const requestBody: { endLatitude?: number; endLongitude?: number; totalDistance?: number; totalTime?: number } = {
+              // Prepare request body with final stats (include speed stats for summary)
+              const requestBody: { endLatitude?: number; endLongitude?: number; totalDistance?: number; totalTime?: number; avgSpeed?: number; topSpeed?: number } = {
                 totalDistance: finalDistance,
                 totalTime: stats.totalTime || 0,
+                avgSpeed: stats.avgSpeed || 0,
+                topSpeed: stats.topSpeed || 0,
               };
               if (currentLocation?.latitude != null && typeof currentLocation.latitude === 'number' && !isNaN(currentLocation.latitude)) {
                 requestBody.endLatitude = currentLocation.latitude;
@@ -834,10 +848,20 @@ export default function GroupJourneyScreen() {
                   {
                     text: 'View Summary',
                     onPress: () => {
-                      router.replace({
-                        pathname: '/group-journey-detail',
-                        params: { groupJourneyId: groupJourneyId || '' },
-                      } as any);
+                      // Defer navigation to avoid Android Alert callback timing issues
+                      setTimeout(() => {
+                        try {
+                          router.replace({
+                            pathname: '/group-journey-detail',
+                            params: { groupJourneyId: groupJourneyId || '' },
+                          } as any);
+                        } catch {
+                          router.push({
+                            pathname: '/group-journey-detail',
+                            params: { groupJourneyId: groupJourneyId || '' },
+                          } as any);
+                        }
+                      }, 100);
                     },
                   },
                 ]
@@ -960,14 +984,17 @@ export default function GroupJourneyScreen() {
           ) : null
         ) : null}
 
-        <Marker
-          coordinate={{
-            latitude: journeyData.startLatitude,
-            longitude: journeyData.startLongitude,
-          }}
-          title="Start"
-          pinColor="green"
-        />
+        {typeof journeyData.startLatitude === 'number' && typeof journeyData.startLongitude === 'number' &&
+         journeyData.startLatitude !== 0 && journeyData.startLongitude !== 0 && (
+          <Marker
+            coordinate={{
+              latitude: journeyData.startLatitude,
+              longitude: journeyData.startLongitude,
+            }}
+            title="Start"
+            pinColor="green"
+          />
+        )}
 
         {journeyData.endLatitude && journeyData.endLongitude && (
           <Marker
@@ -983,7 +1010,9 @@ export default function GroupJourneyScreen() {
         {memberLocations.map((member) => {
           if (
             typeof member.latitude !== "number" ||
-            typeof member.longitude !== "number"
+            typeof member.longitude !== "number" ||
+            isNaN(member.latitude) ||
+            isNaN(member.longitude)
           )
             return null;
           return (
@@ -994,7 +1023,7 @@ export default function GroupJourneyScreen() {
                 longitude: member.longitude,
               }}
               title={member.displayName}
-              description={`${convertDistance((member.totalDistance || 0) / 1000)} • ${member.status}`}
+              description={`${convertDistance(member.totalDistance || 0)} • ${member.status}`}
             >
               <View style={styles.memberMarker}>
                 <Image
@@ -1075,7 +1104,7 @@ export default function GroupJourneyScreen() {
               >
                  <Image 
                     source={member.photoURL ? { uri: member.photoURL } : require("../assets/images/2025-09-26/byc45z4XPi.png")} 
-                    style={styles.friendAvatar} 
+                    style={[styles.friendAvatar, selectedMemberId === member.userId && styles.selectedFriendAvatar]} 
                  />
                  <Text style={styles.friendName} numberOfLines={1}>{member.displayName?.split(' ')[0]}</Text>
                  {member.status === 'COMPLETED' && (
@@ -1336,6 +1365,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#F3F4F6', // Default border
   },
+  selectedFriendAvatar: {
+    borderColor: '#F9A825', // Theme orange
+    borderWidth: 3,
+  },
   friendName: {
     fontSize: 12,
     fontWeight: '500',
@@ -1413,7 +1446,7 @@ const styles = StyleSheet.create({
     flex: 0.3, // Smaller width for pause button
   },
   completeButton: {
-    backgroundColor: '#10B981', // Success green
+    backgroundColor: '#F9A825', // Theme orange
     flex: 0.7,
   },
   completeButtonText: {

@@ -389,10 +389,27 @@ export async function startBackgroundTracking(
         // Initialize notification channel (for notifee on Android)
         await LiveNotificationService.initializeChannel();
 
-        // Get units preference
-        const units = await getUnitsPreference();
+        // Start background location updates FIRST — expo-location provides the foreground service
+        // that keeps the app alive. Starting this before notifee's notification avoids
+        // ForegroundServiceDidNotStartInTimeException on Android 12+.
+        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 5000, // Update every 5 seconds
+            distanceInterval: 10, // Or every 10 meters
+            foregroundService: {
+                notificationTitle: options?.destinationName
+                    ? `Heading to ${options.destinationName}`
+                    : 'Wayfarian Journey',
+                notificationBody: 'Tracking your journey...',
+                notificationColor: '#F9A825',
+            },
+            pausesUpdatesAutomatically: false,
+            activityType: Location.ActivityType.AutomotiveNavigation,
+        });
 
-        // Show initial notification via live notification service
+        // Now that expo-location's foreground service is running, update notification
+        // with richer content via live notification service (non-blocking)
+        const units = await getUnitsPreference();
         const initialNotificationData: JourneyNotificationData = {
             journeyId,
             startTime: initialState.startTime,
@@ -409,22 +426,8 @@ export async function startBackgroundTracking(
             currentLongitude: initialState.lastLongitude,
             units,
         };
-        await LiveNotificationService.updateNotification(initialNotificationData);
-
-        // Start background location updates
-        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-            accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 5000, // Update every 5 seconds
-            distanceInterval: 10, // Or every 10 meters
-            foregroundService: {
-                notificationTitle: options?.destinationName
-                    ? `Heading to ${options.destinationName}`
-                    : 'Wayfarian Journey',
-                notificationBody: 'Tracking your journey...',
-                notificationColor: '#F9A825',
-            },
-            pausesUpdatesAutomatically: false,
-            activityType: Location.ActivityType.AutomotiveNavigation,
+        LiveNotificationService.updateNotification(initialNotificationData).catch(e => {
+            console.warn('[BackgroundTask] Initial notification update failed (non-critical):', e);
         });
 
         console.log('[BackgroundTask] Started background tracking for journey:', journeyId);

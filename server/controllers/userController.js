@@ -478,10 +478,49 @@ const getJourneyHistory = async (req, res) => {
       prisma.journey.count({ where: whereClause }),
     ]);
     
+    // For group journeys, look up the associated GroupJourney IDs
+    // so the client can navigate to the group summary page
+    const groupIds = journeys.map(j => j.groupId).filter(Boolean);
+    let groupJourneyMap = {};
+    if (groupIds.length > 0) {
+      const instances = await prisma.journeyInstance.findMany({
+        where: {
+          userId,
+          status: 'COMPLETED',
+          groupJourney: {
+            groupId: { in: groupIds },
+          },
+        },
+        select: {
+          groupJourneyId: true,
+          startTime: true,
+          groupJourney: { select: { groupId: true } },
+        },
+        orderBy: { startTime: 'desc' },
+      });
+      // Map by groupId + startTime for accurate matching
+      instances.forEach(inst => {
+        const key = `${inst.groupJourney.groupId}_${inst.startTime.getTime()}`;
+        groupJourneyMap[key] = inst.groupJourneyId;
+      });
+    }
+
     const formattedJourneys = journeys.map((journey) => {
       const hydratedPhotos = hydratePhotos(journey.photos);
+      // Look up groupJourneyId by matching groupId + startTime
+      let groupJourneyId = null;
+      if (journey.groupId) {
+        const key = `${journey.groupId}_${journey.startTime.getTime()}`;
+        groupJourneyId = groupJourneyMap[key] || null;
+        // Fallback: find any instance for this group (if time doesn't match exactly)
+        if (!groupJourneyId) {
+          const fallbackKey = Object.keys(groupJourneyMap).find(k => k.startsWith(journey.groupId));
+          if (fallbackKey) groupJourneyId = groupJourneyMap[fallbackKey];
+        }
+      }
       return {
         ...journey,
+        groupJourneyId,
         photos: hydratedPhotos,
         coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
       };

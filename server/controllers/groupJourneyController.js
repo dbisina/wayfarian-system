@@ -409,7 +409,7 @@ const updateInstanceLocation = async (req, res) => {
     const MAX_REASONABLE_SPEED_KMH = 250;
     const validatedSpeed = Math.min(Math.max(speed || 0, 0), MAX_REASONABLE_SPEED_KMH);
     const newTopSpeed = Math.max(instance.topSpeed || 0, validatedSpeed);
-    const calculatedAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3.6 : 0; // km/h
+    const calculatedAvgSpeed = elapsedSeconds > 0 ? (newDistance / elapsedSeconds) * 3600 : 0; // km/h (distance in km, time in seconds)
     const newAvgSpeed = Math.min(calculatedAvgSpeed, MAX_REASONABLE_SPEED_KMH); // Cap avgSpeed too
 
     // Update instance
