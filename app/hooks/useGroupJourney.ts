@@ -48,6 +48,18 @@ interface UseGroupJourneyProps {
 const LOCATION_INTERVAL_MS = 2000;
 const LOCATION_DISTANCE_METERS = 5;
 
+// Haversine distance in km — used as fallback when useSmartTracking GPS conflicts on Android
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+const MIN_ACCURACY_FOR_DISTANCE = 25; // metres — ignore inaccurate fixes
+
 export const useGroupJourney = ({
   socket,
   groupJourneyId,
@@ -72,6 +84,13 @@ export const useGroupJourney = ({
   const currentSpeedRef = useRef<number>(0);
   // Throttle live notification updates
   const lastNotificationUpdateRef = useRef<number>(0);
+  // Local distance accumulation (Haversine fallback for Android where dual GPS watchers conflict)
+  const localDistanceRef = useRef<number>(0);
+  const lastLocationForDistanceRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Track local top speed (km/h) as fallback
+  const localTopSpeedRef = useRef<number>(0);
+  // Track myInstance.id to detect new journey starts and reset refs
+  const prevInstanceIdRef = useRef<string | null>(null);
 
   const statsRef = useRef(journeyState.stats);
   statsRef.current = journeyState.stats;
@@ -85,10 +104,22 @@ export const useGroupJourney = ({
   memberInstancesRef.current = journeyState.memberInstances;
 
   // Track whether myInstance is active for the timer (stable boolean to avoid interval churn)
-  const isInstanceActive = !!(myInstance && myInstance.startTime);
+  // Must also check status — a COMPLETED/CANCELLED instance from Redux persist still has startTime
+  const isInstanceActive = !!(myInstance && myInstance.startTime
+    && (myInstance.status === 'ACTIVE' || myInstance.status === 'PAUSED'));
 
   useEffect(() => {
     myInstanceRef.current = myInstance;
+    // Reset timer and local tracking refs when switching to a new instance
+    const newId = myInstance?.id ?? null;
+    if (newId !== prevInstanceIdRef.current) {
+      prevInstanceIdRef.current = newId;
+      clientStartTimeRef.current = null;
+      localDistanceRef.current = 0;
+      lastLocationForDistanceRef.current = null;
+      localTopSpeedRef.current = 0;
+      currentSpeedRef.current = 0;
+    }
   }, [myInstance]);
 
   useEffect(() => {
@@ -98,21 +129,29 @@ export const useGroupJourney = ({
     if (!clientStartTimeRef.current) {
       clientStartTimeRef.current = Date.now();
     }
-    // Update timer every second — only update time and member counts.
-    // Distance, speed, and topSpeed come from useSmartTracking via JourneyContext
-    // and must NOT be overwritten with server values (which are always 0).
+    // Update timer every second.
+    // Use max(smartTrackingDistance, localHaversineDistance) so that:
+    //   - On iOS, useSmartTracking (Roads API) provides the best distance and "wins"
+    //   - On Android, where dual GPS watchers conflict, local Haversine fallback provides data
     const updateTimer = () => {
       const startTime = clientStartTimeRef.current!;
       const now = Date.now();
       const elapsedSeconds = Math.floor((now - startTime) / 1000);
       const currentStats = statsRef.current;
 
+      // Best-of: smart tracking distance vs local Haversine accumulation
+      const bestDistance = Math.max(currentStats.totalDistance, localDistanceRef.current);
+      const bestTopSpeed = Math.max(currentStats.topSpeed, localTopSpeedRef.current);
+      const bestAvgSpeed = elapsedSeconds > 0 && bestDistance > 0
+        ? (bestDistance / elapsedSeconds) * 3600 // km/s → km/h
+        : currentStats.avgSpeed;
+
       dispatch(setStats({
-        totalDistance: currentStats.totalDistance, // preserve smart tracking distance
+        totalDistance: bestDistance,
         totalTime: elapsedSeconds,
-        movingTime: currentStats.movingTime, // preserve smart tracking moving time
-        avgSpeed: currentStats.avgSpeed, // preserve smart tracking avg speed
-        topSpeed: currentStats.topSpeed, // preserve smart tracking top speed
+        movingTime: currentStats.movingTime || elapsedSeconds, // fallback to elapsed if smart tracking not running
+        avgSpeed: bestAvgSpeed,
+        topSpeed: bestTopSpeed,
         currentSpeed: currentSpeedRef.current,
         activeMembersCount: membersRef.current.filter(m => m.isOnline).length,
         completedMembersCount: Object.values(memberInstancesRef.current).filter(inst => inst.status === 'COMPLETED').length,
@@ -126,11 +165,11 @@ export const useGroupJourney = ({
           const notifData: JourneyNotificationData = {
             journeyId: journey.id,
             startTime: startTime,
-            totalDistance: currentStats.totalDistance,
+            totalDistance: bestDistance,
             currentSpeed: currentSpeedRef.current,
-            avgSpeed: currentStats.avgSpeed,
-            topSpeed: currentStats.topSpeed,
-            movingTime: currentStats.movingTime,
+            avgSpeed: bestAvgSpeed,
+            topSpeed: bestTopSpeed,
+            movingTime: currentStats.movingTime || elapsedSeconds,
             progress: 0,
             startLocationName: journey.startLocation?.address || 'Start',
             destinationName: journey.endLocation?.address || 'Group Ride',
@@ -239,13 +278,35 @@ export const useGroupJourney = ({
           if (now - lastEmitRef.current < LOCATION_INTERVAL_MS) return;
           lastEmitRef.current = now;
 
-          const { latitude, longitude, speed, heading } = location.coords;
+          const { latitude, longitude, speed, heading, accuracy } = location.coords;
           // Store current speed (m/s -> km/h) for stats display
-          currentSpeedRef.current = (speed ?? 0) > 0 ? (speed ?? 0) * 3.6 : 0;
+          const speedKmh = (speed ?? 0) > 0 ? (speed ?? 0) * 3.6 : 0;
+          currentSpeedRef.current = speedKmh;
+
+          // Local Haversine distance accumulation (fallback for Android)
+          if ((accuracy ?? 999) <= MIN_ACCURACY_FOR_DISTANCE) {
+            const prev = lastLocationForDistanceRef.current;
+            if (prev) {
+              const segmentKm = haversineKm(prev.latitude, prev.longitude, latitude, longitude);
+              // Only add meaningful movement (>5m) to avoid GPS jitter
+              if (segmentKm > 0.005 && segmentKm < 1.0) {
+                localDistanceRef.current += segmentKm;
+              }
+            }
+            lastLocationForDistanceRef.current = { latitude, longitude };
+          }
+          // Track local top speed
+          if (speedKmh > localTopSpeedRef.current && speedKmh < 250) {
+            localTopSpeedRef.current = speedKmh;
+          }
+
           const userId = myInstanceRef.current?.userId;
           if (!socket?.connected) return;
-          // Include distance from smart tracking so other members see real stats
-          const currentDistance = statsRef.current?.totalDistance || 0;
+          // Include best distance so other members see real stats
+          const currentDistance = Math.max(
+            statsRef.current?.totalDistance || 0,
+            localDistanceRef.current,
+          );
           socket.emit('instance:location-update', {
             instanceId,
             latitude,
@@ -289,6 +350,9 @@ export const useGroupJourney = ({
     locationSubscriptionRef.current = null;
     clientStartTimeRef.current = null;
     currentSpeedRef.current = 0;
+    localDistanceRef.current = 0;
+    lastLocationForDistanceRef.current = null;
+    localTopSpeedRef.current = 0;
     dispatch(setGroupTracking({ isTracking: false, instanceId: null }));
   }, [dispatch]);
 

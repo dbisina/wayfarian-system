@@ -648,8 +648,13 @@ export default function GroupJourneyScreen() {
   useEffect(() => {
     if (myInstance?.status === "ACTIVE" && !isTracking && myInstance.id) {
       startLocationTracking(myInstance.id);
-      // Ensure useSmartTracking is enabled for distance calculation
-      reduxDispatch(setTracking(true));
+      // On iOS, enable useSmartTracking for Roads API distance calculation.
+      // On Android, skip this — dual GPS watchers (useSmartTracking + useGroupJourney)
+      // conflict via Fused Location Provider, causing neither to get reliable updates.
+      // useGroupJourney has its own Haversine fallback for distance on Android.
+      if (Platform.OS === 'ios') {
+        reduxDispatch(setTracking(true));
+      }
     }
   }, [isTracking, myInstance, startLocationTracking, reduxDispatch]);
 
@@ -705,7 +710,11 @@ export default function GroupJourneyScreen() {
         status: 'active',
         photos: [],
       }));
-      reduxDispatch(setTracking(true));
+      // On iOS, enable useSmartTracking for Roads API distance.
+      // On Android, skip to avoid dual GPS watcher conflict.
+      if (Platform.OS === 'ios') {
+        reduxDispatch(setTracking(true));
+      }
       reduxDispatch(setJourneyMinimized(true));
 
       startLocationTracking(instance.id);
