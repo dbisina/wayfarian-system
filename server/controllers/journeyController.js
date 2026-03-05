@@ -308,7 +308,7 @@ const updateJourneyProgress = async (req, res) => {
 const endJourney = async (req, res) => {
   try {
     const { journeyId } = req.params;
-    const { latitude, longitude, totalDistance: clientTotalDistance, totalTime: clientTotalTime } = req.body;
+    const { latitude, longitude, totalDistance: clientTotalDistance, totalTime: clientTotalTime, topSpeed: clientTopSpeed, avgSpeed: clientAvgSpeed } = req.body;
 
     const userId = req.user.id;
 
@@ -379,7 +379,10 @@ const endJourney = async (req, res) => {
 
     console.log(`[Journey ${journeyId}] Final distance: ${totalDistance.toFixed(2)}km (source: ${distanceSource}, calculated: ${calculatedDistance.toFixed(2)}km)`);
 
-    const avgSpeed = calculateAverageSpeed(totalDistance, totalTime);
+    const avgSpeed = clientAvgSpeed ?? calculateAverageSpeed(totalDistance, totalTime);
+
+    // Use the best topSpeed: max of server-tracked and client-reported
+    const finalTopSpeed = Math.max(journey.topSpeed ?? 0, clientTopSpeed ?? 0);
 
     // End journey
     const completedJourney = await prisma.journey.update({
@@ -392,6 +395,7 @@ const endJourney = async (req, res) => {
         totalDistance,
         totalTime,
         avgSpeed,
+        topSpeed: finalTopSpeed,
       },
     });
 

@@ -807,10 +807,10 @@ const completeInstance = async (req, res) => {
     const { endLatitude, endLongitude, totalDistance: clientDistance, totalTime: clientTime, avgSpeed: clientAvgSpeed, topSpeed: clientTopSpeed } = req.body;
 
     // Calculate final stats — use max of server-tracked and client-reported distance
-    const duration = clientTime || (instance.startTime
+    const duration = clientTime ?? (instance.startTime
       ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
       : 0);
-    const finalDistance = Math.max(instance.totalDistance || 0, clientDistance || 0);
+    const finalDistance = Math.max(instance.totalDistance ?? 0, clientDistance ?? 0);
 
     // Wrap instance completion + journey record creation in a transaction
     // to prevent inconsistent state if any step fails mid-way
@@ -832,9 +832,9 @@ const completeInstance = async (req, res) => {
       }
 
       const txResult = await prisma.$transaction(async (tx) => {
-        // Use client-reported speed stats as fallback if server-tracked values are 0
-        const finalAvgSpeed = instance.avgSpeed || clientAvgSpeed || 0;
-        const finalTopSpeed = instance.topSpeed || clientTopSpeed || 0;
+        // Use client-reported speed stats as fallback if server-tracked values are missing
+        const finalAvgSpeed = instance.avgSpeed ?? clientAvgSpeed ?? 0;
+        const finalTopSpeed = instance.topSpeed ?? clientTopSpeed ?? 0;
 
         const completed = await tx.journeyInstance.update({
           where: { id: instanceId },
@@ -865,10 +865,10 @@ const completeInstance = async (req, res) => {
             startTime: instance.startTime,
             endTime: completed.endTime || new Date(),
             status: 'COMPLETED',
-            totalDistance: completed.totalDistance || 0,
+            totalDistance: completed.totalDistance ?? 0,
             totalTime: duration,
-            avgSpeed: completed.avgSpeed || 0,
-            topSpeed: completed.topSpeed || 0,
+            avgSpeed: completed.avgSpeed ?? 0,
+            topSpeed: completed.topSpeed ?? 0,
             startLatitude: startLat,
             startLongitude: startLng,
             endLatitude: completed.currentLatitude,
@@ -881,7 +881,7 @@ const completeInstance = async (req, res) => {
         await tx.user.update({
           where: { id: instance.userId },
           data: {
-            totalDistance: { increment: completed.totalDistance || 0 },
+            totalDistance: { increment: completed.totalDistance ?? 0 },
             totalTime: { increment: duration },
             totalTrips: { increment: 1 },
             topSpeed: completed.topSpeed && completed.topSpeed > 0
@@ -1384,13 +1384,13 @@ const getGroupJourneySummary = async (req, res) => {
 
     // Calculate aggregated group stats
     const totalGroupDistance = groupJourney.instances.reduce(
-      (sum, inst) => sum + (inst.totalDistance || 0), 0
+      (sum, inst) => sum + (inst.totalDistance ?? 0), 0
     );
     const totalGroupTime = groupJourney.instances.reduce(
-      (sum, inst) => sum + (inst.totalTime || 0), 0
+      (sum, inst) => sum + (inst.totalTime ?? 0), 0
     );
     const groupTopSpeed = Math.max(
-      ...groupJourney.instances.map(inst => inst.topSpeed || 0), 0
+      ...groupJourney.instances.map(inst => inst.topSpeed ?? 0), 0
     );
 
     // Calculate duration from first start to last end
@@ -1418,10 +1418,10 @@ const getGroupJourneySummary = async (req, res) => {
       userId: inst.userId,
       displayName: inst.user?.displayName || 'Unknown',
       photoURL: inst.user?.photoURL,
-      totalDistance: inst.totalDistance || 0,
-      totalTime: inst.totalTime || 0,
-      avgSpeed: inst.avgSpeed || 0,
-      topSpeed: inst.topSpeed || 0,
+      totalDistance: inst.totalDistance ?? 0,
+      totalTime: inst.totalTime ?? 0,
+      avgSpeed: inst.avgSpeed ?? 0,
+      topSpeed: inst.topSpeed ?? 0,
       status: inst.status,
       photoCount: photoCountByUser[inst.userId] || 0,
     }));
