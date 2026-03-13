@@ -13,7 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, AnimatedRegion } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +29,8 @@ import { useJourneyState, useJourneyStats } from '../hooks/useJourneyState';
 import { useSettings } from '../contexts/SettingsContext';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
+import { snapSinglePoint } from '../services/roads';
+import NavArrowMarker from '../components/NavArrowMarker';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -75,10 +77,28 @@ export default function JourneyScreen(): React.JSX.Element {
     latitudeDelta: number;
     longitudeDelta: number;
   } | null>(null);
+  const regionRef = useRef<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
   const [manualRouteCoords, setManualRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const [isStartBusy, setIsStartBusy] = useState(false);
   const [celebrationEvent, setCelebrationEvent] = useState<CelebrationEvent | null>(null);
+  const [isNavigationMode, setIsNavigationMode] = useState(true); // Default to following user
+  const [snappedLocation, setSnappedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const markerPosition = useRef(new AnimatedRegion({
+    latitude: region?.latitude || 0,
+    longitude: region?.longitude || 0,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  })).current;
+  const markerRotation = useRef(new Animated.Value(currentLocation?.heading || 0)).current;
+  const lastCameraUpdateRef = useRef<number>(0);
+  const lastCameraSpeedRef = useRef<number>(0);
+  const isManuallyPanningRef = useRef<boolean>(false);
   const lastMilestoneRef = useRef(0);
   const startIconAnimation = useRef(new Animated.Value(0)).current;
 
@@ -107,6 +127,32 @@ export default function JourneyScreen(): React.JSX.Element {
       animation.stop();
     };
   }, [startIconAnimation]);
+
+  // Handle Marker Animation & Smoothing
+  useEffect(() => {
+    if (!currentLocation) return;
+
+    const targetLat = snappedLocation?.latitude ?? currentLocation.latitude;
+    const targetLng = snappedLocation?.longitude ?? currentLocation.longitude;
+    const targetHeading = currentLocation.heading || 0;
+
+    // Smoothly animate the marker to the new position over 1 second (matches 1Hz interval)
+    markerPosition.timing({
+      latitude: targetLat,
+      longitude: targetLng,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+      duration: 1000,
+      useNativeDriver: false,
+    } as any).start(); // Use any as a workaround for inconsistent react-native-maps typings
+
+    // Smoothly animate rotation
+    Animated.timing(markerRotation, {
+      toValue: targetHeading,
+      duration: 600,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [currentLocation, snappedLocation, markerPosition, markerRotation]);
 
   // Handle scheduled journey start via activeJourneyId param
   // This is triggered when user starts a scheduled journey from future-rides screen
@@ -152,6 +198,63 @@ export default function JourneyScreen(): React.JSX.Element {
     initScheduledJourney();
   }, [activeJourneyId, currentJourney?.id, isTracking, resumeActiveJourney, t]);
 
+  // Handle Immersive Camera Following & Road Snapping
+  useEffect(() => {
+    if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
+
+    const now = Date.now();
+    // Synchronize with 1Hz location updates (1000ms)
+    if (now - lastCameraUpdateRef.current < 1000) return;
+
+    const updateCamera = async () => {
+      if (!mapRef.current) return;
+
+      lastCameraUpdateRef.current = now;
+
+      // Real-time Road Snapping for the marker ONLY (Visual only)
+      try {
+        const snapped = await snapSinglePoint({
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+        });
+        if (snapped) setSnappedLocation(snapped);
+      } catch (e) {
+        // Silent
+      }
+
+      // Pro Navigation: Smoothed speed-dependent zoom and pitch
+      const rawSpeedKmh = (currentLocation.speed || 0) * 3.6;
+      // Exponential smoothing for the camera target to prevent "jumping"
+      const smoothedSpeed = lastCameraSpeedRef.current + 0.2 * (rawSpeedKmh - lastCameraSpeedRef.current);
+      lastCameraSpeedRef.current = smoothedSpeed;
+
+      let targetZoom = 18;
+      let targetPitch = 45;
+
+      if (smoothedSpeed > 80) { // High speed (Highway)
+        targetZoom = 16.5;
+        targetPitch = 55;
+      } else if (smoothedSpeed > 40) { // Medium speed (City)
+        targetZoom = 17.5;
+        targetPitch = 50;
+      }
+
+      // Animate Camera to 3D Navigation View
+      mapRef.current.animateCamera({
+        center: {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+        },
+        pitch: targetPitch,
+        heading: currentLocation.heading || 0, // Heading-up
+        altitude: smoothedSpeed > 60 ? 1000 : 600,
+        zoom: targetZoom,
+      }, { duration: 1000 });
+    };
+
+    updateCamera();
+  }, [currentLocation, isTracking, isNavigationMode]);
+
   // Initialize map with current location if no region set
   useEffect(() => {
     if (!region && !currentJourney?.startLocation) {
@@ -173,37 +276,27 @@ export default function JourneyScreen(): React.JSX.Element {
                 try { mapRef.current.animateToRegion(cachedRegion, 800); } catch {}
               }
             }
-
-            // Then fetch fresh location
-            const location = await Location.getCurrentPositionAsync({});
-            const newRegion = {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            };
-            setRegion(newRegion);
-            if (mapRef.current) {
-              try { mapRef.current.animateToRegion(newRegion, 800); } catch {}
-            }
           }
         } catch (e) {
           console.warn('Failed to get current location for map:', e);
         }
       })();
     }
-  }, [region, currentJourney?.startLocation]);
+  }, [currentJourney?.startLocation]);
 
 
   const speedMeasurement = useMemo(() => {
-    const value = isTracking && stats ? stats.currentSpeed : 0;
-    return splitMeasurement(convertSpeed(value));
-  }, [convertSpeed, isTracking, stats]);
+    // currentLocation.speed is raw m/s from native GPS
+    const rawSpeed = currentLocation?.speed || 0;
+    // Standard: stats.currentSpeed is now reliable km/h from our consolidated hooks
+    const speedKmh = stats?.currentSpeed || rawSpeed * 3.6;
+    return splitMeasurement(convertSpeed(speedKmh));
+  }, [currentLocation?.speed, stats?.currentSpeed, convertSpeed]);
 
   const distanceMeasurement = useMemo(() => {
-    const value = isTracking && stats ? stats.totalDistance : 0;
-    return splitMeasurement(convertDistance(value));
-  }, [convertDistance, isTracking, stats]);
+    // stats.totalDistance is in km
+    return splitMeasurement(convertDistance(stats?.totalDistance || 0));
+  }, [stats?.totalDistance, convertDistance]);
 
   // Distance milestone celebrations
   useEffect(() => {
@@ -518,13 +611,37 @@ export default function JourneyScreen(): React.JSX.Element {
             provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
             style={styles.backgroundMap}
             region={region || undefined}
-            showsUserLocation
+            showsUserLocation={!snappedLocation} // Only show native blue dot if not snapped
             showsMyLocationButton={false}
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
             mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
+            onRegionChangeComplete={(r, { isGesture }) => {
+              // Only disable navigation mode if the user actually manually interacted with the map
+              if (isGesture) {
+                isManuallyPanningRef.current = true;
+                setIsNavigationMode(false);
+                setRegion(r); // Trigger re-render only on manual interaction
+              }
+              regionRef.current = r;
+            }}
           >
+            {(snappedLocation || currentLocation) && (
+              <Marker.Animated
+                coordinate={markerPosition as any}
+                anchor={{ x: 0.5, y: 0.5 }}
+                flat
+                tracksViewChanges={Platform.OS === 'android' ? false : undefined}
+              >
+                <Animated.View style={{ transform: [{ rotate: markerRotation.interpolate({
+                  inputRange: [0, 360],
+                  outputRange: ['0deg', '360deg']
+                }) }] }}>
+                  <NavArrowMarker size={44} />
+                </Animated.View>
+              </Marker.Animated>
+            )}
             {currentJourney?.endLocation &&
             GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
@@ -642,6 +759,44 @@ export default function JourneyScreen(): React.JSX.Element {
             <MaterialIcons name="camera-alt" size={22} color="#fff" />
           </TouchableOpacity>
 
+          {/* Recenter Button (Navigation Mode) */}
+          {!isNavigationMode && isTracking && (
+            <TouchableOpacity 
+              onPress={() => {
+                isManuallyPanningRef.current = false;
+                setIsNavigationMode(true);
+                // Instant sync animation when recentering
+                if (mapRef.current && currentLocation) {
+                  const speedKmh = (currentLocation.speed || 0) * 3.6;
+                  let targetZoom = 18;
+                  let targetPitch = 45;
+
+                  if (speedKmh > 80) {
+                    targetZoom = 16.5;
+                    targetPitch = 55;
+                  } else if (speedKmh > 40) {
+                    targetZoom = 17.5;
+                    targetPitch = 50;
+                  }
+
+                  mapRef.current.animateCamera({
+                    center: {
+                      latitude: currentLocation.latitude,
+                      longitude: currentLocation.longitude,
+                    },
+                    pitch: targetPitch,
+                    heading: currentLocation.heading || 0,
+                    zoom: targetZoom,
+                  }, { duration: 600 });
+                }
+              }} 
+              style={styles.recenterButton}
+            >
+              <MaterialIcons name="navigation" size={24} color="#000" />
+              <Text style={styles.recenterText}>{t('journey.recenter') || 'Recenter'}</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Bottom Panel */}
           <View style={styles.bottomPanel}>
             {/* Friends Row */}
@@ -703,8 +858,8 @@ export default function JourneyScreen(): React.JSX.Element {
                   <MaterialIcons name="play-arrow" size={24} color="#000" />
                 ) : (
                   <Animated.Image
-                    source={require("../assets/images/2025-09-26/s27abcBOgz.png")}
-                    style={[styles.startIcon, { transform: [{ translateX: bikeTranslation }] }]}
+                    source={require("../assets/images/custom/start_ride.png")}
+                    style={[styles.startIcon, { width: 32, height: 32, transform: [{ translateX: bikeTranslation }] }]}
                   />
                 )}
               </TouchableOpacity>
@@ -798,13 +953,32 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  recenterButton: {
+    position: 'absolute',
+    right: 15,
+    top: 590,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 25,
+    elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowRadius: 3.84,
+    zIndex: 11,
+  },
+  recenterText: {
+    marginLeft: 8,
+    fontWeight: 'bold',
+    fontSize: 14,
+    color: '#000',
   },
   profileImage: {
     width: 45,

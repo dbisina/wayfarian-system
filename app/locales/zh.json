@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "此应用使用位置信息来跟踪您的旅程并在地图上显示您的位置。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "此应用使用位置信息来跟踪您的旅程并在地图上显示您的位置。",
+        "NSLocationAlwaysUsageDescription": "此应用使用位置信息来跟踪您的旅程并在地图上显示您的位置。",
+        "NSCameraUsageDescription": "Wayfarian 使用相机，以便您在旅途中拍照。",
+        "NSPhotoLibraryUsageDescription": "允许 Wayfarian 访问您的照片以保存和分享旅程回忆。",
+        "NSPhotoLibraryAddUsageDescription": "允许 Wayfarian 访问您的照片以保存和分享旅程回忆。",
+        "NSMicrophoneUsageDescription": "Wayfarian 使用相机，以便您在旅途中拍照。"
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "यह ऐप आपकी यात्रा को ट्रैक करने के लिए स्थान का उपयोग करता है।",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "यह ऐप आपकी यात्रा को ट्रैक करने के लिए स्थान का उपयोग करता है।",
+        "NSLocationAlwaysUsageDescription": "यह ऐप आपकी यात्रा को ट्रैक करने के लिए स्थान का उपयोग करता है।",
+        "NSCameraUsageDescription": "वैफ़ेरियन कैमरे का उपयोग करता है ताकि आप फ़ोटो ले सकें।",
+        "NSPhotoLibraryUsageDescription": "वैफ़ेरियन को आपकी फ़ोटो तक पहुंचने दें।",
+        "NSPhotoLibraryAddUsageDescription": "वैफ़ेरियन को आपकी फ़ोटो तक पहुंचने दें।",
+        "NSMicrophoneUsageDescription": "वैफ़ेरियन कैमरे का उपयोग करता है ताकि आप फ़ोटो ले सकें।"
+    }
+}

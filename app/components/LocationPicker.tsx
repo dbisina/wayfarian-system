@@ -31,6 +31,7 @@ interface LocationPickerProps {
   onLocationSelect: (location: LocationData) => void;
   currentLocation?: { latitude: number; longitude: number };
   style?: any;
+  suggestionsPosition?: 'bottom' | 'top';
 }
 
 export default function LocationPicker({
@@ -39,6 +40,7 @@ export default function LocationPicker({
   onLocationSelect,
   currentLocation,
   style,
+  suggestionsPosition = 'bottom',
 }: LocationPickerProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(value);
@@ -225,25 +227,43 @@ export default function LocationPicker({
       </View>
 
       {showSuggestions && (suggestions.length > 0 || !!currentLocation) && (
-        <View style={styles.suggestionsContainer}>
+        <View 
+          style={[
+            styles.suggestionsContainer,
+            suggestionsPosition === 'top' 
+              ? { bottom: '100%', marginBottom: 8, shadowOffset: { width: 0, height: -4 } }
+              : { top: '100%', marginTop: 8, shadowOffset: { width: 0, height: 4 } }
+          ]}
+        >
           {currentLocation && (
             <TouchableOpacity
-              style={[styles.suggestionItem, styles.currentLocationItem]}
+              style={[
+                styles.suggestionItem, 
+                styles.currentLocationItem,
+                suggestions.length === 0 && { borderBottomWidth: 0 }
+              ]}
               onPress={handleUseCurrentLocation}
             >
-              <MaterialIcons name="my-location" size={16} color="#007AFF" style={styles.suggestionIcon} />
+              <View style={styles.suggestionIconContainer}>
+                <MaterialIcons name="my-location" size={20} color="#007AFF" />
+              </View>
               <Text numberOfLines={1} style={[styles.suggestionText, styles.currentLocationText]}>
                 {t('common.useCurrentLocation')}
               </Text>
             </TouchableOpacity>
           )}
-          {suggestions.slice(0, 5).map((item) => (
+          {suggestions.slice(0, 5).map((item, index, filteredSuggestions) => (
             <TouchableOpacity
               key={item.id}
-              style={styles.suggestionItem}
+              style={[
+                styles.suggestionItem,
+                index === filteredSuggestions.length - 1 && { borderBottomWidth: 0 }
+              ]}
               onPress={() => handleSelectSuggestion(item)}
             >
-              <MaterialIcons name="location-on" size={16} color="#999999" style={styles.suggestionIcon} />
+              <View style={[styles.suggestionIconContainer, { backgroundColor: '#F5F5F5' }]}>
+                <MaterialIcons name="location-on" size={20} color="#757575" />
+              </View>
               <Text numberOfLines={2} style={styles.suggestionText}>
                 {item.description}
               </Text>
@@ -294,41 +314,47 @@ const styles = StyleSheet.create({
   },
   suggestionsContainer: {
     position: 'absolute',
-    top: 65,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    maxHeight: 250,
+    borderRadius: 16,
+    maxHeight: 280,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,    elevation: 12,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
     zIndex: 10001,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    overflow: 'hidden',
   },
   suggestionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E0E0E0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  suggestionIcon: {
-    marginRight: 12,
+  suggestionIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
   },
   suggestionText: {
     flex: 1,
-    fontSize: 14,
-    color: '#333333',
-    fontFamily: 'Poppins',
+    fontSize: 15,
+    color: '#1A1A1A',
+    fontFamily: 'Space Grotesk',
     lineHeight: 20,
+    fontWeight: '500',
   },
   currentLocationItem: {
-    backgroundColor: '#F5FAFF',
+    backgroundColor: '#FFFFFF',
   },
   currentLocationText: {
     color: '#007AFF',

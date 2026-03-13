@@ -83,7 +83,8 @@
         "sos": "SOS",
         "timeLeft": "Time Left",
         "eta": "ETA",
-        "myLocation": "My Location"
+        "myLocation": "My Location",
+        "recenter": "Recenter"
     },
     "group": {
         "title": "Groups",

@@ -127,28 +127,38 @@ const ExpandableMemberCard = ({
       {expanded && (
         <View style={styles.expandedStatsGrid}>
           <View style={styles.expandedStatItem}>
-            <Ionicons name="navigate-outline" size={16} color="#F9A825" />
+            <View style={styles.expandedStatIconContainer}>
+              <Ionicons name="navigate-outline" size={14} color="#F9A825" />
+            </View>
             <Text style={styles.expandedStatValue}>{convertDistance(member.totalDistance)}</Text>
             <Text style={styles.expandedStatLabel}>Distance</Text>
           </View>
           <View style={styles.expandedStatItem}>
-            <Ionicons name="time-outline" size={16} color="#F9A825" />
+            <View style={styles.expandedStatIconContainer}>
+              <Ionicons name="time-outline" size={14} color="#F9A825" />
+            </View>
             <Text style={styles.expandedStatValue}>{formatTime(member.totalTime)}</Text>
             <Text style={styles.expandedStatLabel}>Time</Text>
           </View>
           <View style={styles.expandedStatItem}>
-            <Ionicons name="speedometer-outline" size={16} color="#F9A825" />
+            <View style={styles.expandedStatIconContainer}>
+              <Ionicons name="speedometer-outline" size={14} color="#F9A825" />
+            </View>
             <Text style={styles.expandedStatValue}>{convertSpeed(member.avgSpeed)}</Text>
             <Text style={styles.expandedStatLabel}>Avg Speed</Text>
           </View>
           <View style={styles.expandedStatItem}>
-            <Ionicons name="flash-outline" size={16} color="#F9A825" />
+            <View style={styles.expandedStatIconContainer}>
+              <Ionicons name="flash-outline" size={14} color="#F9A825" />
+            </View>
             <Text style={styles.expandedStatValue}>{convertSpeed(member.topSpeed)}</Text>
             <Text style={styles.expandedStatLabel}>Top Speed</Text>
           </View>
           {member.photoCount != null && (
             <View style={styles.expandedStatItem}>
-              <Ionicons name="camera-outline" size={16} color="#F9A825" />
+              <View style={styles.expandedStatIconContainer}>
+                <Ionicons name="camera-outline" size={14} color="#F9A825" />
+              </View>
               <Text style={styles.expandedStatValue}>{member.photoCount}</Text>
               <Text style={styles.expandedStatLabel}>Photos</Text>
             </View>
@@ -307,26 +317,34 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
           <Text style={styles.sectionTitle}>Group Stats</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Ionicons name="navigate-outline" size={20} color="#F9A825" />
+              <View style={styles.statIconContainer}>
+                <Ionicons name="navigate-outline" size={20} color="#F9A825" />
+              </View>
               <Text style={styles.statValue}>
                 {convertDistance(summary.groupStats.totalDistance)}
               </Text>
-              <Text style={styles.statLabel}>Total Distance</Text>
+              <Text style={styles.statLabel}>Distance</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="time-outline" size={20} color="#F9A825" />
+              <View style={styles.statIconContainer}>
+                <Ionicons name="time-outline" size={20} color="#F9A825" />
+              </View>
               <Text style={styles.statValue}>
                 {formatTime(summary.groupStats.duration)}
               </Text>
               <Text style={styles.statLabel}>Duration</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="camera-outline" size={20} color="#F9A825" />
+              <View style={styles.statIconContainer}>
+                <Ionicons name="camera-outline" size={20} color="#F9A825" />
+              </View>
               <Text style={styles.statValue}>{summary.groupStats.totalPhotos}</Text>
               <Text style={styles.statLabel}>Photos</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="people-outline" size={20} color="#F9A825" />
+              <View style={styles.statIconContainer}>
+                <Ionicons name="people-outline" size={20} color="#F9A825" />
+              </View>
               <Text style={styles.statValue}>{summary.groupStats.membersCount}</Text>
               <Text style={styles.statLabel}>Riders</Text>
             </View>
@@ -583,23 +601,27 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   heroTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
     color: '#fff',
     fontFamily: 'Space Grotesk',
   },
   heroDate: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
     fontFamily: 'Space Grotesk',
-    marginTop: 2,
+    marginTop: 4,
+    fontWeight: '500',
   },
   heroGroup: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#F9A825',
     fontFamily: 'Space Grotesk',
     marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   // Stats Card
   statsCard: {
@@ -614,11 +636,11 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -630,18 +652,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 4,
   },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(249, 168, 37, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   statValue: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#000000',
+    fontWeight: '800',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    marginTop: 4,
+    marginTop: 8,
   },
   statLabel: {
     fontSize: 11,
     color: '#757575',
     fontFamily: 'Space Grotesk',
     marginTop: 2,
+    fontWeight: '500',
   },
   // Member Section - Expandable Cards
   memberSection: {
@@ -727,43 +758,54 @@ const styles = StyleSheet.create({
   expandedStatItem: {
     width: '33.33%',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
+  },
+  expandedStatIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(249, 168, 37, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   expandedStatValue: {
     fontSize: 14,
     fontWeight: '700',
     color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    marginTop: 4,
   },
   expandedStatLabel: {
     fontSize: 10,
     color: '#9E9E9E',
     fontFamily: 'Space Grotesk',
     marginTop: 2,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   // Timeline Section
   timelineSection: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginBottom: 16,
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
     elevation: 4,
   },
   timelineSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   photoCount: {
     fontSize: 14,
     color: '#757575',
+    fontWeight: '500',
     fontFamily: 'Space Grotesk',
   },
   // Photo Viewer Modal

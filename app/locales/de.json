@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Diese App verwendet den Standort, um Ihre Reise zu verfolgen und Ihre Position auf der Karte anzuzeigen.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Diese App verwendet den Standort, um Ihre Reise zu verfolgen und Ihre Position auf der Karte anzuzeigen.",
+        "NSLocationAlwaysUsageDescription": "Diese App verwendet den Standort, um Ihre Reise zu verfolgen und Ihre Position auf der Karte anzuzeigen.",
+        "NSCameraUsageDescription": "Wayfarian verwendet die Kamera, damit Sie während Ihrer Reise Fotos machen können.",
+        "NSPhotoLibraryUsageDescription": "Erlaube Wayfarian den Zugriff auf deine Fotos, um Erinnerungen an die Reise zu speichern und zu teilen.",
+        "NSPhotoLibraryAddUsageDescription": "Erlaube Wayfarian den Zugriff auf deine Fotos, um Erinnerungen an die Reise zu speichern und zu teilen.",
+        "NSMicrophoneUsageDescription": "Wayfarian verwendet die Kamera, damit Sie während Ihrer Reise Fotos machen können."
+    }
+}

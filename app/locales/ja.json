@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "このアプリは位置情報を使用して移動を追跡します。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "このアプリは位置情報を使用して移動を追跡します。",
+        "NSLocationAlwaysUsageDescription": "このアプリは位置情報を使用して移動を追跡します。",
+        "NSCameraUsageDescription": "Wayfarianは旅行中に写真を撮るためにカメラを使用します。",
+        "NSPhotoLibraryUsageDescription": "Wayfarianに写真へのアクセスを許可します。",
+        "NSPhotoLibraryAddUsageDescription": "Wayfarianに写真へのアクセスを許可します。",
+        "NSMicrophoneUsageDescription": "Wayfarianは旅行中に写真を撮るためにカメラを使用します。"
+    }
+}

@@ -556,6 +556,8 @@ export const journeyAPI = {
     longitude?: number;
     totalDistance?: number; // Roads API snapped distance in kilometers
     totalTime?: number; // Client-calculated total time in seconds
+    topSpeed?: number; // Max speed in km/h
+    avgSpeed?: number; // Avg speed in km/h
   }) => {
     // Server expects PUT with latitude/longitude and optionally totalDistance/totalTime
     const payload: any = {
@@ -569,6 +571,13 @@ export const journeyAPI = {
     // Include totalTime if provided (for accurate time tracking)
     if (endData.totalTime !== undefined) {
       payload.totalTime = endData.totalTime;
+    }
+    // Include speeds
+    if (endData.topSpeed !== undefined) {
+      payload.topSpeed = endData.topSpeed;
+    }
+    if (endData.avgSpeed !== undefined) {
+      payload.avgSpeed = endData.avgSpeed;
     }
     return apiRequest(`/journey/${journeyId}/end`, 'PUT', payload);
   },

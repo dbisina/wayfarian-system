@@ -1024,6 +1024,7 @@ export default function GroupDetailScreen() {
                     value={endLocation?.address || ''}
                     onLocationSelect={(loc) => setEndLocation({ latitude: loc.latitude, longitude: loc.longitude, address: loc.address })}
                     currentLocation={currentLocation || undefined}
+                    suggestionsPosition="top"
                   />
                 </View>
                 <View style={styles.modalActions}>

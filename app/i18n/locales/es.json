@@ -38,8 +38,8 @@
         "title": "Mapa",
         "locationPermDenied": "Permiso de ubicación denegado",
         "failedLocation": "Error al obtener la ubicación actual",
-        "authRequired": "Autenticación Requerida",
-        "loginToStart": "Por favor, inicia sesión para comenzar un viaje",
+        "authRequired": "Autenticación requerida",
+        "loginToStart": "Por favor, inicie sesión para iniciar un viaje",
         "notFound": "No encontrado",
         "destNotFound": "No se pudo encontrar ese destino.",
         "searchError": "Error al buscar ubicación.",
@@ -75,15 +75,16 @@
         "notStarted": "NO INICIADO",
         "minimizeJourney": "Minimizar",
         "destinationRequired": "Destino requerido",
-        "destinationRequiredSub": "Indica a todos hacia dónde se dirige este viaje antes de comenzar el seguimiento.",
-        "startJourney": "Iniciar Viaje",
-        "stopRecording": "Detener grabación de tu viaje",
-        "startRecording": "Iniciar grabación de tu viaje",
+        "destinationRequiredSub": "Dile a todos hacia dónde se dirige este viaje antes de que comience el seguimiento.",
+        "startJourney": "Iniciar viaje",
+        "stopRecording": "Dejar de grabar tu viaje",
+        "startRecording": "Comenzar a grabar tu viaje",
         "toggleRecording": "Alternar grabación de viaje",
         "sos": "SOS",
-        "timeLeft": "Tiempo Restante",
+        "timeLeft": "Tiempo restante",
         "eta": "Hora de llegada",
-        "myLocation": "Mi Ubicación"
+        "myLocation": "Mi ubicación",
+        "recenter": "Centrar"
     },
     "group": {
         "title": "Grupos",
@@ -97,15 +98,15 @@
         "setYourStartLocation": "Establece Tu Ubicación de Inicio",
         "whereStartingFrom": "¿Desde dónde empiezas?",
         "currentLocation": "Ubicación Actual",
-        "myGroups": "Mis Grupos",
-        "noGroups": "Aún no perteneces a ningún grupo.",
+        "myGroups": "Mis grupos",
+        "noGroups": "Aún no estás en ningún grupo.",
         "createOrJoin": "Crear o Unirse",
-        "createGroup": "Crear Grupo",
-        "joinGroup": "Unirse a Grupo",
-        "enterCode": "Introduce el código",
+        "createGroup": "Crear grupo",
+        "joinGroup": "Unirse al grupo",
+        "enterCode": "Introducir código",
         "join": "Unirse",
         "joinFailed": "Error al unirse",
-        "invalidCode": "Código inválido o expirado"
+        "invalidCode": "Código no válido o vencido"
     },
     "settings": {
         "title": "Ajustes",
@@ -181,16 +182,16 @@
         "comingSoon": "Próximamente",
         "privacy": "Privacidad",
         "helpCenterTitle": "Centro de Ayuda",
-        "cameraError": "Error de Cámara",
+        "cameraError": "Error de cámara",
         "cameraAuth": "Se requiere permiso de cámara para tomar fotos",
         "noPhotoCaptured": "No se capturó ninguna foto",
-        "takePhotoAgain": "Por favor intenta tomar la foto de nuevo",
-        "resumeMsg": "No hay viaje pausado para reanudar.",
+        "takePhotoAgain": "Por favor intente tomar la foto de nuevo",
+        "resumeMsg": "No hay viaje en pausa para reanudar.",
         "pauseError": "Error de pausa",
-        "stopGroupConfirm": "¿Estás seguro de que quieres detener y completar tu viaje en grupo?",
-        "failedStopGroup": "Error al detener el viaje en grupo. Por favor, inténtalo de nuevo.",
-        "stopSoloConfirm": "¿Estás seguro de que quieres detener tu viaje?",
-        "noActiveStop": "No hay viaje activo o pausado para detener.",
+        "stopGroupConfirm": "¿Estás seguro de que deseas detener y completar tu viaje en grupo?",
+        "failedStopGroup": "Error al detener el viaje en grupo. Por favor, inténtelo de nuevo.",
+        "stopSoloConfirm": "¿Estás seguro de que deseas detener tu viaje?",
+        "noActiveStop": "Ningún viaje activo o en pausa para detener.",
         "failedStop": "Error al detener el viaje.",
         "startJourneyError": "Error al iniciar el seguimiento del viaje"
     },
@@ -269,9 +270,9 @@
         "joinFriends": "Únete a grupos para ver amigos en la clasificación",
         "beFirst": "¡Sé el primero en aparecer en la clasificación global!",
         "retry": "Reintentar",
-        "loginToView": "Por favor, inicia sesión para ver la clasificación",
-        "friendsTitle": "Clasificación de Amigos",
-        "globalTitle": "Clasificación Global",
+        "loginToView": "Por favor, inicie sesión para ver la tabla de clasificación",
+        "friendsTitle": "Tabla de clasificación de amigos",
+        "globalTitle": "Tabla de clasificación global",
         "trips": "viajes"
     },
     "log": {
@@ -291,7 +292,7 @@
         "rankPlaceholder": "Rango —",
         "motivation": "La carretera es tu XP: ¡sigue adelante!",
         "nextBadge": "Siguiente insignia:",
-        "nextMilestone": "Próximo hito",
+        "nextMilestone": "Siguiente hito",
         "noBadges": "No hay insignias: ¡empieza a conducir!",
         "comingSoon": "Próximamente",
         "ridesSuffix": "viajes",
@@ -335,7 +336,7 @@
     },
     "auth": {
         "login": {
-            "title": "Inicia sesión en tu cuenta",
+            "title": "Inicie sesión en su cuenta",
             "orContinue": "O continuar con",
             "emailPlaceholder": "Introduce tu correo electrónico",
             "passwordPlaceholder": "Introduce tu contraseña",
@@ -524,10 +525,10 @@
             "duration": "Duración",
             "speed": "Velocidad",
             "resume": "Reanudar",
-            "endTrip": "Finalizar Viaje"
+            "endTrip": "Terminar viaje"
         },
         "bottomNavigation": {
-            "addVehicle": "Añadir bici/vehículo",
+            "addVehicle": "Añadir bicicleta/vehículo",
             "joinGroup": "Unirse a viaje en grupo",
             "log": "Registro"
         },
@@ -535,13 +536,13 @@
             "seeAll": "Ver todo"
         },
         "startJourneyButton": {
-            "start": "Iniciar Viaje"
+            "start": "Iniciar viaje"
         },
         "statsGrid": {
-            "distanceCovered": "Distancia Recorrida",
-            "timeTraveled": "Tiempo Viajado",
-            "avgSpeed": "Vel. Media",
-            "maxSpeed": "Vel. Máxima"
+            "distanceCovered": "Distancia cubierta",
+            "timeTraveled": "Tiempo viajado",
+            "avgSpeed": "Veloc. media",
+            "maxSpeed": "Veloc. máxima"
         }
     }
 }

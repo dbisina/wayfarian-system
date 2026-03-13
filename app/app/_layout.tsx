@@ -61,6 +61,11 @@ function RootLayoutContent() {
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
   });
 
+  // Initialize Live Notification event handlers for Android actions
+  useEffect(() => {
+    LiveNotificationService.setupEventHandlers();
+  }, []);
+
   // Initialize i18n on mount
   useEffect(() => {
     initI18n().then(() => setIsI18nReady(true));

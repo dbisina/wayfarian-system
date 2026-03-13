@@ -9,6 +9,20 @@
     "scheme": "app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "locales": {
+      "ar": "./locales/ar.json",
+      "de": "./locales/de.json",
+      "en": "./locales/en.json",
+      "es": "./locales/es.json",
+      "fr": "./locales/fr.json",
+      "hi": "./locales/hi.json",
+      "it": "./locales/it.json",
+      "ja": "./locales/ja.json",
+      "ko": "./locales/ko.json",
+      "pt": "./locales/pt.json",
+      "ru": "./locales/ru.json",
+      "zh": "./locales/zh.json"
+    },
     "plugins": [
       "expo-router",
       [
@@ -47,6 +61,12 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Wayfarian uses the camera so you can take photos during your journey. For example, you can capture scenic moments or landmarks along your route to share with your group."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow Wayfarian to use your location to track your journey and show your position on the map."
@@ -79,13 +99,15 @@
       ],
       "./plugins/withWidgetXcodeFix",
       "./plugins/withPodfileFix",
-      "./plugins/withNotificationIcon"
+      "./plugins/withNotificationIcon",
+      "./plugins/withLintFix"
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your journey and show your position on the map.",
+        "NSCameraUsageDescription": "Wayfarian uses the camera so you can take photos during your journey. For example, you can capture scenic moments or landmarks along your route to share with your group.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
         "CFBundleURLTypes": [

@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Esta aplicación usa la ubicación para rastrear su viaje y mostrar su posición en el mapa.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Esta aplicación usa la ubicación para rastrear su viaje y mostrar su posición en el mapa.",
+        "NSLocationAlwaysUsageDescription": "Esta aplicación usa la ubicación para rastrear su viaje y mostrar su posición en el mapa.",
+        "NSCameraUsageDescription": "Wayfarian usa la cámara para que pueda tomar fotos durante su viaje.",
+        "NSPhotoLibraryUsageDescription": "Permita que Wayfarian acceda a sus fotos para guardar y compartir los recuerdos del viaje.",
+        "NSPhotoLibraryAddUsageDescription": "Permita que Wayfarian acceda a sus fotos para guardar y compartir los recuerdos del viaje.",
+        "NSMicrophoneUsageDescription": "Wayfarian usa la cámara para que pueda tomar fotos durante su viaje."
+    }
+}

@@ -4,15 +4,22 @@
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { journeyAPI } from './api';
+import { LOCATION_TASK_NAME } from './backgroundTasks';
+import { defaultKalmanFilter } from './kalmanFilter';
+import { snapToRoads } from './roads';
 
 // Movement filtering thresholds to reduce GPS jitter when stationary
-const MIN_ACCURACY_METERS = 20; // ignore low-accuracy updates over this threshold
-const MIN_MOVE_METERS = 10; // minimum movement to count towards distance
-const STATIONARY_SPEED_THRESHOLD_MPS = 1.2; // below this m/s, treat as stationary (increased to ~4.3 km/h to reduce drift)
-const MAX_ACCURACY_THRESHOLD = 100; // Ignore points with accuracy worse than this
+const MIN_ACCURACY_METERS = 10; // low-accuracy threshold
+const MIN_MOVE_METERS = 3; // minimum movement to count towards distance
+const STATIONARY_SPEED_THRESHOLD_MPS = 0.3; // treat as stationary if below ~1 km/h
+const MAX_ACCURACY_THRESHOLD = 60; // Ignore points with accuracy worse than this
+const CURRENT_JOURNEY_ID_KEY = 'wayfarian_current_journey_id';
+const CURRENT_GROUP_ID_KEY = 'wayfarian_current_group_id';
 const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
 const MAX_REASONABLE_SPEED_MPS = 139; // 500 km/h in m/s - only filter extreme GPS jitter outliers
+const JITTER_ACCURACY_MULTIPLIER = 0.5; // distance must be > accuracy * mutliplier to count as movement
 
 export interface LocationPoint {
   latitude: number;
@@ -21,6 +28,7 @@ export interface LocationPoint {
   speed?: number;
   altitude?: number;
   accuracy?: number;
+  heading?: number;
 }
 
 export interface JourneyStats {
@@ -37,7 +45,30 @@ class LocationService {
   private isTracking: boolean = false;
   private routePoints: LocationPoint[] = [];
   private currentJourneyId: string | null = null;
+  private currentGroupId: string | null = null;
   private lastKnownLocation: LocationPoint | null = null;
+  private listeners: ((point: LocationPoint, stats: JourneyStats) => void)[] = [];
+
+  constructor() {
+    this.hydrateState();
+  }
+
+  private async hydrateState() {
+    try {
+      const persistedId = await AsyncStorage.getItem(CURRENT_JOURNEY_ID_KEY);
+      const persistedGroupId = await AsyncStorage.getItem(CURRENT_GROUP_ID_KEY);
+      if (persistedId) {
+        this.currentJourneyId = persistedId;
+        this.currentGroupId = persistedGroupId;
+        // Optimization: check if background task is actually running
+        const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+        this.isTracking = isRunning;
+        console.log(`[LocationService] Hydrated state: ${persistedId} (Tracking: ${isRunning})`);
+      }
+    } catch (e) {
+      console.warn('[LocationService] Failed to hydrate state:', e);
+    }
+  }
   private stats: JourneyStats = {
     totalDistance: 0,
     totalTime: 0,
@@ -51,13 +82,7 @@ class LocationService {
   private lastMovementTime: number = 0; // Track last time we were moving
   private isCurrentlyMoving: boolean = false;
 
-  // Dwell Detection: Track when stationary for >5 seconds
-  private stationaryStartTime: number | null = null;
-  private readonly DWELL_THRESHOLD_MS = 5000; // 5 seconds
-  private readonly DWELL_SPEED_THRESHOLD_MPS = 1.5; // 1.5 m/s (5.4 km/h)
-  private isDwelling: boolean = false; // True when stationary >5s
-  private updateInterval: number = 5000; // Update backend every 5 seconds
-  private currentGroupId: string | null = null;
+  private updateInterval: number = 3000; // Update backend every 3 seconds for lower perceived latency
   // GPS-based speed calculation: track recent points for accurate speed calculation
   private recentPoints: { point: LocationPoint; timestamp: number }[] = [];
   private readonly SPEED_CALCULATION_WINDOW_MS = 3000; // Use last 3 seconds of points for speed calculation
@@ -174,6 +199,13 @@ class LocationService {
 
       this.currentJourneyId = journeyId;
       this.currentGroupId = groupId || null;
+
+      // Persist for background activity recovery
+      await AsyncStorage.setItem(CURRENT_JOURNEY_ID_KEY, journeyId);
+      if (groupId) {
+        await AsyncStorage.setItem(CURRENT_GROUP_ID_KEY, groupId);
+      }
+
       this.isTracking = true;
       this.startTime = Date.now();
       this.lastUpdateTime = Date.now();
@@ -192,17 +224,21 @@ class LocationService {
         currentSpeed: 0,
       };
 
-      // Start location tracking
-      this.locationSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000, // Update every second
-          distanceInterval: 5, // Update every 5 meters
-        },
-        (location) => {
-          this.handleLocationUpdate(location);
+      // Start OS-level background location tracking (True Native Services)
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.BestForNavigation,
+        timeInterval: 1000,
+        distanceInterval: 5,
+        showsBackgroundLocationIndicator: true,
+        // Crucial for Automotive focus
+        activityType: Location.ActivityType.AutomotiveNavigation,
+        pausesUpdatesAutomatically: true, // Native auto-pause when stationary
+        foregroundService: {
+          notificationTitle: "Wayfarian Active",
+          notificationBody: "Tracking your journey in the background",
+          notificationColor: "#ff7f50", // Wayfarian orange
         }
-      );
+      });
 
       return this.currentJourneyId;
     } catch (error) {
@@ -218,6 +254,11 @@ class LocationService {
     return null;
   }
 
+  // Public access point for Background TaskManager
+  public async processRawLocation(location: Location.LocationObject) {
+    await this.handleLocationUpdate(location);
+  }
+
   // Handle location updates
   private async handleLocationUpdate(location: Location.LocationObject) {
     if (!this.isTracking || !this.currentJourneyId) return;
@@ -227,9 +268,17 @@ class LocationService {
       return;
     }
 
+    // Process through Kalman Filter to eliminate jitter and smooth the curve
+    const smoothedPoint = defaultKalmanFilter.process(
+      location.coords.latitude,
+      location.coords.longitude,
+      location.coords.accuracy || MIN_ACCURACY_METERS,
+      location.timestamp
+    );
+
     const newPoint: LocationPoint = {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
+      latitude: smoothedPoint.latitude,
+      longitude: smoothedPoint.longitude,
       timestamp: location.timestamp,
       speed: location.coords.speed || 0,
       altitude: location.coords.altitude || 0,
@@ -253,19 +302,18 @@ class LocationService {
       const distanceMeters = distanceKm * 1000;
       const lastAcc = lastPoint.accuracy || 0;
       const currAcc = newPoint.accuracy || 0;
-      const minAcceptable = Math.max(MIN_MOVE_METERS, MIN_ACCURACY_METERS, lastAcc, currAcc);
+      // Require movement > 3m or half the current accuracy to filter minor jitter, instead of a strict 20m wall
+      const minAcceptable = Math.max(MIN_MOVE_METERS, currAcc * 0.5);
       const reportedSpeed = newPoint.speed || 0;
       const isActuallyMoving = reportedSpeed >= STATIONARY_SPEED_THRESHOLD_MPS;
 
-      // Only accept point if:
-      // 1. We actually moved a significant distance (more than accuracy threshold), OR
+      // 1. We actually moved a significant distance (relative to accuracy), OR
       // 2. We're moving (speed > threshold) AND moved at least 3 meters (to avoid GPS drift)
       // This prevents adding distance when stationary
-      if (distanceMeters >= minAcceptable || (isActuallyMoving && distanceMeters > 3)) {
-        // Only add distance if we actually moved AND not dwelling (prevents GPS drift accumulation)
-        if (distanceMeters >= 3 && !this.isDwelling) {
-          this.stats.totalDistance += distanceKm;
-        }
+      const jitterThreshold = Math.max(MIN_MOVE_METERS, currAcc * JITTER_ACCURACY_MULTIPLIER);
+
+      if (distanceMeters >= jitterThreshold || (isActuallyMoving && distanceMeters > 3)) {
+        this.stats.totalDistance += distanceKm;
         acceptPoint = true;
       } else {
         // Don't accept point if we haven't moved enough - prevents drift accumulation
@@ -331,34 +379,11 @@ class LocationService {
     // Apply stationary threshold filter
     const moving = finalSpeedMps >= STATIONARY_SPEED_THRESHOLD_MPS;
 
-    // Dwell Detection Filter - Track when stationary for >5 seconds
-    if (finalSpeedMps < this.DWELL_SPEED_THRESHOLD_MPS) {
-      // User is stationary
-      if (this.stationaryStartTime === null) {
-        // Just became stationary - start timer
-        this.stationaryStartTime = now;
-      } else {
-        // Check if we've been stationary for >5 seconds
-        const stationaryDuration = now - this.stationaryStartTime;
-        if (stationaryDuration >= this.DWELL_THRESHOLD_MS) {
-          this.isDwelling = true;
-        }
-      }
-    } else {
-      // User is moving - reset dwell detection
-      if (this.stationaryStartTime !== null) {
-        this.stationaryStartTime = null;
-      }
-      this.isDwelling = false;
-    }
+    const speedKmh = finalSpeedMps * 3.6; // Convert m/s to km/h
+    this.stats.currentSpeed = moving ? speedKmh : 0; // Standard: stats uses km/h for UI binding
 
-    // Apply Dwell Filter: If dwelling (stationary >5s), force speed to 0 for display
-    const displaySpeedMps = this.isDwelling ? 0 : finalSpeedMps;
-    const speedKmh = displaySpeedMps * 3.6; // Convert m/s to km/h
-    this.stats.currentSpeed = this.isDwelling ? 0 : (moving ? speedKmh : 0);
-
-    // Track moving time only when actually moving AND not dwelling
-    if (moving && !this.isDwelling) {
+    // Track moving time only when actually moving
+    if (moving) {
       if (!this.isCurrentlyMoving) {
         // Just started moving again
         this.lastMovementTime = now;
@@ -396,6 +421,9 @@ class LocationService {
       this.routePoints.push(newPoint);
     }
 
+    // Share with listeners (UI state updates)
+    this.notifyListeners(newPoint);
+
     // Update backend periodically
     const updateTimestamp = Date.now();
     if (updateTimestamp - this.lastUpdateTime >= this.updateInterval) {
@@ -410,12 +438,31 @@ class LocationService {
         shareGroupLocation({
           latitude: newPoint.latitude,
           longitude: newPoint.longitude,
-          speed: this.stats.currentSpeed,
+          speed: this.stats.currentSpeed / 3.6, // EMIT m/s TO SOCKET
         });
       } catch {
         // Non-blocking
       }
     }
+  }
+
+  // central broadcasting for UI hooks
+  private notifyListeners(point: LocationPoint) {
+    const stats = this.getStats();
+    this.listeners.forEach(cb => {
+      try { cb(point, stats); } catch (e) { console.error('[LocationService] Listener error', e); }
+    });
+  }
+
+  public subscribe(callback: (point: LocationPoint, stats: JourneyStats) => void): () => void {
+    this.listeners.push(callback);
+    // Immediately provide current state
+    if (this.lastKnownLocation) {
+      callback(this.lastKnownLocation, this.getStats());
+    }
+    return () => {
+      this.listeners = this.listeners.filter(cb => cb !== callback);
+    };
   }
 
   // Update backend with current journey data
@@ -428,7 +475,7 @@ class LocationService {
       await journeyAPI.updateJourney(this.currentJourneyId, {
         currentLatitude: currentLocation.latitude,
         currentLongitude: currentLocation.longitude,
-        currentSpeed: this.stats.currentSpeed,
+        currentSpeed: this.stats.currentSpeed / 3.6, // EMIT m/s TO API
       });
     } catch (error) {
       console.warn('Backend update failed, continuing offline:', error);
@@ -442,16 +489,12 @@ class LocationService {
     try {
       this.isTracking = false;
 
-      if (this.locationSubscription) {
-        this.locationSubscription.remove();
-        this.locationSubscription = null;
-      }
+      // Stop background task instead of removing subscription
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
 
       // Clear recent points when pausing
       this.recentPoints = [];
       this.stats.currentSpeed = 0;
-      this.stationaryStartTime = null; // Reset dwell detection
-      this.isDwelling = false;
 
       await journeyAPI.pauseJourney(this.currentJourneyId);
     } catch (error) {
@@ -467,17 +510,20 @@ class LocationService {
       this.isTracking = true;
       this.startTime = Date.now() - (this.stats.totalTime * 1000);
 
-      // Restart location tracking
-      this.locationSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 5,
-        },
-        (location) => {
-          this.handleLocationUpdate(location);
+      // Restart True OS-level background location tracking
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.BestForNavigation,
+        timeInterval: 1000,
+        distanceInterval: 5,
+        showsBackgroundLocationIndicator: true,
+        activityType: Location.ActivityType.AutomotiveNavigation,
+        pausesUpdatesAutomatically: true,
+        foregroundService: {
+          notificationTitle: "Wayfarian Active",
+          notificationBody: "Tracking your journey in the background",
+          notificationColor: "#ff7f50",
         }
-      );
+      });
 
       await journeyAPI.resumeJourney(this.currentJourneyId);
     } catch (error) {
@@ -495,16 +541,47 @@ class LocationService {
 
       const currentLocation = this.routePoints[this.routePoints.length - 1];
 
+      // Calculate "Perfect" Final Distance using Road Snapping
+      let finalDistance = this.stats.totalDistance;
+      try {
+        if (this.routePoints.length > 1) {
+          console.log(`[LocationService] Snapping ${this.routePoints.length} points to roads for final accuracy...`);
+          // Snap the points to roads (batch of up to 100 points or use interpolation)
+          const snappedPoints = await snapToRoads(this.routePoints.map(p => ({
+            latitude: p.latitude,
+            longitude: p.longitude
+          })));
+
+          if (snappedPoints.length > 1) {
+            let snappedDist = 0;
+            for (let i = 1; i < snappedPoints.length; i++) {
+              snappedDist += this.calculateDistance(
+                snappedPoints[i - 1].latitude,
+                snappedPoints[i - 1].longitude,
+                snappedPoints[i].latitude,
+                snappedPoints[i].longitude
+              );
+            }
+            console.log(`[LocationService] Road snapped distance: ${snappedDist.toFixed(2)}km (Raw: ${finalDistance.toFixed(2)}km)`);
+            finalDistance = snappedDist;
+          }
+        }
+      } catch (e) {
+        console.warn('[LocationService] Road snapping failed at end, using raw distance:', e);
+      }
+
       await journeyAPI.endJourney(this.currentJourneyId, {
         endLatitude: currentLocation.latitude,
         endLongitude: currentLocation.longitude,
+        totalDistance: finalDistance,
+        totalTime: this.stats.totalTime,
       });
 
-      // Clean up
-      if (this.locationSubscription) {
-        this.locationSubscription.remove();
-        this.locationSubscription = null;
-      }
+      // Stop Background Task
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      await AsyncStorage.removeItem(CURRENT_JOURNEY_ID_KEY);
+      await AsyncStorage.removeItem(CURRENT_GROUP_ID_KEY);
+      defaultKalmanFilter.reset();
 
       this.isTracking = false;
       this.currentJourneyId = null;

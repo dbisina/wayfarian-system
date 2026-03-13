@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Это приложение использует местоположение для отслеживания вашей активности.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Это приложение использует местоположение для отслеживания вашей активности.",
+        "NSLocationAlwaysUsageDescription": "Это приложение использует местоположение для отслеживания вашей активности.",
+        "NSCameraUsageDescription": "Wayfarian использует камеру для съемки фотографий.",
+        "NSPhotoLibraryUsageDescription": "Разрешить Wayfarian доступ к вашим фотографиям.",
+        "NSPhotoLibraryAddUsageDescription": "Разрешить Wayfarian доступ к вашим фотографиям.",
+        "NSMicrophoneUsageDescription": "Wayfarian использует камеру для съемки фотографий."
+    }
+}

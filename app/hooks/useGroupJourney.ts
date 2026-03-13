@@ -2,7 +2,7 @@
 // Resilient group journey hook with socket lifecycle + location tracking tied into Redux
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import type { Socket } from 'socket.io-client';
@@ -45,8 +45,8 @@ interface UseGroupJourneyProps {
   autoStart?: boolean;
 }
 
-const LOCATION_INTERVAL_MS = 2000;
-const LOCATION_DISTANCE_METERS = 5;
+const LOCATION_INTERVAL_MS = 1000; // Standardized to 1Hz for low latency
+const LOCATION_DISTANCE_METERS = 3; // Reduced from 5 for more responsive tracking
 
 // Haversine distance in km — used as fallback when useSmartTracking GPS conflicts on Android
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -58,7 +58,8 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
     Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-const MIN_ACCURACY_FOR_DISTANCE = 25; // metres — ignore inaccurate fixes
+const MIN_ACCURACY_FOR_DISTANCE = 30; // metres — ignore very inaccurate fixes
+const SPEED_SMOOTH_FACTOR = 0.4; // Exponential smoothing for speed display
 
 export const useGroupJourney = ({
   socket,
@@ -146,13 +147,17 @@ export const useGroupJourney = ({
         ? (bestDistance / elapsedSeconds) * 3600 // km/s → km/h
         : currentStats.avgSpeed;
 
+      const currentSpeedKmh = currentSpeedRef.current; // currentSpeedRef is already km/h in this hook's local logic? Let's check.
+      // Wait, in useGroupJourney.ts logic below (lines 286-291), currentSpeedRef IS km/h.
+      // So let's keep it consistent.
+
       dispatch(setStats({
         totalDistance: bestDistance,
         totalTime: elapsedSeconds,
         movingTime: currentStats.movingTime || elapsedSeconds, // fallback to elapsed if smart tracking not running
         avgSpeed: bestAvgSpeed,
         topSpeed: bestTopSpeed,
-        currentSpeed: currentSpeedRef.current,
+        currentSpeed: currentSpeedRef.current, // Already km/h
         activeMembersCount: membersRef.current.filter(m => m.isOnline).length,
         completedMembersCount: Object.values(memberInstancesRef.current).filter(inst => inst.status === 'COMPLETED').length,
       }));
@@ -166,7 +171,7 @@ export const useGroupJourney = ({
             journeyId: journey.id,
             startTime: startTime,
             totalDistance: bestDistance,
-            currentSpeed: currentSpeedRef.current,
+            currentSpeed: currentSpeedRef.current, // km/h
             avgSpeed: bestAvgSpeed,
             topSpeed: bestTopSpeed,
             movingTime: currentStats.movingTime || elapsedSeconds,
@@ -174,7 +179,7 @@ export const useGroupJourney = ({
             startLocationName: journey.startLocation?.address || 'Start',
             destinationName: journey.endLocation?.address || 'Group Ride',
           };
-          LiveNotificationService.updateNotification(notifData).catch(() => {});
+          LiveNotificationService.updateNotification(notifData).catch(() => { });
         }
       }
     };
@@ -267,6 +272,80 @@ export const useGroupJourney = ({
 
       dispatch(setGroupTracking({ isTracking: true, instanceId }));
 
+      // On Android, use centralized LocationService to avoid GPS resource conflicts
+      if (Platform.OS === 'android') {
+        const { locationService } = await import('../services/locationService');
+        const unsubscribe = locationService.subscribe((point) => {
+          const lat = point.latitude;
+          const lng = point.longitude;
+          const speed = point.speed || 0;
+          const heading = point.heading || 0;
+          const accuracy = point.accuracy || 10;
+
+          // Original handle logic
+          const now = Date.now();
+          if (now - lastEmitRef.current < LOCATION_INTERVAL_MS) return;
+          lastEmitRef.current = now;
+
+          const rawSpeedKmh = speed * 3.6;
+          if (rawSpeedKmh < 1.8) {
+            currentSpeedRef.current = currentSpeedRef.current * 0.3;
+            if (currentSpeedRef.current < 0.5) currentSpeedRef.current = 0;
+          } else {
+            currentSpeedRef.current = currentSpeedRef.current + SPEED_SMOOTH_FACTOR * (rawSpeedKmh - currentSpeedRef.current);
+          }
+
+          const accuracyOk = accuracy <= MIN_ACCURACY_FOR_DISTANCE;
+          if (accuracyOk) {
+            const prev = lastLocationForDistanceRef.current;
+            if (prev) {
+              const segmentKm = haversineKm(prev.latitude, prev.longitude, lat, lng);
+              if (segmentKm > 0.003 && segmentKm < 1.0) {
+                localDistanceRef.current += segmentKm;
+              }
+            }
+            lastLocationForDistanceRef.current = { latitude: lat, longitude: lng };
+          }
+          if (rawSpeedKmh > localTopSpeedRef.current && rawSpeedKmh < 250) {
+            localTopSpeedRef.current = rawSpeedKmh;
+          }
+
+          const userId = myInstanceRef.current?.userId;
+          if (socket?.connected) {
+            const currentDistance = Math.max(
+              statsRef.current?.totalDistance || 0,
+              localDistanceRef.current,
+            );
+            socket.emit('instance:location-update', {
+              instanceId,
+              latitude: lat,
+              longitude: lng,
+              speed: currentSpeedRef.current / 3.6, // EMIT m/s TO SERVER
+              heading: heading,
+              totalDistance: currentDistance,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          setMyInstance(prev =>
+            prev ? { ...prev, currentLatitude: lat, currentLongitude: lng } : prev,
+          );
+          if (userId) {
+            dispatch(mergeMemberLocation({
+              userId,
+              instanceId,
+              latitude: lat,
+              longitude: lng,
+              speed: currentSpeedRef.current / 3.6, // EMIT m/s TO UI
+              heading: heading,
+              lastUpdate: new Date().toISOString(),
+            }));
+          }
+        });
+        locationSubscriptionRef.current = { remove: unsubscribe } as any;
+        return;
+      }
+
       const subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
@@ -279,25 +358,35 @@ export const useGroupJourney = ({
           lastEmitRef.current = now;
 
           const { latitude, longitude, speed, heading, accuracy } = location.coords;
-          // Store current speed (m/s -> km/h) for stats display
-          const speedKmh = (speed ?? 0) > 0 ? (speed ?? 0) * 3.6 : 0;
-          currentSpeedRef.current = speedKmh;
+          // Store current speed (m/s -> km/h) with smoothing to prevent oscillation
+          const rawSpeedMps = (speed !== null && speed !== undefined && speed >= 0) ? speed : 0;
+          const rawSpeedKmh = rawSpeedMps * 3.6;
+          // Apply exponential smoothing: prevents jumping between real speed and 0
+          if (rawSpeedKmh < 1.8) {
+            // Below walking pace - decay quickly to 0
+            currentSpeedRef.current = currentSpeedRef.current * 0.3;
+            if (currentSpeedRef.current < 0.5) currentSpeedRef.current = 0;
+          } else {
+            currentSpeedRef.current = currentSpeedRef.current + SPEED_SMOOTH_FACTOR * (rawSpeedKmh - currentSpeedRef.current);
+          }
 
           // Local Haversine distance accumulation (fallback for Android)
-          if ((accuracy ?? 999) <= MIN_ACCURACY_FOR_DISTANCE) {
+          // Accept unknown accuracy (null/undefined) as good - don't default to 999
+          const accuracyOk = accuracy === null || accuracy === undefined || accuracy <= MIN_ACCURACY_FOR_DISTANCE;
+          if (accuracyOk) {
             const prev = lastLocationForDistanceRef.current;
             if (prev) {
               const segmentKm = haversineKm(prev.latitude, prev.longitude, latitude, longitude);
-              // Only add meaningful movement (>5m) to avoid GPS jitter
-              if (segmentKm > 0.005 && segmentKm < 1.0) {
+              // Only add meaningful movement (>3m) to avoid GPS jitter
+              if (segmentKm > 0.003 && segmentKm < 1.0) {
                 localDistanceRef.current += segmentKm;
               }
             }
             lastLocationForDistanceRef.current = { latitude, longitude };
           }
           // Track local top speed
-          if (speedKmh > localTopSpeedRef.current && speedKmh < 250) {
-            localTopSpeedRef.current = speedKmh;
+          if (rawSpeedKmh > localTopSpeedRef.current && rawSpeedKmh < 250) {
+            localTopSpeedRef.current = rawSpeedKmh;
           }
 
           const userId = myInstanceRef.current?.userId;
@@ -311,7 +400,7 @@ export const useGroupJourney = ({
             instanceId,
             latitude,
             longitude,
-            speed: speed ?? 0,
+            speed: currentSpeedRef.current / 3.6, // EMIT m/s TO SERVER
             heading: heading ?? 0,
             totalDistance: currentDistance,
             timestamp: new Date().toISOString(),
@@ -320,10 +409,10 @@ export const useGroupJourney = ({
           setMyInstance(prev =>
             prev
               ? {
-                  ...prev,
-                  currentLatitude: latitude,
-                  currentLongitude: longitude,
-                }
+                ...prev,
+                currentLatitude: latitude,
+                currentLongitude: longitude,
+              }
               : prev,
           );
           if (userId) {
@@ -332,7 +421,7 @@ export const useGroupJourney = ({
               instanceId,
               latitude,
               longitude,
-              speed: speed ?? undefined,
+              speed: currentSpeedRef.current / 3.6, // EMIT m/s TO UI
               heading: heading ?? undefined,
               lastUpdate: new Date().toISOString(),
             }));

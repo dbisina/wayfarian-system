@@ -8,8 +8,20 @@ import notifee, {
     AndroidImportance,
     AndroidStyle,
     EventType,
+    AndroidCategory,
+    AndroidColor,
+    AndroidVisibility,
 } from '@notifee/react-native';
 import * as Location from 'expo-location';
+import { locationService } from './locationService';
+
+// Action IDs for Android notification buttons
+export const NOTIFICATION_ACTIONS = {
+    PAUSE: 'pause-journey',
+    RESUME: 'resume-journey',
+    STOP: 'stop-journey',
+    CAMERA: 'take-photo',
+};
 
 import * as ActivityController from '../modules/activity-controller';
 
@@ -62,6 +74,7 @@ export interface JourneyNotificationData {
     currentLongitude?: number;
     // Unit preference
     units?: 'km' | 'mi';
+    isPaused?: boolean;
 }
 
 // Initialize the notification channel (Android)
@@ -178,11 +191,12 @@ async function resolveLocationName(latitude?: number, longitude?: number): Promi
     return null;
 }
 
-// Build the Android notification content to match iOS Live Activity detail level
 function buildAndroidNotificationContent(data: JourneyNotificationData, currentLocationName: string | null): {
     title: string;
     body: string;
     bigText: string;
+    origin: string;
+    destination: string;
 } {
     const elapsed = Math.floor((Date.now() - data.startTime) / 1000);
     const elapsedFormatted = formatDuration(elapsed);
@@ -229,35 +243,68 @@ function buildAndroidNotificationContent(data: JourneyNotificationData, currentL
         bigText += `\n📍 ${currentLocationName}`;
     }
 
-    return { title, body, bigText };
+    return { title, body, bigText, origin, destination };
 }
 
 // Shared helper to build notifee Android config
-function buildAndroidConfig(title: string, body: string, bigText: string, data: JourneyNotificationData, smallIcon: string) {
+function buildAndroidConfig(
+    title: string,
+    body: string,
+    bigText: string,
+    data: JourneyNotificationData,
+    smallIcon: string,
+    origin: string,
+    destination: string
+) {
+    const isPaused = data.isPaused;
+
+    const actions = [
+        {
+            title: '📷 Photo',
+            pressAction: { id: NOTIFICATION_ACTIONS.CAMERA },
+        },
+        {
+            title: isPaused ? '▶️ Resume' : '⏸ Pause',
+            pressAction: { id: isPaused ? NOTIFICATION_ACTIONS.RESUME : NOTIFICATION_ACTIONS.PAUSE },
+        },
+        {
+            title: '⏹ Stop',
+            pressAction: { id: NOTIFICATION_ACTIONS.STOP },
+        },
+    ];
+
     return {
         id: NOTIFICATION_ID,
         title,
         body,
+        subtitle: `${origin} → ${destination}`,
         android: {
             channelId: CHANNEL_ID,
             asForegroundService: true,
             ongoing: true,
             onlyAlertOnce: true,
             smallIcon,
-            color: '#FF6B00',
+            color: '#FF6B00', // Wayfarian Orange
+            importance: AndroidImportance.HIGH,
+            category: AndroidCategory.NAVIGATION,
+            visibility: AndroidVisibility.PUBLIC,
             pressAction: {
-                id: 'open-journey',
+                id: 'default',
                 launchActivity: 'default',
             },
             style: {
                 type: AndroidStyle.BIGTEXT as const,
                 text: bigText,
+                title: title,
+                summaryText: 'Journey Active',
             },
+            actions,
             progress: {
                 max: 100,
                 current: Math.round(data.progress * 100),
                 indeterminate: false,
             },
+            // Android Chronometer - live counts up
             timestamp: data.startTime,
             showTimestamp: true,
             chronometerDirection: 'up' as const,
@@ -276,7 +323,7 @@ export async function updateJourneyNotification(data: JourneyNotificationData): 
     // Resolve the current location name (throttled, non-blocking)
     const currentLocationName = await resolveLocationName(data.currentLatitude, data.currentLongitude);
 
-    const { title, body, bigText } = buildAndroidNotificationContent(data, currentLocationName);
+    const { title, body, bigText, origin, destination } = buildAndroidNotificationContent(data, currentLocationName);
 
     // Ensure channel exists before posting notification
     if (!channelInitialized) {
@@ -285,14 +332,14 @@ export async function updateJourneyNotification(data: JourneyNotificationData): 
 
     try {
         await notifee.displayNotification(
-            buildAndroidConfig(title, body, bigText, data, 'ic_notification')
+            buildAndroidConfig(title, body, bigText, data, 'ic_notification', origin, destination)
         );
     } catch (error: any) {
         // If ic_notification is missing, retry with the default launcher icon
         if (error?.message?.includes('small icon') || error?.message?.includes('Invalid notification')) {
             console.warn('[LiveNotification] ic_notification drawable missing, falling back to ic_launcher');
             await notifee.displayNotification(
-                buildAndroidConfig(title, body, bigText, data, 'ic_launcher')
+                buildAndroidConfig(title, body, bigText, data, 'ic_launcher', origin, destination)
             );
         } else {
             console.error('[LiveNotification] Failed to display notification:', error);
@@ -382,15 +429,53 @@ async function endIOSLiveActivity(): Promise<void> {
 
 // Handle notification events
 export function setupNotificationEventHandlers(): void {
-    notifee.onForegroundEvent(({ type, detail }) => {
+    notifee.onForegroundEvent(async ({ type, detail }) => {
         if (type === EventType.PRESS) {
             console.log('[LiveNotification] Notification pressed:', detail.notification?.id);
+        }
+
+        if (type === EventType.ACTION_PRESS) {
+            const actionId = detail.pressAction?.id;
+            console.log('[LiveNotification] Action pressed:', actionId);
+
+            switch (actionId) {
+                case NOTIFICATION_ACTIONS.PAUSE:
+                    await locationService.pauseJourney();
+                    break;
+                case NOTIFICATION_ACTIONS.RESUME:
+                    await locationService.resumeJourney();
+                    break;
+                case NOTIFICATION_ACTIONS.STOP:
+                    await locationService.endJourney();
+                    break;
+                case NOTIFICATION_ACTIONS.CAMERA:
+                    // This is more complex as it requires UI/Context interaction.
+                    // For now, we launch the app which should be handled by 'launchActivity: default'
+                    break;
+            }
         }
     });
 
     notifee.onBackgroundEvent(async ({ type, detail }) => {
         if (type === EventType.PRESS) {
             console.log('[LiveNotification] Background notification pressed:', detail.notification?.id);
+        }
+
+        if (type === EventType.ACTION_PRESS) {
+            const actionId = detail.pressAction?.id;
+            console.log('[LiveNotification] Background action pressed:', actionId);
+
+            switch (actionId) {
+                case NOTIFICATION_ACTIONS.PAUSE:
+                    await locationService.pauseJourney();
+                    break;
+                case NOTIFICATION_ACTIONS.RESUME:
+                    await locationService.resumeJourney();
+                    break;
+                case NOTIFICATION_ACTIONS.STOP:
+                    await locationService.endJourney();
+                    break;
+            }
         }
     });
 }

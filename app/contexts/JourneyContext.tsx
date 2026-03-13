@@ -7,7 +7,7 @@ import { journeyAPI, groupJourneyAPI, galleryAPI } from '../services/api';
 import { ensureGroupJourneySocket, teardownGroupJourneySocket } from '../services/groupJourneySocket';
 import { on as socketOn, off as socketOff } from '../services/socket';
 import { getFirebaseDownloadUrl } from '../utils/storage';
-import { useAppDispatch } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { useSmartTracking } from '../hooks/useSmartTracking';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus, Alert } from 'react-native';
@@ -78,6 +78,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const statsFromStore = useJourneyStats();
   const routePoints = useJourneyRoutePoints();
   const uploadQueue = useJourneyUploadQueue();
+  const distanceUnit = useAppSelector(state => state.ui.preferences.distanceUnit);
 
   // Use Smart Tracking Hook
   const { 
@@ -313,6 +314,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       destinationName: journey.endLocation?.address || 'Destination',
       currentLatitude: liveRawLocation?.latitude,
       currentLongitude: liveRawLocation?.longitude,
+      units: distanceUnit === 'mi' ? 'mi' : 'km',
+      isPaused: journeyState.currentJourney?.status === 'paused',
     };
 
     LiveNotificationService.updateNotification(notificationData).catch(e => {
@@ -812,6 +815,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
   const startJourney = async (journeyData: Partial<JourneyData>): Promise<boolean> => {
     try {
+      // Clear any stale journey state from previous journeys (fixes destination leak)
+      dispatch(clearJourney());
+      dispatch(setStats({
+        totalDistance: 0, totalTime: 0, movingTime: 0,
+        avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
+      }));
+      dispatch(clearRoutePoints());
+
       // STEP 1: Permission check — typically instant if already granted
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') throw new Error('Location permission denied');
@@ -1045,7 +1056,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             longitude: location.coords.longitude,
             address: 'Start Location'
         },
-        endLocation: journeyData.endLocation,
+        endLocation: journeyData.endLocation || undefined,
         groupId: journeyData.groupId,
         vehicle: journeyData.vehicle || 'car',
         status: 'active',
@@ -1316,11 +1327,13 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         ? { endLatitude: liveRawLocation.latitude, endLongitude: liveRawLocation.longitude }
         : {};
       
-      // Send final distance and time to server - it will use this for final stats
+      // Send final distance, time, and speeds to server - it will use this for final stats
       await journeyAPI.endJourney(journeyState.currentJourney.id, {
         ...endLocation,
         totalDistance: finalDistance, // Send Roads API snapped distance
         totalTime: finalTotalTime, // Send client-calculated time for accuracy
+        topSpeed: derivedStats.topSpeed, // Send max speed
+        avgSpeed: derivedStats.avgSpeed, // Send calculated average speed
       });
 
       // Sync group journey instance completion to backend
@@ -1366,7 +1379,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(clearJourney());
       startTimeRef.current = null;
       setLocalElapsedTime(0);
-      
+
+      // Purge persisted journey state from AsyncStorage to prevent rehydration
+      // restoring stale endLocation on next app launch
+      await AsyncStorage.removeItem('persist:journey').catch(() => {});
+
       // Return journey ID for navigation to detail page
       return journeyIdForNavigation;
     } catch (error) {
@@ -1387,6 +1404,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       await clearStartTime();
       await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
       await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
+      await AsyncStorage.removeItem('persist:journey').catch(() => {});
       // Stop background tracking
       await BackgroundTaskService.stopBackgroundTracking().catch(() => {});
       // Dismiss Live Activity even on error to prevent zombie notifications
@@ -1427,6 +1445,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.multiRemove([
           'current_journey', 'journey_status', 'journey_start_time',
           'active_group_journey_id', 'active_journey_id', 'active_group_instance_id',
+          'persist:journey',
         ]);
         await clearStartTime();
       } catch (e) {

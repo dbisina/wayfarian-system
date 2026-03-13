@@ -370,26 +370,42 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           {/* Stats Grid */}
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Ionicons name="navigate-outline" size={20} color="#F9A825" style={styles.statIcon} />
-              <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="navigate-outline" size={20} color="#F9A825" />
+              </View>
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
+                <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
+              </View>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="time-outline" size={20} color="#F9A825" style={styles.statIcon} />
-              <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="time-outline" size={20} color="#F9A825" />
+              </View>
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
+                <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
+              </View>
             </View>
             {journey.avgSpeed > 0 && (
               <View style={styles.statItem}>
-                <Ionicons name="speedometer-outline" size={20} color="#F9A825" style={styles.statIcon} />
-                <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
-                <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
+                <View style={styles.statIconContainer}>
+                  <Ionicons name="speedometer-outline" size={20} color="#F9A825" />
+                </View>
+                <View style={styles.statTextContainer}>
+                  <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
+                  <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
+                </View>
               </View>
             )}
             <View style={styles.statItem}>
-              <Ionicons name="flash-outline" size={20} color="#F9A825" style={styles.statIcon} />
-              <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="flash-outline" size={20} color="#F9A825" />
+              </View>
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
+                <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
+              </View>
             </View>
           </View>
 
@@ -792,40 +808,44 @@ const styles = StyleSheet.create({
   },
   statItem: {
     width: '50%',
-    padding: 6,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  statIcon: {
+    padding: 8,
     marginBottom: 4,
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(249, 168, 37, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  statTextContainer: {
+    flex: 1,
   },
   statValue: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    marginBottom: 2,
-  },
-  statUnit: {
-    fontSize: 12,
-    color: '#F9A825',
-    fontFamily: 'Space Grotesk',
-    marginBottom: 2,
   },
   statLabel: {
     fontSize: 12,
     color: '#757575',
     fontFamily: 'Space Grotesk',
+    marginTop: 2,
   },
   vehicleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'rgba(249, 168, 37, 0.08)',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    marginTop: 8,
+    marginTop: 16,
     alignSelf: 'center',
   },
   vehicleIcon: {
@@ -852,13 +872,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#F9A825',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 16,
     gap: 8,
+    shadowColor: '#F9A825',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   addPhotosButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    fontFamily: 'Space Grotesk',
   },
   takePhotoButton: {
     flex: 1,
@@ -867,33 +893,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
     paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: '#F9A825',
     gap: 8,
   },
   takePhotoButtonText: {
     color: '#F9A825',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    fontFamily: 'Space Grotesk',
   },
   timelineSection: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginBottom: 16,
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
   },
   timelineSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#000000',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
   },
   photoCount: {
@@ -909,45 +941,50 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   timelineMarker: {
-    width: 24,
+    width: 20,
     alignItems: 'center',
     marginRight: 16,
   },
   timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#F4E04D',
-    borderWidth: 2,
-    borderColor: '#FFD700',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#F9A825',
+    zIndex: 2,
   },
   firstDot: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#2E7D32',
+    borderColor: '#F9A825',
   },
   timelineLine: {
-    width: 2,
+    width: 1.5,
     flex: 1,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#F0F0F0',
     marginTop: 4,
   },
   timelineContent: {
     flex: 1,
   },
   timelineTime: {
-    fontSize: 12,
-    color: '#757575',
+    fontSize: 13,
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
-    marginBottom: 8,
-    fontWeight: '600',
+    marginBottom: 12,
+    fontWeight: '700',
   },
   timelinePhoto: {
     width: '100%',
-    height: 200,
-    borderRadius: 12,
+    height: 220,
+    borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#F5F5F5',
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   timelinePhotoImage: {
     width: '100%',
@@ -983,24 +1020,34 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
   },
   emptyPhotos: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
     paddingVertical: 60,
     paddingHorizontal: 40,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
   },
   emptyPhotosEmoji: {
     fontSize: 64,
     marginBottom: 16,
   },
   emptyPhotosText: {
-    fontSize: 16,
-    color: '#757575',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
     fontFamily: 'Space Grotesk',
     textAlign: 'center',
   },
   emptyPhotosSubtext: {
     fontSize: 14,
-    color: '#F9A825',
+    fontWeight: '600',
+    color: '#757575',
     fontFamily: 'Space Grotesk',
     textAlign: 'center',
     marginTop: 8,

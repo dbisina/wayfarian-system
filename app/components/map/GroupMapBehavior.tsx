@@ -26,7 +26,7 @@ export const useGroupMapBehavior = ({
   const [isUserInteracting, setIsUserInteracting] = useState(false);
   const lastInteractionTime = useRef<number>(0);
   const interactionTimeoutRef = useRef<number | null>(null);
-  const AUTO_FIT_DELAY_MS = 15000; // 15 seconds
+  const AUTO_FIT_DELAY_MS = 10000; // Reduced to 10 seconds for better manual control transition
 
   // Function to fit all members and current user
   const fitToGroup = useCallback(() => {
@@ -66,19 +66,19 @@ export const useGroupMapBehavior = ({
     }
   }, []);
 
-  const onRegionChangeComplete = useCallback((region: Region) => {
-    // When the user stops dragging, we start a timer to re-enable auto-fit
-    lastInteractionTime.current = Date.now();
-    
-    if (interactionTimeoutRef.current) {
-      clearTimeout(interactionTimeoutRef.current);
-    }
+  const onRegionChangeComplete = useCallback((region: Region, { isGesture }: { isGesture: boolean }) => {
+    if (isGesture) {
+      setIsUserInteracting(true);
+      lastInteractionTime.current = Date.now();
+      
+      if (interactionTimeoutRef.current) {
+        clearTimeout(interactionTimeoutRef.current);
+      }
 
-    interactionTimeoutRef.current = setTimeout(() => {
-      setIsUserInteracting(false);
-      // Optionally trigger an immediate fit here
-      // fitToGroup(); 
-    }, AUTO_FIT_DELAY_MS);
+      interactionTimeoutRef.current = setTimeout(() => {
+        setIsUserInteracting(false);
+      }, AUTO_FIT_DELAY_MS);
+    }
   }, []);
 
   // Manual "Resume" function

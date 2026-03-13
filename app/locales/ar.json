@@ -1,0 +1,11 @@
+{
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "يستخدم هذا التطبيق الموقع لتتبع رحلتك وعرض موقعك على الخريطة.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "يستخدم هذا التطبيق الموقع لتتبع رحلتك وعرض موقعك على الخريطة.",
+        "NSLocationAlwaysUsageDescription": "يستخدم هذا التطبيق الموقع لتتبع رحلتك وعرض موقعك على الخريطة.",
+        "NSCameraUsageDescription": "يستخدم Wayfarian الكاميرا لالتقاط الصور أثناء رحلتك.",
+        "NSPhotoLibraryUsageDescription": "اسمح لـ Wayfarian بالوصول إلى صورك.",
+        "NSPhotoLibraryAddUsageDescription": "اسمح لـ Wayfarian بالوصول إلى صورك.",
+        "NSMicrophoneUsageDescription": "يستخدم Wayfarian الكاميرا لالتقاط الصور أثناء رحلتك."
+    }
+}

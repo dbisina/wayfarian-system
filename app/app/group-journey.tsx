@@ -35,6 +35,7 @@ import JourneyCamera from '../components/JourneyCamera';
 import LocationPicker from '../components/LocationPicker';
 import { useGroupMapBehavior } from '../components/map/GroupMapBehavior';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
+import MemberMarker from '../components/map/MemberMarker';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
 import { useAppDispatch } from '../store/hooks';
 import { clearJourney, setCurrentJourney, setTracking, setJourneyMinimized, setMyInstance as setMyInstanceRedux, setStats, clearRoutePoints } from '../store/slices/journeySlice';
@@ -99,6 +100,7 @@ export default function GroupJourneyScreen() {
 
   const mapRef = useRef<MapView | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
+  const regionRef = useRef<Region | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   const {
@@ -122,12 +124,12 @@ export default function GroupJourneyScreen() {
   );
 
   // Group Map Behavior (Zoom Wars Fix)
-  const { mapViewProps } = useGroupMapBehavior({
+  const { mapViewProps, isUserInteracting } = useGroupMapBehavior({
     mapRef: mapRef as React.RefObject<MapView>,
     members: memberLocations
       .filter(m => typeof m.latitude === 'number' && typeof m.longitude === 'number')
       .map(m => ({ latitude: m.latitude!, longitude: m.longitude!, id: m.userId })),
-    currentUserLocation: region ? { latitude: region.latitude, longitude: region.longitude } : null,
+    currentUserLocation: regionRef.current ? { latitude: regionRef.current.latitude, longitude: regionRef.current.longitude } : null,
     isGroupJourney: true,
   });
 
@@ -635,13 +637,45 @@ export default function GroupJourneyScreen() {
   // Animate map to target region — throttle to avoid rapid camera changes
   const lastMapAnimateRef = useRef<number>(0);
   useEffect(() => {
-    if (!targetRegion) return;
+    if (!targetRegion || isUserInteracting || !mapRef.current) return;
+    
     const now = Date.now();
-    if (now - lastMapAnimateRef.current < 3000) return; // Max once per 3s
+    // Allow more frequent updates (1s) if we're in tracking mode for "liquid" feel
+    const throttleInterval = (!selectedMemberId && isTracking) ? 1000 : 3000;
+    if (now - lastMapAnimateRef.current < throttleInterval) return;
+    
     lastMapAnimateRef.current = now;
-    setRegion(targetRegion);
-    mapRef.current?.animateToRegion(targetRegion, 800);
-  }, [targetRegion]);
+
+    // Pro Navigation View for "Follow Me" mode
+    if (!selectedMemberId && isTracking && myLocation?.latitude && typeof myLocation.latitude === 'number') {
+      const speedKmh = (myLocation.speed || 0) * 3.6;
+      let targetZoom = 18;
+      let targetPitch = 45;
+
+      if (speedKmh > 80) {
+        targetZoom = 16.5;
+        targetPitch = 55;
+      } else if (speedKmh > 40) {
+        targetZoom = 17.5;
+        targetPitch = 50;
+      }
+
+      mapRef.current.animateCamera({
+        center: {
+          latitude: myLocation.latitude as number,
+          longitude: myLocation.longitude as number,
+        },
+        pitch: targetPitch,
+        heading: Number((myLocation as any).heading || 0),
+        altitude: speedKmh > 60 ? 1000 : 600,
+        zoom: targetZoom,
+      }, { duration: 1000 });
+    } else {
+      // Standard 2D view for group/other members
+      setRegion(targetRegion);
+      mapRef.current.animateToRegion(targetRegion, 800);
+    }
+  }, [targetRegion, isUserInteracting, isTracking, selectedMemberId, myLocation]);
 
 
 
@@ -960,9 +994,12 @@ export default function GroupJourneyScreen() {
         showsUserLocation
         showsCompass
         {...mapViewProps}
-        onRegionChangeComplete={(r) => {
-            setRegion(r);
-            mapViewProps.onRegionChangeComplete(r);
+        onRegionChangeComplete={(r, details) => {
+            if (details?.isGesture) {
+              setRegion(r); // Only re-render on manual gesture
+            }
+            regionRef.current = r;
+            mapViewProps.onRegionChangeComplete(r, { isGesture: !!details?.isGesture });
         }}
       >
         {/* Show route from user's current location to destination */}
@@ -1025,34 +1062,11 @@ export default function GroupJourneyScreen() {
           )
             return null;
           return (
-            <Marker
-              key={member.userId}
-              coordinate={{
-                latitude: member.latitude,
-                longitude: member.longitude,
-              }}
-              title={member.displayName}
-              description={`${convertDistance(member.totalDistance || 0)} • ${member.status}`}
-            >
-              <View style={styles.memberMarker}>
-                <Image
-                  source={
-                    member.photoURL
-                      ? { uri: member.photoURL }
-                      : require("../assets/images/2025-09-26/byc45z4XPi.png")
-                  }
-                  style={styles.memberImage}
-                />
-                {member.status === "COMPLETED" && (
-                  <MaterialIcons
-                    name="check-circle"
-                    size={18}
-                    color="#10b981"
-                    style={styles.statusBadge}
-                  />
-                )}
-              </View>
-            </Marker>
+            <MemberMarker 
+              key={member.userId} 
+              member={member as any} 
+              convertDistance={convertDistance} 
+            />
           );
         })}
       </MapView>
@@ -1094,7 +1108,7 @@ export default function GroupJourneyScreen() {
             >
               <Image 
                 source={user?.photoURL ? { uri: user.photoURL } : require("../assets/images/2025-09-26/byc45z4XPi.png")} 
-                style={styles.friendAvatar} 
+                style={[styles.friendAvatar, !selectedMemberId && styles.selectedFriendAvatar]} 
               />
               <Text style={styles.friendName} numberOfLines={1}>{t('common.you')}</Text>
               {myInstance?.status === 'COMPLETED' && (

@@ -4,37 +4,49 @@
 
 # Dependencies
 node_modules/
+node_modules
+**/node_modules
 
 # Expo
 .expo/
+.expo
 dist/
 web-build/
 
-# Native (we let EAS generate these)
+# Native (we let EAS generate these, but keep custom extensions/targets)
 .kotlin/
 *.orig.*
 
 # Metro
 .metro-health-check*
 
-# debug
+# debug / logs
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
+logs/
 
-# macOS
+# macOS / Windows
 .DS_Store
+Thumbs.db
+Desktop.ini
 
 # typescript
 *.tsbuildinfo
 
-app-example
-
-# generated native folders (EAS generates these)
-/ios
-/android
-
+# temporary / cache
 .npm-cache/
+.npm-cache
+**/.npm-cache
+.cache/
+
+# project specific large folders
+backup/
+scaf/
+docs/
+app-example/
+app-example
 
 # NOTE: We intentionally DO NOT ignore:
 # - .env (needed for EXPO_PUBLIC_* variables)
