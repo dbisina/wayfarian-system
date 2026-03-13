@@ -410,7 +410,7 @@ const endJourney = async (req, res) => {
           increment: totalTime,
         },
         topSpeed: {
-          set: Math.max(req.user.topSpeed, journey.topSpeed),
+          set: Math.max(req.user.topSpeed || 0, finalTopSpeed),
         },
         totalTrips: {
           increment: 1,
