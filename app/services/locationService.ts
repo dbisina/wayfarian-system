@@ -131,7 +131,7 @@ class LocationService {
         const isExpoGo = Constants.appOwnership === 'expo';
         const allowBackgroundOnIOS = Platform.OS === 'ios' && !isExpoGo; // standalone/dev builds only
         if (Platform.OS === 'android' || allowBackgroundOnIOS) {
-          const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+          const { status: backgroundStatus } = await Location.getBackgroundPermissionsAsync();
           if (backgroundStatus !== 'granted') {
             console.warn('Background location permission denied - tracking will pause in background');
           }

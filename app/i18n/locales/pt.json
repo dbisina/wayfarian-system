@@ -193,7 +193,15 @@
         "stopSoloConfirm": "Parar jornada?",
         "noActiveStop": "Nada para parar.",
         "failedStop": "Falha ao parar.",
-        "startJourneyError": "Erro ao iniciar"
+        "startJourneyError": "Erro ao iniciar",
+        "location": {
+            "backgroundTitle": "Localização em Segundo Plano do Wayfarian",
+            "backgroundMessage": "O Wayfarian coleta dados de localização para permitir o rastreamento da viagem, o cálculo da distância e a navegação em tempo real, mesmo quando o aplicativo está fechado ou não está em uso.",
+            "backgroundPurpose": "Estes dados são usados para fornecer estatísticas de viagem precisas e garantir que sua viagem seja gravada corretamente para seu histórico e conquistas.",
+            "backgroundAction": "Para ativar este recurso, toque em 'Conceder Permissão' abaixo e selecione 'Permitir o tempo todo' nas configurações do sistema.",
+            "grant": "Conceder Permissão",
+            "notNow": "Agora Não"
+        }
     },
     "profile": {
         "myProfile": "Meu perfil",

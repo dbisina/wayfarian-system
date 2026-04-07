@@ -10,7 +10,7 @@ import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { useSmartTracking } from '../hooks/useSmartTracking';
 import * as Location from 'expo-location';
-import { AppState, AppStateStatus, Alert } from 'react-native';
+import { AppState, AppStateStatus, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   clearJourney,
@@ -40,6 +40,7 @@ import {
 import BackgroundTaskService from '../services/backgroundTaskService';
 import LiveNotificationService, { JourneyNotificationData } from '../services/liveNotificationService';
 import OfflineQueueService from '../services/offlineQueueService';
+import BackgroundLocationDisclosureModal from '../components/BackgroundLocationDisclosureModal';
 
 export type { GroupMember, JourneyData } from '../store/slices/journeySlice';
 
@@ -89,6 +90,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     avgSpeed,
     maxSpeed 
   } = useSmartTracking(journeyState.isTracking);
+
+  // Background Location Disclosure State
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
+  const [pendingJourneyData, setPendingJourneyData] = useState<Partial<JourneyData> | null>(null);
 
   // Local timer state for smooth updates
   const [localElapsedTime, setLocalElapsedTime] = useState(0);
@@ -824,8 +829,20 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(clearRoutePoints());
 
       // STEP 1: Permission check — typically instant if already granted
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') throw new Error('Location permission denied');
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus !== 'granted') throw new Error('Location permission denied');
+
+      // Android Background Location Policy Compliance
+      // Prominent Disclosure must be shown BEFORE requesting background permission
+      if (Platform.OS === 'android') {
+        const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+        if (bgStatus !== 'granted') {
+          // Show custom disclosure modal first
+          setPendingJourneyData(journeyData);
+          setShowLocationDisclosure(true);
+          return false; // Return false but don't throw; UI will handle navigation/retry after disclosure
+        }
+      }
 
       // STEP 2: Get location FAST using layered strategy
       // 1st: Try getLastKnownPositionAsync (instant, cached GPS — usually <10ms)
@@ -1648,9 +1665,33 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <JourneyContext.Provider value={value}>
-      {children}
-    </JourneyContext.Provider>
+    <>
+      <JourneyContext.Provider value={value}>
+        {children}
+      </JourneyContext.Provider>
+
+      <BackgroundLocationDisclosureModal
+        visible={showLocationDisclosure}
+        onAccept={async () => {
+          setShowLocationDisclosure(false);
+          const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+          if (bgStatus === 'granted' && pendingJourneyData) {
+            startJourney(pendingJourneyData);
+          } else {
+            console.warn('[JourneyContext] Background location permission denied after disclosure');
+            Alert.alert(
+              'Permission Required',
+              'Background location is required to track your journey accurately. Please enable it in Settings.'
+            );
+          }
+          setPendingJourneyData(null);
+        }}
+        onDecline={() => {
+          setShowLocationDisclosure(false);
+          setPendingJourneyData(null);
+        }}
+      />
+    </>
   );
 }
 

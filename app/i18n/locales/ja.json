@@ -193,7 +193,15 @@
         "stopSoloConfirm": "旅を停止しますか？",
         "noActiveStop": "停止可能な旅がありません。",
         "failedStop": "停止に失敗しました。",
-        "startJourneyError": "開始に失敗しました"
+        "startJourneyError": "開始に失敗しました",
+        "location": {
+            "backgroundTitle": "Wayfarian のバックグラウンドの位置情報",
+            "backgroundMessage": "Wayfarian は、アプリが閉じているときや使用されていないときでも、走行の追跡、距離 de 距離の計算、およびリアルタイムのナビゲーションを可能にするために位置情報を収集します。",
+            "backgroundPurpose": "このデータは、正確な走行統計を提供し、履歴や実績のために走行が正しく記録されるようにするために使用されます。",
+            "backgroundAction": "この機能を有効にするには、下の [権限を許可] をタップし、システム設定で [常に許可] を選択してください。",
+            "grant": "権限を許可",
+            "notNow": "後で"
+        }
     },
     "profile": {
         "myProfile": "プロフィール",

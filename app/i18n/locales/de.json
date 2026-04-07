@@ -193,7 +193,15 @@
         "stopSoloConfirm": "Reise jetzt beenden?",
         "noActiveStop": "Nichts zum Beenden gefunden.",
         "failedStop": "Beenden fehlgeschlagen.",
-        "startJourneyError": "Start fehlgeschlagen"
+        "startJourneyError": "Start fehlgeschlagen",
+        "location": {
+            "backgroundTitle": "Wayfarian Hintergrund-Standort",
+            "backgroundMessage": "Wayfarian sammelt Standortdaten, um die Reiseaufzeichnung, Distanzberechnung und Echtzeit-Navigation zu ermöglichen, selbst wenn die App geschlossen ist oder nicht verwendet wird.",
+            "backgroundPurpose": "Diese Daten werden verwendet, um genaue Fahrtstatistiken bereitzustellen und sicherzustellen, dass Ihre Reise korrekt für Ihren Verlauf und Ihre Erfolge aufgezeichnet wird.",
+            "backgroundAction": "Um diese Funktion zu aktivieren, tippen Sie bitte unten auf 'Berechtigung erteilen' und wählen Sie in den Systemeinstellungen 'Immer zulassen'.",
+            "grant": "Berechtigung erteilen",
+            "notNow": "Nicht jetzt"
+        }
     },
     "profile": {
         "myProfile": "Mein Profil",

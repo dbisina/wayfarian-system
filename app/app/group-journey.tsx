@@ -43,6 +43,7 @@ import BackgroundTaskService from '../services/backgroundTaskService';
 import LiveNotificationService from '../services/liveNotificationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PhotoChallengeCard from '../components/PhotoChallengeCard';
+import BackgroundLocationDisclosureModal from '../components/BackgroundLocationDisclosureModal';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -199,6 +200,9 @@ export default function GroupJourneyScreen() {
   const lastMilestoneRef = useRef(0);
   const [photosTaken, setPhotosTaken] = useState(0);
   const [userStartLocation, setUserStartLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
+
+  // Background Location Disclosure State
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
 
   const handlePhotoTaken = useCallback(
     async (photoData: { uri: string; latitude: number; longitude: number }) => {
@@ -701,6 +705,16 @@ export default function GroupJourneyScreen() {
       Alert.alert(t('alerts.error'), t('groupJourney.selectStartLocation'));
       return;
     }
+
+    // Android Background Location Policy Compliance
+    if (Platform.OS === 'android') {
+      const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+      if (bgStatus !== 'granted') {
+        setShowLocationDisclosure(true);
+        return;
+      }
+    }
+
     setIsStarting(true);
     try {
       const response = await apiRequest(
@@ -1076,10 +1090,27 @@ export default function GroupJourneyScreen() {
         <SpeedLimitSign latitude={myLocation.latitude} longitude={myLocation.longitude} />
       )}
 
-      {/* Ride Celebration Toast */}
+      {/* Ride Milestone Celebrations */}
       <RideCelebration
         event={celebrationEvent}
         onDismiss={() => setCelebrationEvent(null)}
+      />
+
+      <BackgroundLocationDisclosureModal
+        visible={showLocationDisclosure}
+        onAccept={async () => {
+          setShowLocationDisclosure(false);
+          const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+          if (bgStatus === 'granted') {
+            handleStartInstance();
+          } else {
+            Alert.alert(
+              t('alerts.permissionRequired'),
+              'Background location is required to track your journey accurately. Please enable it in Settings.'
+            );
+          }
+        }}
+        onDecline={() => setShowLocationDisclosure(false)}
       />
 
       {/* Floating Camera Button - Above Bottom Panel */}

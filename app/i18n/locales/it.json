@@ -193,7 +193,15 @@
         "stopSoloConfirm": "Vuoi davvero fermare il tuo viaggio?",
         "noActiveStop": "Nessun viaggio attivo o in pausa da fermare.",
         "failedStop": "Chiusura viaggio fallita.",
-        "startJourneyError": "Inizio monitoraggio fallito"
+        "startJourneyError": "Inizio monitoraggio fallito",
+        "location": {
+            "backgroundTitle": "Posizione in background di Wayfarian",
+            "backgroundMessage": "Wayfarian raccoglie i dati sulla posizione per consentire il monitoraggio del viaggio, il calcolo della distanza e la navigazione in tempo reale anche quando l'app è chiusa o non in uso.",
+            "backgroundPurpose": "Questi dati vengono utilizzati per fornire statistiche di viaggio accurate e garantire che il viaggio venga registrato correttamente per la cronologia e i risultati.",
+            "backgroundAction": "Per abilitare questa funzione, tocca 'Concedi autorizzazione' di seguito e seleziona 'Consenti sempre' nelle impostazioni di sistema.",
+            "grant": "Concedi autorizzazione",
+            "notNow": "Non ora"
+        }
     },
     "profile": {
         "myProfile": "Il Mio Profilo",

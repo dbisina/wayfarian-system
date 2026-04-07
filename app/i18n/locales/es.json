@@ -193,7 +193,15 @@
         "stopSoloConfirm": "¿Estás seguro de que deseas detener tu viaje?",
         "noActiveStop": "Ningún viaje activo o en pausa para detener.",
         "failedStop": "Error al detener el viaje.",
-        "startJourneyError": "Error al iniciar el seguimiento del viaje"
+        "startJourneyError": "Error al iniciar el seguimiento del viaje",
+        "location": {
+            "backgroundTitle": "Ubicación en segundo plano de Wayfarian",
+            "backgroundMessage": "Wayfarian recopila datos de ubicación para permitir el seguimiento de viajes, el cálculo de distancias y la navegación en tiempo real, incluso cuando la aplicación está cerrada o no se está utilizando.",
+            "backgroundPurpose": "Estos datos se utilizan para proporcionar estadísticas de viaje precisas y garantizar que su viaje se registre correctamente para su historial y logros.",
+            "backgroundAction": "Para habilitar esta función, pulse 'Conceder permiso' a continuación y seleccione 'Permitir todo el tiempo' en la configuración del sistema.",
+            "grant": "Conceder permiso",
+            "notNow": "Ahora no"
+        }
     },
     "profile": {
         "myProfile": "Mi Perfil",

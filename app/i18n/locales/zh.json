@@ -193,7 +193,15 @@
         "stopSoloConfirm": "结束个人旅程？",
         "noActiveStop": "当前无活动状态。",
         "failedStop": "操作失败。",
-        "startJourneyError": "启动追踪失败"
+        "startJourneyError": "启动追踪失败",
+        "location": {
+            "backgroundTitle": "Wayfarian 后台位置信息",
+            "backgroundMessage": "Wayfarian 收集位置数据以实现在应用关闭或未使用时进行行程追踪、距离计算和实时导航。",
+            "backgroundPurpose": "这些数据用于提供准确的骑行统计数据，并确保您的行程被正确记录到历史记录和成就中。",
+            "backgroundAction": "要启用此功能，请点击下方的“授予权限”，并在系统设置中选择“始终允许”。",
+            "grant": "授予权限",
+            "notNow": "以后再说"
+        }
     },
     "profile": {
         "myProfile": "我的主页",

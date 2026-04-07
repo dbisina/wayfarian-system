@@ -193,7 +193,15 @@
         "stopSoloConfirm": "Êtes-vous sûr de vouloir arrêter votre trajet ?",
         "noActiveStop": "Aucun trajet actif ou en pause à arrêter.",
         "failedStop": "Échec de l'arrêt du trajet.",
-        "startJourneyError": "Échec du démarrage du suivi du trajet"
+        "startJourneyError": "Échec du démarrage du suivi du trajet",
+        "location": {
+            "backgroundTitle": "Localisation en arrière-plan Wayfarian",
+            "backgroundMessage": "Wayfarian collecte des données de localisation pour permettre le suivi des trajets, le calcul de la distance et la navigation en temps réel, même lorsque l'application est fermée ou n'est pas utilisée.",
+            "backgroundPurpose": "Ces données sont utilisées pour fournir des statistiques de trajet précises et garantir que votre trajet est enregistré correctement pour votre historique et vos accomplissements.",
+            "backgroundAction": "Pour activer cette fonctionnalité, veuillez appuyer sur 'Accorder l'autorisation' ci-dessous et sélectionner 'Toujours autoriser' dans les paramètres du système.",
+            "grant": "Accorder l'autorisation",
+            "notNow": "Pas maintenant"
+        }
     },
     "profile": {
         "myProfile": "Mon Profil",

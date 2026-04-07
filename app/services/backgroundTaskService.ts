@@ -324,8 +324,8 @@ export async function startBackgroundTracking(
     options?: BackgroundTrackingOptions
 ): Promise<boolean> {
     try {
-        // Check if background location is available
-        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+        // Check if background location is granted (do NOT request here, should be handled by UI disclosure)
+        const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
         if (bgStatus !== 'granted') {
             console.warn('[BackgroundTask] Background location permission not granted');
             return false;
@@ -562,7 +562,7 @@ export async function syncForegroundToBackground(foregroundState: {
         state.totalDistance = Math.max(state.totalDistance, foregroundState.totalDistance);
         state.movingTime = Math.max(state.movingTime, foregroundState.movingTime);
         state.topSpeed = Math.max(state.topSpeed, foregroundState.topSpeed);
-        
+
         // Update speed for notification display
         state.lastSpeed = foregroundState.currentSpeed / 3.6; // Convert km/h to m/s
 

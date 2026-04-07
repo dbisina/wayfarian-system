@@ -193,7 +193,15 @@
         "stopSoloConfirm": "여정을 종료하시겠습니까?",
         "noActiveStop": "종료할 수 있는 여정이 없습니다.",
         "failedStop": "종료 실패.",
-        "startJourneyError": "시작 실패"
+        "startJourneyError": "시작 실패",
+        "location": {
+            "backgroundTitle": "Wayfarian 백그라운드 위치 정보",
+            "backgroundMessage": "Wayfarian은 앱이 닫혀 있거나 사용 중이 아닐 때도 경로 추적, 거리 계산 및 실시간 내비게이션을 지원하기 위해 위치 데이터를 수집합니다.",
+            "backgroundPurpose": "이 데이터는 정확한 주행 통계를 제공하고 주행 기록과 업적이 올바르게 저장되도록 하는 데 사용됩니다.",
+            "backgroundAction": "이 기능을 활성화하려면 아래의 '권한 허용'을 누르고 시스템 설정에서 '항상 허용'을 선택하십시오.",
+            "grant": "권한 허용",
+            "notNow": "나중에"
+        }
     },
     "profile": {
         "myProfile": "내 프로필",
