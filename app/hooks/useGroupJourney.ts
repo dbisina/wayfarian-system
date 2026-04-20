@@ -264,7 +264,11 @@ export const useGroupJourney = ({
     async (instanceId: string) => {
       if (!socket || groupTracking.isTracking) return;
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
       if (status !== 'granted') {
         Alert.alert('Location permission required', 'Enable location sharing to join the group journey.');
         return;

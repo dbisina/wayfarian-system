@@ -81,15 +81,16 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const uploadQueue = useJourneyUploadQueue();
   const distanceUnit = useAppSelector(state => state.ui.preferences.distanceUnit);
 
-  // Use Smart Tracking Hook
-  const { 
-    liveRawLocation, 
-    officialSnappedPath, 
-    officialDistance, 
-    movingTime, 
+  // Use Smart Tracking Hook. Pass the active journey's vehicle so the speed cap is realistic.
+  const activeVehicle = (journeyState.currentJourney?.vehicle as 'car' | 'bike' | 'scooter' | undefined) || 'car';
+  const {
+    liveRawLocation,
+    officialSnappedPath,
+    officialDistance,
+    movingTime,
     avgSpeed,
-    maxSpeed 
-  } = useSmartTracking(journeyState.isTracking);
+    maxSpeed
+  } = useSmartTracking(journeyState.isTracking, activeVehicle);
 
   // Background Location Disclosure State
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
@@ -326,6 +327,31 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     LiveNotificationService.updateNotification(notificationData).catch(e => {
       console.warn('[JourneyContext] Live notification update failed:', e);
     });
+
+    // Claim the foreground notification lease so the background task doesn't overwrite
+    // our freshly-pushed values with its own (less-accurate) snapshot while the app is open.
+    AsyncStorage.setItem('wayfarian.fgNotificationLeaseAt', String(now)).catch(() => {});
+
+    // Sync authoritative foreground stats into the persisted journey state so if the app
+    // gets backgrounded mid-ride, the background task picks up where foreground left off
+    // instead of resetting to its own (possibly lagging) numbers. Best-effort, non-blocking.
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('activeJourneyState');
+        if (!raw) return;
+        const prev = JSON.parse(raw);
+        if (prev?.journeyId !== journey.id) return;
+        prev.totalDistance = officialDistance;
+        prev.movingTime = movingTime;
+        prev.topSpeed = Math.max(prev.topSpeed || 0, maxSpeed);
+        if (liveRawLocation) {
+          prev.lastLatitude = liveRawLocation.latitude;
+          prev.lastLongitude = liveRawLocation.longitude;
+          prev.lastTimestamp = liveRawLocation.timestamp;
+        }
+        await AsyncStorage.setItem('activeJourneyState', JSON.stringify(prev));
+      } catch {}
+    })();
   }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
 
   // Backend & Socket Updates (throttled to every 5 seconds)
@@ -517,7 +543,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
                       // Restart background tracking
                       const isActive = await BackgroundTaskService.isBackgroundTrackingActive();
                       if (!isActive) {
-                        await BackgroundTaskService.startBackgroundTracking(response.journey.id, {});
+                        await BackgroundTaskService.startBackgroundTracking(response.journey.id, {
+                          vehicle: response.journey.vehicle,
+                        });
                       }
                       console.log('[JourneyContext] Orphaned journey resumed by user');
                     } catch (e) {
@@ -828,19 +856,27 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }));
       dispatch(clearRoutePoints());
 
-      // STEP 1: Permission check — typically instant if already granted
-      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      // STEP 1: Permission check — typically instant if already granted.
+      // Check current status first; only prompt the user if not granted.
+      let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
+      if (fgStatus !== 'granted') {
+        fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
+      }
       if (fgStatus !== 'granted') throw new Error('Location permission denied');
 
-      // Android Background Location Policy Compliance
-      // Prominent Disclosure must be shown BEFORE requesting background permission
+      // Android Background Location Policy Compliance.
+      // Prominent Disclosure must be shown BEFORE any background location access.
+      // We show it at least once per install, regardless of whether the system has already
+      // granted ACCESS_BACKGROUND_LOCATION — this guarantees reviewers see it even if they
+      // pre-grant the permission in device settings.
       if (Platform.OS === 'android') {
+        const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
+        const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-        if (bgStatus !== 'granted') {
-          // Show custom disclosure modal first
+        if (accepted !== '1' || bgStatus !== 'granted') {
           setPendingJourneyData(journeyData);
           setShowLocationDisclosure(true);
-          return false; // Return false but don't throw; UI will handle navigation/retry after disclosure
+          return false; // UI will re-invoke startJourney after acceptance
         }
       }
 
@@ -1005,6 +1041,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
                 if (!bgActive && isActive) {
                   BackgroundTaskService.startBackgroundTracking(journey.id, {
                     startTime: recoveredStartTime,
+                    vehicle: journey.vehicle || 'car',
                   }).catch(() => {});
                 }
 
@@ -1133,6 +1170,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             longitude: location.coords.longitude,
             timestamp: location.timestamp,
           },
+          vehicle: (journeyData.vehicle as 'car' | 'bike' | 'scooter') || 'car',
         }).catch(err =>
           console.warn('[JourneyContext] Background tracking init failed (non-blocking):', err)
         )
@@ -1282,6 +1320,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           destinationLatitude: journey.endLatitude,
           destinationLongitude: journey.endLongitude,
           startTime: startTimestamp,
+          vehicle: (journey.vehicle as 'car' | 'bike' | 'scooter') || 'car',
         }).catch(err =>
           console.warn('[JourneyContext] Background tracking init failed (non-blocking):', err)
         )
@@ -1390,6 +1429,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       await clearStartTime();
       await AsyncStorage.removeItem(JOURNEY_ID_KEY);
       await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY);
+      await AsyncStorage.removeItem('wayfarian.fgNotificationLeaseAt').catch(() => {});
 
       // Clear ALL journey state atomically to prevent stale endLocation persisting
       // (previously set status='completed' first which could persist with old endLocation)
@@ -1659,6 +1699,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         timestamp: liveRawLocation.timestamp,
         speed: liveRawLocation.speed,
         accuracy: liveRawLocation.accuracy,
+        heading: liveRawLocation.heading,
         altitude: 0
     } : null,
     resumeActiveJourney,
@@ -1674,7 +1715,15 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         visible={showLocationDisclosure}
         onAccept={async () => {
           setShowLocationDisclosure(false);
-          const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+          try {
+            await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
+          } catch {}
+          const current = await Location.getBackgroundPermissionsAsync();
+          let bgStatus = current.status;
+          if (bgStatus !== 'granted') {
+            const req = await Location.requestBackgroundPermissionsAsync();
+            bgStatus = req.status;
+          }
           if (bgStatus === 'granted' && pendingJourneyData) {
             startJourney(pendingJourneyData);
           } else {

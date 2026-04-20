@@ -14,10 +14,30 @@ const JOURNEY_STATE_KEY = 'activeJourneyState';
 const SETTINGS_UNITS_KEY = 'settings.units';
 const NOTIFICATION_ID = 'journey-tracking-notification';
 
+// When the foreground smart-tracking loop is actively pushing notification updates,
+// the background task's own update would race/flicker with it. The foreground sets
+// this timestamp on every notification push; the background skips the notification
+// write (but still persists stats) if foreground was active within this window.
+const FG_NOTIFICATION_LEASE_KEY = 'wayfarian.fgNotificationLeaseAt';
+const FG_LEASE_FRESHNESS_MS = 8000;
+
 // Configuration constants
 const MIN_MOVEMENT_THRESHOLD_M = 10; // Minimum movement to count (meters)
-const MAX_REASONABLE_SPEED_MPS = 69.4; // 250 km/h in m/s
+const MAX_REASONABLE_SPEED_MPS = 50.0; // 180 km/h in m/s (hard ceiling for any vehicle)
 const MAX_SPEED_FOR_RECORDING_MPS = 0.5; // Speed threshold to count as moving (m/s)
+
+// Cap route arrays to prevent AsyncStorage bloat and OOM on long rides.
+// At 1 point every ~5s, 2000 points ≈ 2.7h of active riding — plenty for the polyline
+// while keeping the persisted state small enough to serialize without crashing.
+const MAX_ROUTE_POINTS = 2000;
+const MAX_RAW_BUFFER_POINTS = 500; // Raw buffer is flushed to backend, just a staging area
+
+// Per-vehicle top-speed cap (km/h) — mirrors useSmartTracking so background and foreground agree.
+const VEHICLE_MAX_SPEED_KMH: Record<string, number> = {
+  car: 180,
+  bike: 50,
+  scooter: 80,
+};
 
 // Journey state interface for persistence
 export interface PersistedJourneyState {
@@ -26,6 +46,7 @@ export interface PersistedJourneyState {
     totalDistance: number;
     movingTime: number;
     topSpeed: number;
+    vehicle?: 'car' | 'bike' | 'scooter'; // Used for vehicle-aware max speed cap
     lastLatitude: number;
     lastLongitude: number;
     lastTimestamp: number;
@@ -102,6 +123,12 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
                             timestamp: location.timestamp,
                             speed: reportedSpeed,
                         });
+                        // Cap to prevent unbounded growth on long rides (OOM on AsyncStorage writes)
+                        if (state.routePoints.length > MAX_ROUTE_POINTS) {
+                            // Keep first point (start marker) + most recent points so the polyline stays connected
+                            const first = state.routePoints[0];
+                            state.routePoints = [first, ...state.routePoints.slice(-(MAX_ROUTE_POINTS - 1))];
+                        }
 
                         // Also buffer raw point for later Roads API snapping
                         if (!state.rawPointsBuffer) {
@@ -113,6 +140,9 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
                             timestamp: location.timestamp,
                             speed: reportedSpeed,
                         });
+                        if (state.rawPointsBuffer.length > MAX_RAW_BUFFER_POINTS) {
+                            state.rawPointsBuffer = state.rawPointsBuffer.slice(-MAX_RAW_BUFFER_POINTS);
+                        }
 
                         // Update top speed - use the lower of reported and implied (more accurate)
                         // Sustained speed detection: require 2 consecutive high readings
@@ -124,28 +154,30 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
                             state.recentHighSpeeds = [];
                         }
 
-                        // Only consider high speeds (above 50% of current max or above 30 km/h)
-                        if (speedKmh > state.topSpeed * 0.5 || speedKmh > 30) {
+                        // Vehicle-aware top-speed cap: anything above the cap is treated as a
+                        // GPS glitch and rejected outright. Stricter sustainment (3 samples).
+                        const vehicleCapKmh = VEHICLE_MAX_SPEED_KMH[state.vehicle || 'car'] ?? VEHICLE_MAX_SPEED_KMH.car;
+                        if (speedKmh > vehicleCapKmh) {
+                            state.recentHighSpeeds = [];
+                        } else if (speedKmh > state.topSpeed * 0.5 || speedKmh > 20) {
                             state.recentHighSpeeds.push(speedKmh);
-                            // Keep only last 3 readings
-                            if (state.recentHighSpeeds.length > 3) {
+                            // Keep last 5 readings (more robust than 3)
+                            if (state.recentHighSpeeds.length > 5) {
                                 state.recentHighSpeeds.shift();
                             }
 
-                            // Update top speed only if we have 2+ consistent high readings
-                            if (state.recentHighSpeeds.length >= 2) {
+                            // Require 3+ consistent high readings before promoting max speed.
+                            if (state.recentHighSpeeds.length >= 3) {
                                 const minRecent = Math.min(...state.recentHighSpeeds);
                                 const maxRecent = Math.max(...state.recentHighSpeeds);
-                                // Check readings are consistent (within 30% of each other)
-                                if (minRecent > maxRecent * 0.7 && speedKmh > state.topSpeed && speedKmh < 250) {
-                                    // Use median for stability
+                                if (minRecent > maxRecent * 0.75 && speedKmh > state.topSpeed) {
                                     const sorted = [...state.recentHighSpeeds].sort((a, b) => a - b);
                                     const median = sorted[Math.floor(sorted.length / 2)];
-                                    state.topSpeed = Math.max(state.topSpeed, median);
+                                    // Final clamp to vehicle cap.
+                                    state.topSpeed = Math.min(vehicleCapKmh, Math.max(state.topSpeed, median));
                                 }
                             }
                         } else {
-                            // Speed dropped - clear high speed buffer
                             state.recentHighSpeeds = [];
                         }
 
@@ -229,6 +261,18 @@ async function getUnitsPreference(): Promise<'km' | 'mi'> {
 // Update the persistent tracking notification with Uber-style progress
 async function updateTrackingNotification(state: PersistedJourneyState) {
     try {
+        // Yield to foreground when it's actively updating the notification — prevents
+        // flicker between background (persisted state) and foreground (smart-tracking) values.
+        try {
+            const leaseStr = await AsyncStorage.getItem(FG_NOTIFICATION_LEASE_KEY);
+            if (leaseStr) {
+                const leaseAt = parseInt(leaseStr, 10);
+                if (Number.isFinite(leaseAt) && Date.now() - leaseAt < FG_LEASE_FRESHNESS_MS) {
+                    return;
+                }
+            }
+        } catch {}
+
         const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
         const avgSpeed = state.movingTime > 0
             ? (state.totalDistance / state.movingTime) * 3600
@@ -317,6 +361,8 @@ export interface BackgroundTrackingOptions {
         longitude: number;
         timestamp: number;
     };
+    // Vehicle kind drives the max-speed cap used to reject bogus GPS samples
+    vehicle?: 'car' | 'bike' | 'scooter';
 }
 
 export async function startBackgroundTracking(
@@ -381,6 +427,7 @@ export async function startBackgroundTracking(
             destinationLatitude: options?.destinationLatitude,
             destinationLongitude: options?.destinationLongitude,
             estimatedTotalDistance: options?.estimatedTotalDistance,
+            vehicle: options?.vehicle ?? 'car',
         };
 
         // Persist initial state

@@ -354,7 +354,11 @@ export default function GroupDetailScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        let { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
+        }
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({});
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
@@ -492,7 +496,11 @@ export default function GroupDetailScreen() {
               setIsStartingRiding(true);
               try {
                 // Get current location
-                const { status } = await Location.requestForegroundPermissionsAsync();
+                let { status } = await Location.getForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                  const req = await Location.requestForegroundPermissionsAsync();
+                  status = req.status;
+                }
                 if (status !== 'granted') {
                   Alert.alert('Permission needed', 'Location permission is required to start riding');
                   setIsStartingRiding(false);
@@ -539,7 +547,11 @@ export default function GroupDetailScreen() {
     setIsStartingRiding(true);
     try {
       // Get current location
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Location permission is required to start riding');
         return;

@@ -10,6 +10,7 @@ import { placesAPI, userAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -37,6 +38,7 @@ export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { mapType } = useSettings();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -119,8 +121,12 @@ export default function MapScreen(): React.JSX.Element {
 
   const getCurrentLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
+
       if (status !== 'granted') {
         setError(t('map.locationPermDenied'));
         // Set a default region if permission denied, so map still renders
@@ -517,23 +523,33 @@ export default function MapScreen(): React.JSX.Element {
         ))}
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={[styles.floatingButton, styles.floatingButton1]} onPress={handleStartJourney}>
-              <Image
-                source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
-                style={styles.floatingButtonImage}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
-      
-            <TouchableOpacity style={[styles.floatingButton, styles.floatingButton2]} onPress={getCurrentLocation}>
-              <Image
-                source={require('../../assets/images/2025-09-26/4BNFvkcOE2.png')}
-                style={styles.floatingButtonImage}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
-      
+      {/* Floating Action Buttons */}
+      <TouchableOpacity
+        style={[styles.floatingButton, { bottom: insets.bottom + 150 }]}
+        onPress={handleStartJourney}
+        activeOpacity={0.8}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Image
+          source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
+          style={styles.floatingButtonImage}
+          contentFit="contain"
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.floatingButton, { bottom: insets.bottom + 90 }]}
+        onPress={getCurrentLocation}
+        activeOpacity={0.8}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Image
+          source={require('../../assets/images/2025-09-26/4BNFvkcOE2.png')}
+          style={styles.floatingButtonImage}
+          contentFit="contain"
+        />
+      </TouchableOpacity>
+
     </View>
   );
 }
@@ -704,12 +720,12 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     right: 22,
-  },
-  floatingButton1: {
-    top: 667,
-  },
-  floatingButton2: {
-    top: 727,
+    zIndex: 50,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   floatingButtonImage: {
     width: 50,

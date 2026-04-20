@@ -195,13 +195,13 @@
         "failedStop": "Failed to stop journey.",
         "startJourneyError": "Failed to start journey tracking",
         "location": {
-            "backgroundTitle": "Background Location Access",
-            "backgroundMessage": "Wayfarian collects location data to enable journey tracking and real-time speed monitoring even when the app is closed or not in use.",
-            "backgroundPurpose": "This ensures your journey stats remain accurate and your friends can see your position if you're in a group ride, regardless of whether Wayfarian is in the foreground.",
-            "backgroundFeature1": "Precise tracking for your journey log",
-            "backgroundFeature2": "Real-time updates for group members",
-            "backgroundFeature3": "Live activity and persistent notifications",
-            "accept": "Grant Permission",
+            "backgroundTitle": "Wayfarian collects location data",
+            "backgroundMessage": "Wayfarian collects location data to enable journey tracking, distance and speed statistics, real-time group ride sharing, and live-activity notifications — even when the app is closed or not in use.",
+            "backgroundPurpose": "Location data is also used to continue recording your ride when your phone is locked or Wayfarian is in the background. You can stop this at any time by ending the journey or revoking permission in your device settings.",
+            "backgroundFeature1": "Journey tracking when the app is closed or not in use",
+            "backgroundFeature2": "Real-time position sharing with your group while riding",
+            "backgroundFeature3": "Live-activity notifications showing speed and distance",
+            "accept": "I Agree, Continue",
             "decline": "Not Now"
         }
     },

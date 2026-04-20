@@ -117,7 +117,10 @@ class LocationService {
   // Request location permissions
   async requestPermissions(): Promise<boolean> {
     try {
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      let foregroundStatus = (await Location.getForegroundPermissionsAsync()).status;
+      if (foregroundStatus !== 'granted') {
+        foregroundStatus = (await Location.requestForegroundPermissionsAsync()).status;
+      }
 
       if (foregroundStatus !== 'granted') {
         console.error('Foreground location permission denied');

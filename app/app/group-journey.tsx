@@ -44,6 +44,7 @@ import LiveNotificationService from '../services/liveNotificationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PhotoChallengeCard from '../components/PhotoChallengeCard';
 import BackgroundLocationDisclosureModal from '../components/BackgroundLocationDisclosureModal';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -291,8 +292,13 @@ export default function GroupJourneyScreen() {
 
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        let { status } = await Location.getForegroundPermissionsAsync();
         if (!isMounted) return;
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (!isMounted) return;
+          status = req.status;
+        }
         if (status !== 'granted') {
           setLocationError(t('groupJourney.locationPermissionDenied'));
           return;
@@ -696,6 +702,17 @@ export default function GroupJourneyScreen() {
     }
   }, [isTracking, myInstance, startLocationTracking, reduxDispatch]);
 
+  // Keep screen awake during active/paused group journey instance.
+  useEffect(() => {
+    const active = myInstance?.status === 'ACTIVE' || myInstance?.status === 'PAUSED' || isTracking;
+    const tag = 'wayfarian-group-journey';
+    if (active) {
+      activateKeepAwakeAsync(tag).catch(() => {});
+      return () => deactivateKeepAwake(tag);
+    }
+    return undefined;
+  }, [myInstance?.status, isTracking]);
+
   const [isStarting, setIsStarting] = useState(false);
   const [isPausing, setIsPausing] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
@@ -706,10 +723,12 @@ export default function GroupJourneyScreen() {
       return;
     }
 
-    // Android Background Location Policy Compliance
+    // Android Background Location Policy Compliance — always surface disclosure at least
+    // once per install so Play reviewers see it even when permission is pre-granted.
     if (Platform.OS === 'android') {
+      const accepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
       const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-      if (bgStatus !== 'granted') {
+      if (accepted !== '1' || bgStatus !== 'granted') {
         setShowLocationDisclosure(true);
         return;
       }
@@ -775,6 +794,7 @@ export default function GroupJourneyScreen() {
         destinationLatitude: journeyData?.endLatitude,
         destinationLongitude: journeyData?.endLongitude,
         startTime: Date.now(),
+        vehicle: (instance.vehicle as 'car' | 'bike' | 'scooter') || 'car',
       }).catch(err => console.warn('[GroupJourney] Background tracking init failed:', err));
     } catch (error: any) {
       console.error('Start instance error:', error);
@@ -1100,7 +1120,15 @@ export default function GroupJourneyScreen() {
         visible={showLocationDisclosure}
         onAccept={async () => {
           setShowLocationDisclosure(false);
-          const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+          try {
+            await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
+          } catch {}
+          const current = await Location.getBackgroundPermissionsAsync();
+          let bgStatus = current.status;
+          if (bgStatus !== 'granted') {
+            const req = await Location.requestBackgroundPermissionsAsync();
+            bgStatus = req.status;
+          }
           if (bgStatus === 'granted') {
             handleStartInstance();
           } else {

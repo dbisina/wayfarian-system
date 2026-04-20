@@ -3,6 +3,10 @@
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+// Cap route points in the Redux store to prevent OOM / persistence bloat on long rides.
+// Matches the background task cap; 2000 points ≈ ~2.7h of 5s-interval tracking.
+const MAX_ROUTE_POINTS_REDUX = 2000;
+
 export interface LocationUpdate {
   latitude: number;
   longitude: number;
@@ -458,10 +462,19 @@ const journeySlice = createSlice({
       state.isTracking = action.payload;
     },
     setRoutePoints: (state, action: PayloadAction<RoutePoint[]>) => {
-      state.routePoints = action.payload;
+      // Cap on intake — stale persisted state from an older build could exceed the cap
+      const points = action.payload;
+      state.routePoints = points.length > MAX_ROUTE_POINTS_REDUX
+        ? [points[0], ...points.slice(-(MAX_ROUTE_POINTS_REDUX - 1))]
+        : points;
     },
     appendRoutePoint: (state, action: PayloadAction<RoutePoint>) => {
       state.routePoints.push(action.payload);
+      // Keep the start point as an anchor so the polyline doesn't lose its origin on long rides
+      if (state.routePoints.length > MAX_ROUTE_POINTS_REDUX) {
+        const first = state.routePoints[0];
+        state.routePoints = [first, ...state.routePoints.slice(-(MAX_ROUTE_POINTS_REDUX - 1))];
+      }
     },
     clearRoutePoints: (state) => {
       state.routePoints = [];

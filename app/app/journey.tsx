@@ -31,6 +31,7 @@ import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
 import { snapSinglePoint } from '../services/roads';
 import NavArrowMarker from '../components/NavArrowMarker';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 type MeasurementParts = { value: string; unit: string };
 
@@ -67,7 +68,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const { t } = useTranslation();
   const { currentJourney, isTracking, isMinimized } = useJourneyState();
   const stats = useJourneyStats();
-  const { convertDistance, convertSpeed, mapType } = useSettings();
+  const { convertDistance, convertSpeed, mapType, vehicle: settingsVehicle } = useSettings();
   const insets = useSafeAreaInsets();
 
   const mapRef = useRef<MapView>(null);
@@ -96,6 +97,7 @@ export default function JourneyScreen(): React.JSX.Element {
     longitudeDelta: 0.01,
   })).current;
   const markerRotation = useRef(new Animated.Value(currentLocation?.heading || 0)).current;
+  const lastHeadingRef = useRef<number>(0);
   const lastCameraUpdateRef = useRef<number>(0);
   const lastCameraSpeedRef = useRef<number>(0);
   const isManuallyPanningRef = useRef<boolean>(false);
@@ -128,31 +130,78 @@ export default function JourneyScreen(): React.JSX.Element {
     };
   }, [startIconAnimation]);
 
+  // Keep the screen awake while a journey is being tracked or paused.
+  // Release it as soon as tracking ends so the device can sleep normally.
+  useEffect(() => {
+    const shouldKeepAwake = isTracking || currentJourney?.status === 'paused';
+    const tag = 'wayfarian-journey';
+    if (shouldKeepAwake) {
+      activateKeepAwakeAsync(tag).catch(() => {});
+      return () => {
+        deactivateKeepAwake(tag);
+      };
+    }
+    return undefined;
+  }, [isTracking, currentJourney?.status]);
+
   // Handle Marker Animation & Smoothing
   useEffect(() => {
     if (!currentLocation) return;
 
     const targetLat = snappedLocation?.latitude ?? currentLocation.latitude;
     const targetLng = snappedLocation?.longitude ?? currentLocation.longitude;
-    const targetHeading = currentLocation.heading || 0;
 
-    // Smoothly animate the marker to the new position over 1 second (matches 1Hz interval)
+    // Compute heading: prefer valid GPS heading (needs speed > ~0.5 m/s to be trustworthy),
+    // otherwise compute bearing from last route point to current, else keep previous.
+    const gpsHeading = currentLocation.heading;
+    const gpsSpeed = currentLocation.speed || 0;
+    const gpsHasValidHeading =
+      typeof gpsHeading === 'number' && gpsHeading >= 0 && gpsSpeed > 0.8;
+
+    let targetHeading = lastHeadingRef.current;
+    if (gpsHasValidHeading) {
+      targetHeading = gpsHeading as number;
+    } else if (routePoints.length >= 2) {
+      const prev = routePoints[routePoints.length - 2];
+      const curr = routePoints[routePoints.length - 1];
+      const dLat = curr.latitude - prev.latitude;
+      const dLon = curr.longitude - prev.longitude;
+      // Only recompute if we actually moved a tiny bit
+      if (Math.abs(dLat) + Math.abs(dLon) > 1e-6) {
+        const y = Math.sin((dLon * Math.PI) / 180) * Math.cos((curr.latitude * Math.PI) / 180);
+        const x =
+          Math.cos((prev.latitude * Math.PI) / 180) * Math.sin((curr.latitude * Math.PI) / 180) -
+          Math.sin((prev.latitude * Math.PI) / 180) * Math.cos((curr.latitude * Math.PI) / 180) *
+            Math.cos((dLon * Math.PI) / 180);
+        const bearing = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+        targetHeading = bearing;
+      }
+    }
+
+    // Shortest-angle interpolation: avoid 359°→1° going the long way.
+    const prevHeading = lastHeadingRef.current;
+    let delta = targetHeading - prevHeading;
+    if (delta > 180) delta -= 360;
+    else if (delta < -180) delta += 360;
+    const unwrappedTarget = prevHeading + delta;
+    lastHeadingRef.current = ((targetHeading % 360) + 360) % 360;
+
+    // Smoothly animate the marker to the new position
     markerPosition.timing({
       latitude: targetLat,
       longitude: targetLng,
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
-      duration: 1000,
+      duration: 900,
       useNativeDriver: false,
-    } as any).start(); // Use any as a workaround for inconsistent react-native-maps typings
+    } as any).start();
 
-    // Smoothly animate rotation
     Animated.timing(markerRotation, {
-      toValue: targetHeading,
-      duration: 600,
+      toValue: unwrappedTarget,
+      duration: 400,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [currentLocation, snappedLocation, markerPosition, markerRotation]);
+  }, [currentLocation, snappedLocation, routePoints, markerPosition, markerRotation]);
 
   // Handle scheduled journey start via activeJourneyId param
   // This is triggered when user starts a scheduled journey from future-rides screen
@@ -198,20 +247,19 @@ export default function JourneyScreen(): React.JSX.Element {
     initScheduledJourney();
   }, [activeJourneyId, currentJourney?.id, isTracking, resumeActiveJourney, t]);
 
-  // Handle Immersive Camera Following & Road Snapping
+  // Handle Immersive Camera Following & Road Snapping.
+  // Throttled to every 2 seconds to stop fighting user gestures and reduce camera churn.
   useEffect(() => {
     if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
 
     const now = Date.now();
-    // Synchronize with 1Hz location updates (1000ms)
-    if (now - lastCameraUpdateRef.current < 1000) return;
+    if (now - lastCameraUpdateRef.current < 2000) return;
 
     const updateCamera = async () => {
       if (!mapRef.current) return;
 
       lastCameraUpdateRef.current = now;
 
-      // Real-time Road Snapping for the marker ONLY (Visual only)
       try {
         const snapped = await snapSinglePoint({
           latitude: currentLocation.latitude,
@@ -222,34 +270,34 @@ export default function JourneyScreen(): React.JSX.Element {
         // Silent
       }
 
-      // Pro Navigation: Smoothed speed-dependent zoom and pitch
       const rawSpeedKmh = (currentLocation.speed || 0) * 3.6;
-      // Exponential smoothing for the camera target to prevent "jumping"
       const smoothedSpeed = lastCameraSpeedRef.current + 0.2 * (rawSpeedKmh - lastCameraSpeedRef.current);
       lastCameraSpeedRef.current = smoothedSpeed;
 
       let targetZoom = 18;
       let targetPitch = 45;
-
-      if (smoothedSpeed > 80) { // High speed (Highway)
+      if (smoothedSpeed > 80) {
         targetZoom = 16.5;
         targetPitch = 55;
-      } else if (smoothedSpeed > 40) { // Medium speed (City)
+      } else if (smoothedSpeed > 40) {
         targetZoom = 17.5;
         targetPitch = 50;
       }
 
-      // Animate Camera to 3D Navigation View
+      // Use last computed heading (GPS when valid, bearing fallback otherwise).
+      // Falls back to 0 only on very first frame before any heading is computed.
+      const cameraHeading = lastHeadingRef.current;
+
       mapRef.current.animateCamera({
         center: {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
         },
         pitch: targetPitch,
-        heading: currentLocation.heading || 0, // Heading-up
+        heading: cameraHeading,
         altitude: smoothedSpeed > 60 ? 1000 : 600,
         zoom: targetZoom,
-      }, { duration: 1000 });
+      }, { duration: 900 });
     };
 
     updateCamera();
@@ -260,7 +308,11 @@ export default function JourneyScreen(): React.JSX.Element {
     if (!region && !currentJourney?.startLocation) {
       (async () => {
         try {
-          const { status } = await Location.requestForegroundPermissionsAsync();
+          let { status } = await Location.getForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            const req = await Location.requestForegroundPermissionsAsync();
+            status = req.status;
+          }
           if (status === 'granted') {
             // Try cache first for speed
             const lastKnown = await Location.getLastKnownPositionAsync();
@@ -423,7 +475,7 @@ export default function JourneyScreen(): React.JSX.Element {
     try {
       const success = await startJourney({
         title: t('journey.defaultTitle') || 'My Journey',
-        vehicle: 'car',
+        vehicle: settingsVehicle,
       });
       if (!success) {
         Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
@@ -635,8 +687,8 @@ export default function JourneyScreen(): React.JSX.Element {
                 tracksViewChanges={Platform.OS === 'android' ? false : undefined}
               >
                 <Animated.View style={{ transform: [{ rotate: markerRotation.interpolate({
-                  inputRange: [0, 360],
-                  outputRange: ['0deg', '360deg']
+                  inputRange: [-3600, 3600],
+                  outputRange: ['-3600deg', '3600deg'],
                 }) }] }}>
                   <NavArrowMarker size={44} />
                 </Animated.View>
@@ -785,11 +837,13 @@ export default function JourneyScreen(): React.JSX.Element {
                       longitude: currentLocation.longitude,
                     },
                     pitch: targetPitch,
-                    heading: currentLocation.heading || 0,
+                    heading: lastHeadingRef.current,
                     zoom: targetZoom,
                   }, { duration: 600 });
                 }
-              }} 
+                // Prime the throttle so the periodic effect doesn't snap again immediately
+                lastCameraUpdateRef.current = Date.now();
+              }}
               style={styles.recenterButton}
             >
               <MaterialIcons name="navigation" size={24} color="#000" />

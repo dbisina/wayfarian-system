@@ -19,10 +19,18 @@ const DWELL_SPEED_THRESHOLD_MPS = 1.0; // 1.0 m/s = 3.6 km/h
 const DWELL_THRESHOLD_MS = 5000; // 5 seconds stationary = dwelling
 
 // Speed calculation
-const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h
+const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h absolute ceiling (cars on highways)
 const MAX_ACCELERATION_MPS2 = 8.0; // Max realistic acceleration
 const SPEED_SMOOTHING_FACTOR = 0.4; // Smooth speed display
 const SPEED_DECAY_FACTOR = 0.4; // How fast speed drops to 0 when stopped
+
+// Per-vehicle top-speed cap (km/h). Any max-speed sample exceeding this is rejected as a GPS glitch.
+type VehicleKind = 'car' | 'bike' | 'scooter';
+const VEHICLE_MAX_SPEED_KMH: Record<VehicleKind, number> = {
+  car: 180,
+  bike: 50,
+  scooter: 80,
+};
 
 // Distance
 const MIN_ACCURACY_FOR_TRACKING = 30; // Accept GPS readings up to 30m accuracy
@@ -32,7 +40,11 @@ const JITTER_ACCURACY_MULTIPLIER = 0.5; // distance must be > accuracy * mutlipl
 const MIN_MOVE_METERS_FOR_SPEED = 2; // meters needed between points to trust a new speed calc
 
 // Max speed validation
-const MAX_SPEED_SAMPLES_REQUIRED = 2; // Require 2 sustained samples for max speed
+const MAX_SPEED_SAMPLES_REQUIRED = 4; // Require 4 sustained samples for max speed (stricter)
+
+// Cap polyline length to prevent memory bloat / render jank on very long rides.
+// 5000 points ≈ enough fidelity for a 100km+ ride without overloading the map renderer.
+const MAX_SNAPPED_PATH_POINTS = 5000;
 
 // Calculate distance between two points (Haversine formula)
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -64,7 +76,8 @@ export interface SnappedPoint {
   placeId: string;
 }
 
-export function useSmartTracking(isTracking: boolean) {
+export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'car') {
+  const vehicleSpeedCapKmh = VEHICLE_MAX_SPEED_KMH[vehicle] ?? VEHICLE_MAX_SPEED_KMH.car;
   const [liveRawLocation, setLiveRawLocation] = useState<SmartLocation | null>(null);
   const [officialSnappedPath, setOfficialSnappedPath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [officialDistance, setOfficialDistance] = useState<number>(0); // in km
@@ -97,6 +110,13 @@ export function useSmartTracking(isTracking: boolean) {
   const smoothedSpeedRef = useRef<number>(0);
   const highSpeedSamplesRef = useRef<number[]>([]);
 
+  // Position smoothing: lightweight EWMA that reduces stationary GPS drift.
+  // When moving fast we trust the raw GPS fix; when stopped we pin position to the
+  // smoothed value so the marker doesn't dance around on a parked bike.
+  const smoothedPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const lastGoodHeadingRef = useRef<number>(0);
+  const lastPositionTimestampRef = useRef<number>(0);
+
   // Flush buffer to Google Roads API
   const flushBufferToRoadsAPI = useCallback(async () => {
     if (bufferRef.current.length < 2) return;
@@ -109,10 +129,10 @@ export function useSmartTracking(isTracking: boolean) {
 
     if (!GOOGLE_MAPS_API_KEY) {
       // No API key - just use raw points for the path display
-      setOfficialSnappedPath(prev => [
-        ...prev,
-        ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
-      ]);
+      setOfficialSnappedPath(prev => {
+        const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
+        return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
+      });
       // Distance stays as Haversine (already accumulated in real-time)
       return;
     }
@@ -130,7 +150,10 @@ export function useSmartTracking(isTracking: boolean) {
           longitude: p.location.longitude
         }));
 
-        setOfficialSnappedPath(prev => [...prev, ...newSnappedPoints]);
+        setOfficialSnappedPath(prev => {
+          const merged = [...prev, ...newSnappedPoints];
+          return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
+        });
 
         // Calculate snapped segment distance
         let segmentDist = 0;
@@ -147,19 +170,19 @@ export function useSmartTracking(isTracking: boolean) {
         setOfficialDistance(roadsApiDistanceRef.current);
       } else {
         // Roads API returned no points - fall back, append raw points for path
-        setOfficialSnappedPath(prev => [
-          ...prev,
-          ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
-        ]);
+        setOfficialSnappedPath(prev => {
+          const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
+          return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
+        });
         // Keep using Haversine distance
         setOfficialDistance(haversineDistanceRef.current);
       }
     } catch (error) {
       // Roads API failed - append raw points for path display
-      setOfficialSnappedPath(prev => [
-        ...prev,
-        ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))
-      ]);
+      setOfficialSnappedPath(prev => {
+        const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
+        return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
+      });
       // Keep using Haversine distance
       setOfficialDistance(haversineDistanceRef.current);
     }
@@ -261,35 +284,69 @@ export function useSmartTracking(isTracking: boolean) {
     }
     smoothedSpeedRef.current = displaySpeedMps;
 
+    // === POSITION SMOOTHING ===
+    // Blend the new fix with the previous smoothed position. Alpha scales with speed
+    // and accuracy: fast + accurate → trust the new point; slow + noisy → hold steady.
+    // This cuts "dancing marker" drift at rest without adding visible lag while riding.
+    let displayLat = latitude;
+    let displayLng = longitude;
+    if (smoothedPositionRef.current) {
+      const accuracyPenalty = Math.min(1, (accuracy || 10) / 30); // 0 = perfect, 1 = borderline
+      const speedBoost = Math.min(1, rawSpeedMps / 5); // moving ≥5 m/s → full trust in new point
+      // Base alpha 0.25 when stationary, up to ~0.85 at speed.
+      const alpha = Math.max(0.2, Math.min(0.85, 0.25 + speedBoost * 0.6 - accuracyPenalty * 0.15));
+      displayLat = smoothedPositionRef.current.latitude + alpha * (latitude - smoothedPositionRef.current.latitude);
+      displayLng = smoothedPositionRef.current.longitude + alpha * (longitude - smoothedPositionRef.current.longitude);
+    }
+    smoothedPositionRef.current = { latitude: displayLat, longitude: displayLng };
+
+    // Heading fallback: GPS heading is garbage at low speed. When moving, trust it.
+    // Otherwise keep the last known good heading so the marker doesn't snap around.
+    let displayHeading = lastGoodHeadingRef.current;
+    if (heading !== null && heading !== undefined && heading >= 0 && rawSpeedMps > 1.5) {
+      lastGoodHeadingRef.current = heading;
+      displayHeading = heading;
+    }
+    lastPositionTimestampRef.current = timestamp;
+
     // === EMIT LOCATION ===
     const smartLoc: SmartLocation = {
-      latitude,
-      longitude,
+      latitude: displayLat,
+      longitude: displayLng,
       speed: displaySpeedMps,
-      heading: heading || 0,
+      heading: displayHeading,
       timestamp,
       accuracy: accuracy || 0
     };
     setLiveRawLocation(smartLoc);
 
     // === MAX SPEED ===
+    // Vehicle-aware cap + stricter sample validation. We reject any sample above the cap
+    // outright (so a GPS glitch to 250 km/h on a bike never becomes the top speed), and we
+    // require MAX_SPEED_SAMPLES_REQUIRED sustained samples before promoting a new max.
     if (filteredSpeed > 0) {
       const speedKmh = filteredSpeed * 3.6;
-      const currentMax = maxSpeedRef.current;
-      if (speedKmh > currentMax * 0.9 || speedKmh > 40) {
-        highSpeedSamplesRef.current.push(speedKmh);
-        if (highSpeedSamplesRef.current.length > 5) {
-          highSpeedSamplesRef.current.shift();
+      if (speedKmh <= vehicleSpeedCapKmh) {
+        const currentMax = maxSpeedRef.current;
+        if (speedKmh > currentMax * 0.9 || speedKmh > 20) {
+          highSpeedSamplesRef.current.push(speedKmh);
+          if (highSpeedSamplesRef.current.length > 8) {
+            highSpeedSamplesRef.current.shift();
+          }
+          const recentHighSamples = highSpeedSamplesRef.current.filter(s => s >= speedKmh * 0.85);
+          if (recentHighSamples.length >= MAX_SPEED_SAMPLES_REQUIRED && speedKmh > currentMax) {
+            const sorted = [...recentHighSamples].sort((a, b) => a - b);
+            const medianSpeed = sorted[Math.floor(sorted.length / 2)];
+            // Clamp the promoted max to the vehicle cap as a final safety.
+            const newMax = Math.min(vehicleSpeedCapKmh, Math.max(currentMax, medianSpeed));
+            maxSpeedRef.current = newMax;
+            setMaxSpeed(newMax);
+          }
+        } else if (speedKmh < currentMax * 0.5) {
+          highSpeedSamplesRef.current = [];
         }
-        const recentHighSamples = highSpeedSamplesRef.current.filter(s => s >= speedKmh * 0.85);
-        if (recentHighSamples.length >= MAX_SPEED_SAMPLES_REQUIRED && speedKmh > currentMax) {
-          const sorted = [...recentHighSamples].sort((a, b) => a - b);
-          const medianSpeed = sorted[Math.floor(sorted.length / 2)];
-          const newMax = Math.max(currentMax, medianSpeed);
-          maxSpeedRef.current = newMax;
-          setMaxSpeed(newMax);
-        }
-      } else if (speedKmh < currentMax * 0.5) {
+      } else {
+        // Sample exceeded the vehicle cap — treat as a glitch and reset sustainment buffer.
         highSpeedSamplesRef.current = [];
       }
     }
@@ -399,11 +456,20 @@ export function useSmartTracking(isTracking: boolean) {
         roadsApiDistanceRef.current = 0;
         roadsApiActiveRef.current = false;
         lastAccumulationPointRef.current = null;
+
+        // Reset position smoothing on new journey
+        smoothedPositionRef.current = null;
+        lastGoodHeadingRef.current = 0;
+        lastPositionTimestampRef.current = 0;
       }
       prevIsTrackingRef.current = true;
 
       const start = async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        let { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
+        }
         if (status !== 'granted') {
           return;
         }

@@ -17,6 +17,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import LocationPicker from '../components/LocationPicker';
 import { useJourney } from '../contexts/JourneyContext';
+import { useSettings, Vehicle } from '../contexts/SettingsContext';
 
 interface LocationData {
   latitude: number;
@@ -27,6 +28,7 @@ interface LocationData {
 
 export default function NewJourneyScreen() {
   const { startJourney, saveJourney } = useJourney();
+  const { vehicle: savedVehicle, setVehicle: persistVehicle } = useSettings();
   const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
@@ -36,7 +38,17 @@ export default function NewJourneyScreen() {
   const [notes, setNotes] = useState('');
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [vehicle, setVehicleLocal] = useState<Vehicle>(savedVehicle);
   const keyboardVerticalOffset = Platform.select({ ios: 100, android: 140 }) ?? 0;
+
+  useEffect(() => {
+    setVehicleLocal(savedVehicle);
+  }, [savedVehicle]);
+
+  const handleVehicleChange = (v: Vehicle) => {
+    setVehicleLocal(v);
+    persistVehicle(v).catch(() => {});
+  };
 
   // Get current location for better autocomplete results
   useEffect(() => {
@@ -45,7 +57,11 @@ export default function NewJourneyScreen() {
 
   const getCurrentLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
       if (status !== 'granted') {
         console.warn('Location permission not granted');
         return;
@@ -82,7 +98,7 @@ export default function NewJourneyScreen() {
           longitude: endLocation.longitude,
           address: endLocation.address,
         },
-        vehicle: 'car', // You could add a vehicle selector
+        vehicle,
         ...(groupId ? { groupId: String(groupId) } : {}),
       });
 
@@ -121,7 +137,7 @@ export default function NewJourneyScreen() {
           longitude: endLocation.longitude,
           address: endLocation.address,
         } : undefined,
-        vehicle: 'car',
+        vehicle,
         ...(groupId ? { groupId: String(groupId) } : {}),
         startTime: startDateTime.toISOString(),
         notes,
@@ -310,6 +326,34 @@ export default function NewJourneyScreen() {
             />
           </View>
         )}
+
+        {/* Vehicle Selector */}
+        <View style={styles.vehicleContainer}>
+          <Text style={styles.vehicleLabel}>Vehicle</Text>
+          <View style={styles.vehicleRow}>
+            {(['car', 'bike', 'scooter'] as Vehicle[]).map((v) => {
+              const selected = vehicle === v;
+              const icon = v === 'car' ? 'directions-car' : v === 'bike' ? 'pedal-bike' : 'two-wheeler';
+              return (
+                <TouchableOpacity
+                  key={v}
+                  style={[styles.vehicleOption, selected && styles.vehicleOptionSelected]}
+                  onPress={() => handleVehicleChange(v)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons
+                    name={icon as any}
+                    size={22}
+                    color={selected ? '#000000' : '#666666'}
+                  />
+                  <Text style={[styles.vehicleOptionText, selected && styles.vehicleOptionTextSelected]}>
+                    {v === 'scooter' ? 'Scooty' : v.charAt(0).toUpperCase() + v.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
         {/* Notes/Description */}
         <View style={styles.notesContainer}>
@@ -521,5 +565,51 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#F4A020',
     fontFamily: 'Poppins',
+  },
+  vehicleContainer: {
+    marginBottom: 20,
+  },
+  vehicleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    fontFamily: 'Poppins',
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  vehicleOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  vehicleOptionSelected: {
+    borderColor: '#F4E04D',
+    backgroundColor: '#FFFBE6',
+  },
+  vehicleOptionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666666',
+    fontFamily: 'Poppins',
+  },
+  vehicleOptionTextSelected: {
+    color: '#000000',
+    fontWeight: '600',
   },
 });

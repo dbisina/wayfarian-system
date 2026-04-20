@@ -69,7 +69,10 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Wayfarian to use your location to track your journey and show your position on the map."
+          "locationAlwaysAndWhenInUsePermission": "Wayfarian collects location data to enable journey tracking, distance and speed stats, real-time group ride sharing, and persistent live-activity notifications — even when the app is closed or not in use.",
+          "locationWhenInUsePermission": "Wayfarian uses your location to track your journey and show your position on the map.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

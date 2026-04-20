@@ -643,20 +643,6 @@ const JourneyDetailScreen = (): React.JSX.Element => {
         >
           <View style={styles.photoViewerContainer}>
             <StatusBar barStyle="light-content" />
-            
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={closePhotoViewer}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
-
-            <View style={styles.photoCounter}>
-              <Text style={styles.photoCounterText}>
-                {selectedPhotoIndex + 1} / {journeyPhotos.length}
-              </Text>
-            </View>
 
             <FlatList
               data={journeyPhotos}
@@ -697,6 +683,25 @@ const JourneyDetailScreen = (): React.JSX.Element => {
                 setSelectedPhotoIndex(index);
               }}
             />
+
+            {/* Photo counter and close button rendered AFTER the FlatList so they paint
+                on top on Android (where z-index alone isn't reliable without elevation). */}
+            <View style={styles.photoCounter} pointerEvents="none">
+              <Text style={styles.photoCounterText}>
+                {selectedPhotoIndex + 1} / {journeyPhotos.length}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={closePhotoViewer}
+              activeOpacity={0.7}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close') || 'Close'}
+            >
+              <Ionicons name="close" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </Modal>
       )}
@@ -1148,12 +1153,13 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     top: 50,
-    right: 20,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    right: 16,
+    zIndex: 100,
+    elevation: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -50,7 +50,11 @@ export default function JourneyCamera({
   }, [mediaPermission, requestMediaPermission]);
 
   const ensureLocationPermission = useCallback(async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    let { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      const req = await Location.requestForegroundPermissionsAsync();
+      status = req.status;
+    }
     if (status !== 'granted') {
       Alert.alert(t('components.journeyCamera.permissionRequired'), t('components.journeyCamera.locationNeeded'));
       throw new Error(t('components.journeyCamera.locationDenied'));
