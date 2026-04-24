@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import LocationPicker from '../components/LocationPicker';
 import { useJourney } from '../contexts/JourneyContext';
@@ -44,6 +44,20 @@ export default function NewJourneyScreen() {
   useEffect(() => {
     setVehicleLocal(savedVehicle);
   }, [savedVehicle]);
+
+  // Reset form fields every time the screen gains focus. Without this, if a user
+  // cancels/navigates away mid-edit and comes back for a new journey, old values
+  // (especially the destination) can linger — which matches the reported bug of
+  // "previous destination sticking" after completing a journey.
+  useFocusEffect(
+    useCallback(() => {
+      setJourneyName('');
+      setStartLocation(null);
+      setEndLocation(null);
+      setNotes('');
+      setStartDateTime(new Date());
+    }, [])
+  );
 
   const handleVehicleChange = (v: Vehicle) => {
     setVehicleLocal(v);

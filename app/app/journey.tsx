@@ -101,6 +101,12 @@ export default function JourneyScreen(): React.JSX.Element {
   const lastCameraUpdateRef = useRef<number>(0);
   const lastCameraSpeedRef = useRef<number>(0);
   const isManuallyPanningRef = useRef<boolean>(false);
+  // Timestamp of the last user map gesture. Used to keep auto-follow suppressed for a few
+  // seconds AFTER the gesture ends — otherwise the user pinches to zoom out, lifts their
+  // finger, and the 2s camera-follow immediately animates back to nav zoom (looks like the
+  // map "fights" them). onTouchStart flips the ref synchronously so the next GPS tick
+  // can't interrupt an in-progress gesture.
+  const lastUserGestureAtRef = useRef<number>(0);
   const lastMilestoneRef = useRef(0);
   const startIconAnimation = useRef(new Animated.Value(0)).current;
 
@@ -254,6 +260,9 @@ export default function JourneyScreen(): React.JSX.Element {
 
     const now = Date.now();
     if (now - lastCameraUpdateRef.current < 2000) return;
+    // Cooldown after any user touch — prevents a lingering follow animation from
+    // yanking zoom/heading back while the user is still interacting (pinch, pan, rotate).
+    if (now - lastUserGestureAtRef.current < 3000) return;
 
     const updateCamera = async () => {
       if (!mapRef.current) return;
@@ -615,6 +624,7 @@ export default function JourneyScreen(): React.JSX.Element {
             {currentJourney?.endLocation &&
             GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
+                key={`dir-min-${currentJourney.id}-${currentJourney.endLocation.latitude},${currentJourney.endLocation.longitude}`}
                 origin={
                   routePoints.length > 0
                     ? {
@@ -669,10 +679,22 @@ export default function JourneyScreen(): React.JSX.Element {
             showsBuildings
             showsIndoors={false}
             mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
+            onTouchStart={() => {
+              // Flip synchronously so the next camera-follow tick can't interrupt the
+              // in-progress gesture. onRegionChangeComplete only fires AFTER release —
+              // by then animateCamera may have already yanked zoom back mid-pinch.
+              isManuallyPanningRef.current = true;
+              lastUserGestureAtRef.current = Date.now();
+              setIsNavigationMode(false);
+            }}
+            onPanDrag={() => {
+              // Android pan coverage — keeps the cooldown sliding during active drag.
+              lastUserGestureAtRef.current = Date.now();
+            }}
             onRegionChangeComplete={(r, { isGesture }) => {
-              // Only disable navigation mode if the user actually manually interacted with the map
               if (isGesture) {
                 isManuallyPanningRef.current = true;
+                lastUserGestureAtRef.current = Date.now();
                 setIsNavigationMode(false);
                 setRegion(r); // Trigger re-render only on manual interaction
               }
@@ -697,6 +719,7 @@ export default function JourneyScreen(): React.JSX.Element {
             {currentJourney?.endLocation &&
             GOOGLE_MAPS_API_KEY ? (
               <MapViewDirections
+                key={`dir-nav-${currentJourney.id}-${currentJourney.endLocation.latitude},${currentJourney.endLocation.longitude}`}
                 origin={
                   routePoints.length > 0
                     ? {
@@ -813,9 +836,12 @@ export default function JourneyScreen(): React.JSX.Element {
 
           {/* Recenter Button (Navigation Mode) */}
           {!isNavigationMode && isTracking && (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
                 isManuallyPanningRef.current = false;
+                // Reset gesture cooldown so the follow effect isn't held off after the
+                // user explicitly asks to re-enter navigation mode.
+                lastUserGestureAtRef.current = 0;
                 setIsNavigationMode(true);
                 // Instant sync animation when recentering
                 if (mapRef.current && currentLocation) {

@@ -960,13 +960,21 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
             await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
 
-            // Retry the start immediately — no user prompt needed
+            // Retry the start immediately — no user prompt needed.
+            // IMPORTANT: forward the user's chosen endLocation so the new journey has
+            // the new destination, not inherits nothing (which made the UI fall back to
+            // stale Redux/backend data showing the previous destination).
             response = await journeyAPI.startJourney({
               vehicle: journeyData.vehicle || 'car',
               title: journeyData.title || 'My Journey',
               groupId: journeyData.groupId,
               startLatitude: location.coords.latitude,
               startLongitude: location.coords.longitude,
+              ...(journeyData.endLocation ? {
+                endLatitude: journeyData.endLocation.latitude,
+                endLongitude: journeyData.endLocation.longitude,
+                endAddress: journeyData.endLocation.address,
+              } : {}),
             });
           } else {
           // Journey looks legitimate — ask the user
