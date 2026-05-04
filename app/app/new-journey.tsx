@@ -72,12 +72,9 @@ export default function NewJourneyScreen() {
   const getCurrentLocation = async () => {
     try {
       let { status } = await Location.getForegroundPermissionsAsync();
+      // Do not eagerly prompt here, Google Play prominent disclosure policy compliance
       if (status !== 'granted') {
-        const req = await Location.requestForegroundPermissionsAsync();
-        status = req.status;
-      }
-      if (status !== 'granted') {
-        console.warn('Location permission not granted');
+        console.warn('Location permission not granted. Map features might be limited until a ride starts.');
         return;
       }
 

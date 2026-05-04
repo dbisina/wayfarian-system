@@ -318,10 +318,9 @@ export default function JourneyScreen(): React.JSX.Element {
       (async () => {
         try {
           let { status } = await Location.getForegroundPermissionsAsync();
-          if (status !== 'granted') {
-            const req = await Location.requestForegroundPermissionsAsync();
-            status = req.status;
-          }
+          // Do NOT automatically request foreground permissions here 
+          // (Google Play prominent disclosure policy compliance).
+          // Permissions will be requested when user taps "Start Ride".
           if (status === 'granted') {
             // Try cache first for speed
             const lastKnown = await Location.getLastKnownPositionAsync();

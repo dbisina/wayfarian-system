@@ -856,14 +856,6 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }));
       dispatch(clearRoutePoints());
 
-      // STEP 1: Permission check — typically instant if already granted.
-      // Check current status first; only prompt the user if not granted.
-      let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
-      if (fgStatus !== 'granted') {
-        fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
-      }
-      if (fgStatus !== 'granted') throw new Error('Location permission denied');
-
       // Android Background Location Policy Compliance.
       // Prominent Disclosure must be shown BEFORE any background location access.
       // We show it at least once per install, regardless of whether the system has already
@@ -872,12 +864,20 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === 'android') {
         const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
         const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
+        const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-        if (accepted !== '1' || bgStatus !== 'granted') {
+        if (fgStatus !== 'granted' || bgStatus !== 'granted' || accepted !== '1') {
           setPendingJourneyData(journeyData);
           setShowLocationDisclosure(true);
           return false; // UI will re-invoke startJourney after acceptance
         }
+      } else {
+        // iOS or Web: standard foreground request first
+        let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
+        if (fgStatus !== 'granted') {
+          fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
+        }
+        if (fgStatus !== 'granted') throw new Error('Location permission denied');
       }
 
       // STEP 2: Get location FAST using layered strategy
@@ -1726,20 +1726,34 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           try {
             await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
           } catch {}
-          const current = await Location.getBackgroundPermissionsAsync();
-          let bgStatus = current.status;
-          if (bgStatus !== 'granted') {
-            const req = await Location.requestBackgroundPermissionsAsync();
-            bgStatus = req.status;
+          
+          let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
+          if (fgStatus !== 'granted') {
+            const fgReq = await Location.requestForegroundPermissionsAsync();
+            fgStatus = fgReq.status;
           }
-          if (bgStatus === 'granted' && pendingJourneyData) {
-            startJourney(pendingJourneyData);
+
+          if (fgStatus === 'granted') {
+            const bgCurrent = await Location.getBackgroundPermissionsAsync();
+            let bgStatus = bgCurrent.status;
+            if (bgStatus !== 'granted') {
+              const bgReq = await Location.requestBackgroundPermissionsAsync();
+              bgStatus = bgReq.status;
+            }
+            if (bgStatus === 'granted' && pendingJourneyData) {
+              startJourney(pendingJourneyData);
+            } else {
+              console.warn('[JourneyContext] Background location permission denied after disclosure');
+              Alert.alert(
+                'Permission Required',
+                'Background location is required to track your journey accurately. Please enable it in Settings.'
+              );
+            }
           } else {
-            console.warn('[JourneyContext] Background location permission denied after disclosure');
-            Alert.alert(
-              'Permission Required',
-              'Background location is required to track your journey accurately. Please enable it in Settings.'
-            );
+             Alert.alert(
+               'Permission Required',
+               'Foreground location permission is required to track your journey.'
+             );
           }
           setPendingJourneyData(null);
         }}

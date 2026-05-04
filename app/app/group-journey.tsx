@@ -292,16 +292,28 @@ export default function GroupJourneyScreen() {
 
     (async () => {
       try {
-        let { status } = await Location.getForegroundPermissionsAsync();
-        if (!isMounted) return;
-        if (status !== 'granted') {
-          const req = await Location.requestForegroundPermissionsAsync();
+        if (Platform.OS === 'android') {
+          const accepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
+          const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+          const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+          if (fgStatus !== 'granted' || bgStatus !== 'granted' || accepted !== '1') {
+            setShowLocationDisclosure(true);
+            if (isMounted) setIsLocatingUser(false);
+            return;
+          }
+        } else {
+          let { status } = await Location.getForegroundPermissionsAsync();
           if (!isMounted) return;
-          status = req.status;
-        }
-        if (status !== 'granted') {
-          setLocationError(t('groupJourney.locationPermissionDenied'));
-          return;
+          if (status !== 'granted') {
+            const req = await Location.requestForegroundPermissionsAsync();
+            if (!isMounted) return;
+            status = req.status;
+          }
+          if (status !== 'granted') {
+            if (isMounted) setLocationError(t('groupJourney.locationPermissionDenied'));
+            if (isMounted) setIsLocatingUser(false);
+            return;
+          }
         }
 
         const current = await Location.getCurrentPositionAsync({});
@@ -727,8 +739,9 @@ export default function GroupJourneyScreen() {
     // once per install so Play reviewers see it even when permission is pre-granted.
     if (Platform.OS === 'android') {
       const accepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
+      const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
       const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-      if (accepted !== '1' || bgStatus !== 'granted') {
+      if (fgStatus !== 'granted' || bgStatus !== 'granted' || accepted !== '1') {
         setShowLocationDisclosure(true);
         return;
       }
@@ -1123,19 +1136,33 @@ export default function GroupJourneyScreen() {
           try {
             await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
           } catch {}
-          const current = await Location.getBackgroundPermissionsAsync();
-          let bgStatus = current.status;
-          if (bgStatus !== 'granted') {
-            const req = await Location.requestBackgroundPermissionsAsync();
-            bgStatus = req.status;
+
+          let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
+          if (fgStatus !== 'granted') {
+            const fgReq = await Location.requestForegroundPermissionsAsync();
+            fgStatus = fgReq.status;
           }
-          if (bgStatus === 'granted') {
-            handleStartInstance();
+
+          if (fgStatus === 'granted') {
+            const current = await Location.getBackgroundPermissionsAsync();
+            let bgStatus = current.status;
+            if (bgStatus !== 'granted') {
+              const req = await Location.requestBackgroundPermissionsAsync();
+              bgStatus = req.status;
+            }
+            if (bgStatus === 'granted') {
+              handleStartInstance();
+            } else {
+              Alert.alert(
+                t('alerts.permissionRequired'),
+                'Background location is required to track your journey accurately. Please enable it in Settings.'
+              );
+            }
           } else {
-            Alert.alert(
-              t('alerts.permissionRequired'),
-              'Background location is required to track your journey accurately. Please enable it in Settings.'
-            );
+             Alert.alert(
+               t('alerts.permissionRequired'),
+               'Foreground location permission is required to track your journey.'
+             );
           }
         }}
         onDecline={() => setShowLocationDisclosure(false)}

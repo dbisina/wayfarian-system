@@ -355,10 +355,8 @@ export default function GroupDetailScreen() {
     (async () => {
       try {
         let { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          const req = await Location.requestForegroundPermissionsAsync();
-          status = req.status;
-        }
+        // Do NOT automatically request foreground permissions here 
+        // to comply with Google Play prominent disclosure policy.
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({});
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
@@ -497,14 +495,28 @@ export default function GroupDetailScreen() {
               try {
                 // Get current location
                 let { status } = await Location.getForegroundPermissionsAsync();
-                if (status !== 'granted') {
-                  const req = await Location.requestForegroundPermissionsAsync();
-                  status = req.status;
-                }
-                if (status !== 'granted') {
-                  Alert.alert('Permission needed', 'Location permission is required to start riding');
-                  setIsStartingRiding(false);
-                  return;
+                
+                if (Platform.OS === 'android') {
+                  const accepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
+                  if (status !== 'granted' || accepted !== '1') {
+                    // Let group-journey handle the prominent disclosure flow
+                    setActiveSoloJourney(null);
+                    router.replace({
+                      pathname: '/group-journey',
+                      params: { groupJourneyId: String(activeGroupJourneyId) }
+                    });
+                    return;
+                  }
+                } else {
+                  if (status !== 'granted') {
+                    const req = await Location.requestForegroundPermissionsAsync();
+                    status = req.status;
+                  }
+                  if (status !== 'granted') {
+                    Alert.alert('Permission needed', 'Location permission is required to start riding');
+                    setIsStartingRiding(false);
+                    return;
+                  }
                 }
 
                 const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
@@ -548,13 +560,26 @@ export default function GroupDetailScreen() {
     try {
       // Get current location
       let { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        const req = await Location.requestForegroundPermissionsAsync();
-        status = req.status;
-      }
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Location permission is required to start riding');
-        return;
+      
+      if (Platform.OS === 'android') {
+        const accepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
+        if (status !== 'granted' || accepted !== '1') {
+          // Send to group-journey.tsx so the disclosure modal pops up correctly
+          router.replace({
+            pathname: '/group-journey',
+            params: { groupJourneyId: String(activeGroupJourneyId) }
+          });
+          return;
+        }
+      } else {
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
+        }
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Location permission is required to start riding');
+          return;
+        }
       }
 
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });

@@ -100,7 +100,7 @@ export default function MapScreen(): React.JSX.Element {
   }, [location]);
 
   useEffect(() => {
-    getCurrentLocation();
+    getCurrentLocation(false);
     fetchMapJourneys();
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -119,10 +119,10 @@ export default function MapScreen(): React.JSX.Element {
     }
   };
 
-  const getCurrentLocation = async () => {
+  const getCurrentLocation = async (promptIfMissing = true) => {
     try {
       let { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      if (status !== 'granted' && promptIfMissing) {
         const req = await Location.requestForegroundPermissionsAsync();
         status = req.status;
       }
@@ -539,7 +539,7 @@ export default function MapScreen(): React.JSX.Element {
 
       <TouchableOpacity
         style={[styles.floatingButton, { bottom: insets.bottom + 90 }]}
-        onPress={getCurrentLocation}
+        onPress={() => getCurrentLocation(true)}
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
