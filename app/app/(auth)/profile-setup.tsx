@@ -27,6 +27,8 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { COUNTRIES, getCountryByCode } from '../../constants/countries';
 import { LANGUAGES, saveLanguagePreference } from '../../i18n';
 import { userAPI, getCurrentApiUrl, getAuthToken } from '../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BackgroundLocationDisclosureModal from '../../components/BackgroundLocationDisclosureModal';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -47,6 +49,7 @@ export default function ProfileSetupScreen() {
   const [countrySearchQuery, setCountrySearchQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showDisclosureModal, setShowDisclosureModal] = useState(false);
 
   // Pre-fill from user data
   useEffect(() => {
@@ -150,7 +153,7 @@ export default function ProfileSetupScreen() {
   const handleContinue = async () => {
     try {
       setSaving(true);
-      
+
       // Save profile data
       await userAPI.updateProfile({
         displayName: displayName.trim() || 'Wayfarian User',
@@ -160,18 +163,37 @@ export default function ProfileSetupScreen() {
 
       // Save units preference
       setUnits(selectedUnits);
-      
+
       // Mark profile setup as complete
       await completeProfileSetup();
-      
-      // Navigate to main app
-      router.replace('/(tabs)');
+
+      // Check if disclosure already accepted (e.g. re-onboarding edge case)
+      const alreadyAccepted = await AsyncStorage.getItem('bg_location_disclosure_accepted_v1');
+      if (alreadyAccepted) {
+        router.replace('/(tabs)');
+      } else {
+        // Show background location disclosure before entering the app
+        setShowDisclosureModal(true);
+      }
     } catch (error) {
       if (__DEV__) console.error('Profile setup error:', error);
       Alert.alert(t('alerts.error'), t('profileSetup.errors.saveFailed', 'Failed to save profile. Please try again.'));
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDisclosureAccept = async () => {
+    await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
+    setShowDisclosureModal(false);
+    // Prompt to add first vehicle during onboarding
+    router.replace('/add-vehicle?fromOnboarding=1');
+  };
+
+  const handleDisclosureDecline = () => {
+    setShowDisclosureModal(false);
+    // Skip disclosure — still allow entry but prompt vehicle add
+    router.replace('/add-vehicle?fromOnboarding=1');
   };
 
   return (
@@ -402,6 +424,13 @@ export default function ProfileSetupScreen() {
           </TouchableOpacity>
         </ScrollView>
       </View>
+
+      {/* Background Location Disclosure — shown once after first profile setup */}
+      <BackgroundLocationDisclosureModal
+        visible={showDisclosureModal}
+        onAccept={handleDisclosureAccept}
+        onDecline={handleDisclosureDecline}
+      />
 
       {/* Country Picker Modal */}
       <Modal

@@ -262,10 +262,14 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       accuracy: 0,
       altitude: 0
     }));
-    
-    // If we have a live location that isn't snapped yet, maybe append it?
-    // For now, let's stick to the official path to avoid "jagged" lines.
-    dispatch(setRoutePoints(newRoutePoints));
+
+    // Prepend background gap points (collected while app was suspended) before the new snap.
+    // After the first snap that includes them, the ref is cleared so they aren't re-prepended.
+    const combined = bgMergedRoutePointsRef.current.length > 0
+      ? [...bgMergedRoutePointsRef.current, ...newRoutePoints]
+      : newRoutePoints;
+    bgMergedRoutePointsRef.current = [];
+    dispatch(setRoutePoints(combined));
 
   }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, officialSnappedPath, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
 
@@ -405,6 +409,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   // AppState listener for app foreground/background detection
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const lastRecoveryRef = useRef<number>(0);
+  // Route points collected by background task while app was suspended (fills polyline gap on resume)
+  const bgMergedRoutePointsRef = useRef<RoutePoint[]>([]);
   
   // Recovery function to restore journey state from background/backend
   const recoverJourneyOnForeground = useCallback(async () => {
@@ -637,6 +643,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         destinationName: journey.endLocation?.address || 'Destination',
         currentLatitude: liveRawLocation?.latitude,
         currentLongitude: liveRawLocation?.longitude,
+        units: distanceUnit === 'mi' ? 'mi' : 'km',
       };
 
       // Reset throttle so this sends immediately
@@ -647,7 +654,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       console.error('[JourneyContext] Error syncing to background:', error);
     }
   }, [journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime,
-      officialDistance, movingTime, maxSpeed, avgSpeed, derivedStats.currentSpeed, liveRawLocation]);
+      officialDistance, movingTime, maxSpeed, avgSpeed, derivedStats.currentSpeed, liveRawLocation, distanceUnit]);
 
   // Merge background state when app returns to foreground
   const mergeBackgroundStateOnForeground = useCallback(async () => {
@@ -660,18 +667,27 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       console.log('[JourneyContext] Merging background state - BG distance:', bgState.totalDistance.toFixed(2),
         'FG distance:', officialDistance.toFixed(2));
 
-      // If background accumulated more distance than foreground has
-      // (because background kept tracking while app was suspended),
-      // we need to sync the background's persisted state so the next
-      // foreground GPS readings build on top of it.
-      // The foreground smart tracking will naturally pick up from current position.
+      // If background tracked new points while suspended, store them so the next
+      // Roads API snap flush can prepend them — this fills the polyline gap.
+      if (bgState.totalDistance > officialDistance && bgState.routePoints.length > 1) {
+        const gapPoints: RoutePoint[] = bgState.routePoints.map(p => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+          timestamp: p.timestamp,
+          speed: p.speed || 0,
+          accuracy: 0,
+          altitude: 0,
+        }));
+        bgMergedRoutePointsRef.current = gapPoints;
+        // Dispatch immediately so the gap shows right away (will be replaced by next snap)
+        dispatch(setRoutePoints([...routePoints, ...gapPoints]));
+      }
 
-      // Also re-trigger an immediate Live Activity update with fresh foreground data
       liveNotificationThrottleRef.current = 0;
     } catch (error) {
       console.error('[JourneyContext] Error merging background state:', error);
     }
-  }, [journeyState.isTracking, journeyState.currentJourney, officialDistance]);
+  }, [journeyState.isTracking, journeyState.currentJourney, officialDistance, routePoints, dispatch]);
 
   // Listen for AppState changes
   useEffect(() => {
@@ -857,19 +873,26 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(clearRoutePoints());
 
       // Android Background Location Policy Compliance.
-      // Prominent Disclosure must be shown BEFORE any background location access.
-      // We show it at least once per install, regardless of whether the system has already
-      // granted ACCESS_BACKGROUND_LOCATION — this guarantees reviewers see it even if they
-      // pre-grant the permission in device settings.
+      // Prominent Disclosure must be shown BEFORE ANY background location permission
+      // access — including getBackgroundPermissionsAsync(). Checking permissions before
+      // the disclosure is itself a policy violation Google's scanner can detect.
+      // So we gate ONLY on the accepted flag; all permission checks happen in onAccept.
       if (Platform.OS === 'android') {
         const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
         const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
-        const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
-        const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-        if (fgStatus !== 'granted' || bgStatus !== 'granted' || accepted !== '1') {
+        if (accepted !== '1') {
           setPendingJourneyData(journeyData);
           setShowLocationDisclosure(true);
           return false; // UI will re-invoke startJourney after acceptance
+        }
+        // Disclosure accepted — ensure permissions are still granted before proceeding.
+        const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+        const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+        if (fgStatus !== 'granted' || bgStatus !== 'granted') {
+          // Permissions were revoked after disclosure was accepted — re-request.
+          setPendingJourneyData(journeyData);
+          setShowLocationDisclosure(true);
+          return false;
         }
       } else {
         // iOS or Web: standard foreground request first
@@ -903,6 +926,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       try {
         response = await journeyAPI.startJourney({
           vehicle: journeyData.vehicle || 'car',
+          vehicleId: journeyData.vehicleId,
+          vehicleName: journeyData.vehicleName,
           title: journeyData.title || 'My Journey',
           groupId: journeyData.groupId,
           startLatitude: location.coords.latitude,
@@ -966,6 +991,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             // stale Redux/backend data showing the previous destination).
             response = await journeyAPI.startJourney({
               vehicle: journeyData.vehicle || 'car',
+              vehicleId: journeyData.vehicleId,
+              vehicleName: journeyData.vehicleName,
               title: journeyData.title || 'My Journey',
               groupId: journeyData.groupId,
               startLatitude: location.coords.latitude,

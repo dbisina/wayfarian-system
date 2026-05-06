@@ -101,6 +101,15 @@ export default function LeaderboardScreen(): React.JSX.Element {
             ) : (
               <Text style={styles.countryText}>{t('leaderboard.unknown')}</Text>
             )}
+            {/* Vehicle badge — shows most recent / default garage vehicle */}
+            {item.defaultVehicle && (
+              <View style={styles.vehicleBadge}>
+                <Text style={styles.vehicleBadgeText}>
+                  {({ car: '🚗', bike: '🚲', motorcycle: '🏍️', scooter: '🛵', truck: '🚚', van: '🚐' } as any)[item.defaultVehicle.type] ?? '🚗'}
+                  {' '}{item.defaultVehicle.make} {item.defaultVehicle.model}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <Text style={styles.rank}>#{item.rank || item.position || t('leaderboard.na')}</Text>
@@ -371,6 +380,18 @@ const styles = StyleSheet.create({
     fontSize: 8,
     lineHeight: 12,
     color: '#000000',
+  },
+  vehicleBadge: {
+    marginLeft: 8,
+    backgroundColor: 'rgba(249, 168, 37, 0.12)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  vehicleBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#E65100',
   },
   rank: {
     fontFamily: 'Poppins',

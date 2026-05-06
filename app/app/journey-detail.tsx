@@ -46,6 +46,8 @@ interface JourneyDetail {
   avgSpeed: number;
   topSpeed: number;
   vehicle?: string;
+  vehicleName?: string;
+  vehicleType?: string;
   startLatitude: number;
   startLongitude: number;
   endLatitude?: number;
@@ -409,15 +411,15 @@ const JourneyDetailScreen = (): React.JSX.Element => {
             </View>
           </View>
 
-          {/* Vehicle Badge */}
-          {journey.vehicle && (
+          {/* Vehicle info — shows garage vehicle name/make/model if available, falls back to type */}
+          {(journey.vehicleName || journey.vehicle) && (
             <View style={styles.vehicleBadge}>
-              <Ionicons 
-                name={journey.vehicle === 'bike' ? 'bicycle' : journey.vehicle === 'car' ? 'car' : 'walk'} 
-                size={16} 
-                color="#F9A825" 
-              />
-              <Text style={styles.vehicleText}>{journey.vehicle}</Text>
+              <Text style={styles.vehicleEmoji}>
+                {({ car: '🚗', bike: '🚲', motorcycle: '🏍️', scooter: '🛵', truck: '🚚', van: '🚐' } as any)[journey.vehicleType ?? journey.vehicle ?? ''] ?? '🚗'}
+              </Text>
+              <Text style={styles.vehicleText}>
+                {journey.vehicleName ?? journey.vehicle}
+              </Text>
             </View>
           )}
         </View>
@@ -852,17 +854,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginTop: 16,
     alignSelf: 'center',
+    gap: 6,
   },
-  vehicleIcon: {
+  vehicleEmoji: {
     fontSize: 20,
-    marginRight: 8,
   },
   vehicleText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#3E4751',
     fontFamily: 'Space Grotesk',
-    textTransform: 'capitalize',
   },
   addPhotosSection: {
     flexDirection: 'row',

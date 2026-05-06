@@ -15,6 +15,8 @@ const createJourney = async (req, res) => {
       longitude,
       title,
       vehicle,
+      vehicleId,
+      vehicleName,
       groupId,
       status: rawStatus = 'ACTIVE',
       startTime,
@@ -79,7 +81,9 @@ const createJourney = async (req, res) => {
         startLongitude: resolvedLongitude,
         endLatitude: resolvedEndLatitude,
         endLongitude: resolvedEndLongitude,
-        vehicle: vehicle || 'car',
+        vehicle: vehicleName || vehicle || 'car',
+        vehicleId: vehicleId || null,
+        vehicleName: vehicleName || null,
         groupId,
         status: normalizedStatus,
         customTitle: null,
@@ -138,6 +142,8 @@ const startJourney = async (req, res) => {
       longitude,
       title,
       vehicle,
+      vehicleId,
+      vehicleName,
       groupId,
       endLatitude,
       endLongitude,
@@ -178,7 +184,9 @@ const startJourney = async (req, res) => {
           endLatitude: Number(endLatitude),
           endLongitude: Number(endLongitude),
         } : {}),
-        vehicle: vehicle || 'car',
+        vehicle: vehicleName || vehicle || 'car',
+        vehicleId: vehicleId || null,
+        vehicleName: vehicleName || null,
         groupId,
         routePoints: [{
           lat: resolvedStartLat,
@@ -483,7 +491,10 @@ const getJourneyHistory = async (req, res) => {
               takenAt: true,
             },
             orderBy: { takenAt: 'asc' },
-            take: 10, // Include up to 10 photos for preview
+            take: 10,
+          },
+          garageVehicle: {
+            select: { id: true, name: true, make: true, model: true, type: true, photoURL: true },
           },
         },
       }),
@@ -496,6 +507,9 @@ const getJourneyHistory = async (req, res) => {
         ...journey,
         photos: hydratedPhotos,
         coverPhotoUrl: getCoverPhotoUrl(hydratedPhotos),
+        vehicleType: journey.garageVehicle?.type ?? null,
+        vehicleMake: journey.garageVehicle?.make ?? null,
+        vehicleModel: journey.garageVehicle?.model ?? null,
       };
     });
 

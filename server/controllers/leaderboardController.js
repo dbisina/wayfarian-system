@@ -71,10 +71,15 @@ const getGlobalLeaderboard = async (req, res) => {
           topSpeed: true,
           totalTrips: true,
           createdAt: true,
+          vehicles: {
+            where: { isDefault: true },
+            select: { make: true, model: true, type: true, name: true },
+            take: 1,
+          },
         },
         where: {
           [sortField]: {
-            gt: 0, // Only include users with activity
+            gt: 0,
           },
         },
         orderBy: {
@@ -106,14 +111,18 @@ const getGlobalLeaderboard = async (req, res) => {
     }
     
     // Add rank to each user
-    const leaderboard = users.map((user, index) => ({
-      ...user,
-      rank: skip + index + 1,
-      totalDistance: parseFloat(user.totalDistance) || 0,
-      totalTime: parseInt(user.totalTime) || 0,
-      topSpeed: parseFloat(user.topSpeed) || 0,
-      totalTrips: parseInt(user.totalTrips) || 0,
-    }));
+    const leaderboard = users.map((user, index) => {
+      const { vehicles, ...rest } = user;
+      return {
+        ...rest,
+        rank: skip + index + 1,
+        totalDistance: parseFloat(user.totalDistance) || 0,
+        totalTime: parseInt(user.totalTime) || 0,
+        topSpeed: parseFloat(user.topSpeed) || 0,
+        totalTrips: parseInt(user.totalTrips) || 0,
+        defaultVehicle: vehicles?.[0] || null,
+      };
+    });
     
     // Get total count for pagination
     const totalUsers = await prisma.user.count({
@@ -232,18 +241,27 @@ const getFriendsLeaderboard = async (req, res) => {
         totalTime: true,
         topSpeed: true,
         totalTrips: true,
+        vehicles: {
+          where: { isDefault: true },
+          select: { make: true, model: true, type: true, name: true },
+          take: 1,
+        },
       },
       orderBy: {
         [sortField]: 'desc',
       },
     });
-    
+
     // Add rank and highlight current user
-    const leaderboard = friends.map((friend, index) => ({
-      ...friend,
-      rank: index + 1,
-      isCurrentUser: friend.id === userId,
-    }));
+    const leaderboard = friends.map((friend, index) => {
+      const { vehicles, ...rest } = friend;
+      return {
+        ...rest,
+        rank: index + 1,
+        isCurrentUser: friend.id === userId,
+        defaultVehicle: vehicles?.[0] || null,
+      };
+    });
     
     res.json({
       success: true,

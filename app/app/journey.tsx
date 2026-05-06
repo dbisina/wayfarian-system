@@ -98,6 +98,9 @@ export default function JourneyScreen(): React.JSX.Element {
   })).current;
   const markerRotation = useRef(new Animated.Value(currentLocation?.heading || 0)).current;
   const lastHeadingRef = useRef<number>(0);
+  // Rolling buffer of the last few raw GPS positions for bearing fallback.
+  // routePoints come from snapped path (batched, up to 10s stale) — raw positions are fresher.
+  const recentRawPositionsRef = useRef<{ latitude: number; longitude: number }[]>([]);
   const lastCameraUpdateRef = useRef<number>(0);
   const lastCameraSpeedRef = useRef<number>(0);
   const isManuallyPanningRef = useRef<boolean>(false);
@@ -150,6 +153,13 @@ export default function JourneyScreen(): React.JSX.Element {
     return undefined;
   }, [isTracking, currentJourney?.status]);
 
+  // Reset raw position buffer on new journey so stale positions don't produce wrong bearing.
+  useEffect(() => {
+    if (isTracking) {
+      recentRawPositionsRef.current = [];
+    }
+  }, [isTracking]);
+
   // Handle Marker Animation & Smoothing
   useEffect(() => {
     if (!currentLocation) return;
@@ -157,22 +167,29 @@ export default function JourneyScreen(): React.JSX.Element {
     const targetLat = snappedLocation?.latitude ?? currentLocation.latitude;
     const targetLng = snappedLocation?.longitude ?? currentLocation.longitude;
 
-    // Compute heading: prefer valid GPS heading (needs speed > ~0.5 m/s to be trustworthy),
-    // otherwise compute bearing from last route point to current, else keep previous.
+    // Maintain a rolling 5-point buffer of raw GPS positions for bearing fallback.
+    // These are much fresher than routePoints (which come from snapped path, up to 10s stale).
+    const rawPos = { latitude: currentLocation.latitude, longitude: currentLocation.longitude };
+    recentRawPositionsRef.current.push(rawPos);
+    if (recentRawPositionsRef.current.length > 5) recentRawPositionsRef.current.shift();
+
+    // useSmartTracking already gates heading updates by rawSpeedMps > 0.8.
+    // Don't re-check smoothed display speed here — it decays to 0 within 2-3 frames
+    // of stopping, which would suppress a valid heading and fall back to stale positions.
     const gpsHeading = currentLocation.heading;
-    const gpsSpeed = currentLocation.speed || 0;
     const gpsHasValidHeading =
-      typeof gpsHeading === 'number' && gpsHeading >= 0 && gpsSpeed > 0.8;
+      typeof gpsHeading === 'number' && gpsHeading >= 0;
 
     let targetHeading = lastHeadingRef.current;
     if (gpsHasValidHeading) {
       targetHeading = gpsHeading as number;
-    } else if (routePoints.length >= 2) {
-      const prev = routePoints[routePoints.length - 2];
-      const curr = routePoints[routePoints.length - 1];
+    } else if (recentRawPositionsRef.current.length >= 2) {
+      // Bearing fallback from recent raw GPS positions (fresher than snapped routePoints).
+      const recent = recentRawPositionsRef.current;
+      const prev = recent[recent.length - 2];
+      const curr = recent[recent.length - 1];
       const dLat = curr.latitude - prev.latitude;
       const dLon = curr.longitude - prev.longitude;
-      // Only recompute if we actually moved a tiny bit
       if (Math.abs(dLat) + Math.abs(dLon) > 1e-6) {
         const y = Math.sin((dLon * Math.PI) / 180) * Math.cos((curr.latitude * Math.PI) / 180);
         const x =
@@ -583,8 +600,12 @@ export default function JourneyScreen(): React.JSX.Element {
           [
             { text: t('common.cancel'), style: 'cancel' },
             { text: t('common.stop'), style: 'destructive', onPress: async () => {
-              await endJourney();
-              try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
+              try {
+                await endJourney();
+                try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
+              } catch {
+                Alert.alert(t('alerts.error'), t('alerts.failedStop'));
+              }
             }}
           ]
         );

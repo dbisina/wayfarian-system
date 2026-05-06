@@ -300,10 +300,10 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     }
     smoothedPositionRef.current = { latitude: displayLat, longitude: displayLng };
 
-    // Heading fallback: GPS heading is garbage at low speed. When moving, trust it.
-    // Otherwise keep the last known good heading so the marker doesn't snap around.
+    // Heading fallback: GPS heading is unreliable when stationary. Trust it once moving.
+    // 0.8 m/s ≈ 3 km/h — just above a slow walk; low enough to catch slow-speed turns.
     let displayHeading = lastGoodHeadingRef.current;
-    if (heading !== null && heading !== undefined && heading >= 0 && rawSpeedMps > 1.5) {
+    if (heading !== null && heading !== undefined && heading >= 0 && rawSpeedMps > 0.8) {
       lastGoodHeadingRef.current = heading;
       displayHeading = heading;
     }
@@ -511,7 +511,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     officialSnappedPath,
     officialDistance,
     movingTime,
-    avgSpeed: StatsCalculator.calculateAverageSpeed(officialDistance, movingTime) / 3.6, // Return in m/s
-    maxSpeed: maxSpeed / 3.6, // Return in m/s
+    avgSpeed: StatsCalculator.calculateAverageSpeed(officialDistance, movingTime), // km/h, matches JourneyStats interface
+    maxSpeed: maxSpeed, // km/h, matches JourneyStats interface
   };
 }

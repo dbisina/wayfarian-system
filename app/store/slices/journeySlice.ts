@@ -69,6 +69,8 @@ export interface JourneyData {
   groupId?: string;
   groupJourneyId?: string;
   vehicle?: string;
+  vehicleId?: string;
+  vehicleName?: string;
   status: 'not-started' | 'active' | 'paused' | 'completed';
   photos: string[];
 }

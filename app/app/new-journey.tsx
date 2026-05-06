@@ -18,6 +18,11 @@ import * as Location from 'expo-location';
 import LocationPicker from '../components/LocationPicker';
 import { useJourney } from '../contexts/JourneyContext';
 import { useSettings, Vehicle } from '../contexts/SettingsContext';
+import VehiclePicker from '../components/VehiclePicker';
+import VehicleCard from '../components/VehicleCard';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { fetchVehicles, selectVehicles, selectDefaultVehicle } from '../store/slices/vehicleSlice';
+import type { GarageVehicle } from '../services/api';
 
 interface LocationData {
   latitude: number;
@@ -29,6 +34,9 @@ interface LocationData {
 export default function NewJourneyScreen() {
   const { startJourney, saveJourney } = useJourney();
   const { vehicle: savedVehicle, setVehicle: persistVehicle } = useSettings();
+  const dispatch = useAppDispatch();
+  const garageVehicles = useAppSelector(selectVehicles);
+  const defaultGarageVehicle = useAppSelector(selectDefaultVehicle);
   const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
@@ -39,11 +47,24 @@ export default function NewJourneyScreen() {
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [vehicle, setVehicleLocal] = useState<Vehicle>(savedVehicle);
+  const [selectedGarageVehicle, setSelectedGarageVehicle] = useState<GarageVehicle | null>(null);
+  const [showVehiclePicker, setShowVehiclePicker] = useState(false);
   const keyboardVerticalOffset = Platform.select({ ios: 100, android: 140 }) ?? 0;
 
   useEffect(() => {
     setVehicleLocal(savedVehicle);
   }, [savedVehicle]);
+
+  // Load garage vehicles; auto-select default
+  useEffect(() => {
+    dispatch(fetchVehicles());
+  }, []);
+
+  useEffect(() => {
+    if (defaultGarageVehicle && !selectedGarageVehicle) {
+      setSelectedGarageVehicle(defaultGarageVehicle);
+    }
+  }, [defaultGarageVehicle]);
 
   // Reset form fields every time the screen gains focus. Without this, if a user
   // cancels/navigates away mid-edit and comes back for a new journey, old values
@@ -109,7 +130,13 @@ export default function NewJourneyScreen() {
           longitude: endLocation.longitude,
           address: endLocation.address,
         },
-        vehicle,
+        vehicle: selectedGarageVehicle
+          ? (selectedGarageVehicle.type as Vehicle)
+          : vehicle,
+        vehicleId: selectedGarageVehicle?.id,
+        vehicleName: selectedGarageVehicle
+          ? `${selectedGarageVehicle.name} (${selectedGarageVehicle.make} ${selectedGarageVehicle.model})`
+          : undefined,
         ...(groupId ? { groupId: String(groupId) } : {}),
       });
 
@@ -341,30 +368,34 @@ export default function NewJourneyScreen() {
         {/* Vehicle Selector */}
         <View style={styles.vehicleContainer}>
           <Text style={styles.vehicleLabel}>Vehicle</Text>
-          <View style={styles.vehicleRow}>
-            {(['car', 'bike', 'scooter'] as Vehicle[]).map((v) => {
-              const selected = vehicle === v;
-              const icon = v === 'car' ? 'directions-car' : v === 'bike' ? 'pedal-bike' : 'two-wheeler';
-              return (
-                <TouchableOpacity
-                  key={v}
-                  style={[styles.vehicleOption, selected && styles.vehicleOptionSelected]}
-                  onPress={() => handleVehicleChange(v)}
-                  activeOpacity={0.7}
-                >
-                  <MaterialIcons
-                    name={icon as any}
-                    size={22}
-                    color={selected ? '#000000' : '#666666'}
-                  />
-                  <Text style={[styles.vehicleOptionText, selected && styles.vehicleOptionTextSelected]}>
-                    {v === 'scooter' ? 'Scooty' : v.charAt(0).toUpperCase() + v.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {selectedGarageVehicle ? (
+            <VehicleCard
+              vehicle={selectedGarageVehicle}
+              compact
+              selected
+              onPress={() => setShowVehiclePicker(true)}
+            />
+          ) : (
+            <TouchableOpacity
+              style={styles.vehiclePickerButton}
+              onPress={() => setShowVehiclePicker(true)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="directions-car" size={22} color="#666666" />
+              <Text style={styles.vehiclePickerButtonText}>
+                {garageVehicles.length > 0 ? 'Select a vehicle' : 'Add a vehicle'}
+              </Text>
+              <MaterialIcons name="chevron-right" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
         </View>
+
+        <VehiclePicker
+          visible={showVehiclePicker}
+          selectedId={selectedGarageVehicle?.id ?? null}
+          onSelect={(v) => setSelectedGarageVehicle(v)}
+          onClose={() => setShowVehiclePicker(false)}
+        />
 
         {/* Notes/Description */}
         <View style={styles.notesContainer}>
@@ -622,5 +653,27 @@ const styles = StyleSheet.create({
   vehicleOptionTextSelected: {
     color: '#000000',
     fontWeight: '600',
+  },
+  vehiclePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  vehiclePickerButtonText: {
+    flex: 1,
+    fontSize: 15,
+    color: '#666666',
+    fontFamily: 'Poppins',
   },
 });

@@ -45,8 +45,31 @@ model User {
   rideEvents       RideEvent[]
   achievements     UserAchievement[]
   streak           UserStreak?
+  vehicles         Vehicle[]
 
   @@map("users")
+}
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String   // e.g. "My Kawasaki"
+  make      String   // e.g. "Kawasaki"
+  model     String   // e.g. "Z900"
+  year      Int?     // e.g. 2022
+  color     String?  // e.g. "Metallic Blue"
+  type      String   @default("motorcycle") // car | bike | motorcycle | scooter | truck | van
+  photoURL  String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journeys Journey[] @relation("GarageVehicleJourneys")
+
+  @@index([userId])
+  @@index([userId, isDefault])
+  @@map("vehicles")
 }
 
 model Journey {
@@ -82,9 +105,14 @@ model Journey {
   // Group journey (deprecated - use GroupJourney instead)
   groupId String?
 
+  // Vehicle used for this journey (snapshot of garage vehicle at time of ride)
+  vehicleId   String? // FK to Vehicle (nullable — legacy journeys won't have this)
+  vehicleName String? // denormalised snapshot so vehicle deletion doesn't lose history
+
   // Relationships
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   group     Group?            @relation(fields: [groupId], references: [id])
+  garageVehicle Vehicle?       @relation("GarageVehicleJourneys", fields: [vehicleId], references: [id], onDelete: SetNull)
   photos    Photo[]
   reminders JourneyReminder[]
 

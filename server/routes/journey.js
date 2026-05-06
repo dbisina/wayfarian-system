@@ -492,6 +492,9 @@ router.get(
             },
             orderBy: { takenAt: "desc" },
           },
+          garageVehicle: {
+            select: { id: true, name: true, make: true, model: true, year: true, type: true, photoURL: true },
+          },
         },
       });
 
@@ -502,9 +505,19 @@ router.get(
         });
       }
 
+      // Flatten garage vehicle fields for convenience
+      const journeyResponse = {
+        ...journey,
+        vehicleType: journey.garageVehicle?.type ?? null,
+        vehicleMake: journey.garageVehicle?.make ?? null,
+        vehicleModel: journey.garageVehicle?.model ?? null,
+        vehicleYear: journey.garageVehicle?.year ?? null,
+        vehiclePhotoURL: journey.garageVehicle?.photoURL ?? null,
+      };
+
       res.json({
         success: true,
-        journey,
+        journey: journeyResponse,
       });
     } catch (error) {
       console.error("Get journey error:", error);

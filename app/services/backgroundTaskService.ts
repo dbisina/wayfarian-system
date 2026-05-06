@@ -108,12 +108,18 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
 
                     // Calculate implied speed from position change
                     const impliedSpeedMps = timeDelta > 0 ? distanceMeters / timeDelta : 0;
+                    // Prefer reported speed; fall back to implied when device reports 0 (some GPS chips)
+                    const effectiveSpeedMps = reportedSpeed > 0 ? reportedSpeed : impliedSpeedMps;
 
                     // Validate: Skip if implied speed is impossible (GPS jitter)
                     const isReasonableSpeed = impliedSpeedMps <= MAX_REASONABLE_SPEED_MPS;
                     const hasSignificantMovement = distanceMeters > MIN_MOVEMENT_THRESHOLD_M;
+                    // Guard against stationary GPS drift — background task lacks the dwell-detection
+                    // that foreground uses, so a stationary device with good accuracy can still produce
+                    // 10-15m Haversine jumps (valid position change, not actually moving).
+                    const isActuallyMoving = effectiveSpeedMps > MAX_SPEED_FOR_RECORDING_MPS;
 
-                    if (hasSignificantMovement && isReasonableSpeed) {
+                    if (hasSignificantMovement && isReasonableSpeed && isActuallyMoving) {
                         state.totalDistance += distanceKm;
 
                         // Add to route points (for polyline display)

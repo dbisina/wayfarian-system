@@ -143,11 +143,9 @@ export default function SettingsScreen() {
           />
 
           <SettingItem
-            title={t('settings.vehicleType')}
-            subtitle={`${t('settings.currentLanguage')}: ${t(`settings.${vehicle}`)}`}
-            onPress={() =>
-              pickOption(t('settings.selectVehicle'), [t('settings.car'), t('settings.bike'), t('settings.scooter')], ['car','bike','scooter'].indexOf(vehicle), (i) => setVehicle(['car','bike','scooter'][i] as Vehicle))
-            }
+            title="My Garage"
+            subtitle="Manage your vehicles"
+            onPress={() => router.push('/manage-vehicles')}
           />
 
           <TouchableOpacity 

@@ -497,8 +497,13 @@ export const journeyAPI = {
     latitude?: number;
     longitude?: number;
     vehicle?: string;
+    vehicleId?: string;
+    vehicleName?: string;
     title?: string;
     groupId?: string;
+    endLatitude?: number;
+    endLongitude?: number;
+    endAddress?: string;
   }) => {
     // Server expects latitude/longitude, map from startLatitude/startLongitude if provided
     const lat = (journeyData.latitude ?? journeyData.startLatitude);
@@ -507,7 +512,12 @@ export const journeyAPI = {
       latitude: typeof lat === 'string' ? Number(lat) : lat,
       longitude: typeof lng === 'string' ? Number(lng) : lng,
       vehicle: journeyData.vehicle,
+      vehicleId: journeyData.vehicleId,
+      vehicleName: journeyData.vehicleName,
       title: journeyData.title,
+      endLatitude: journeyData.endLatitude,
+      endLongitude: journeyData.endLongitude,
+      endAddress: journeyData.endAddress,
     };
     // Only include groupId if it's actually provided (exclude null/undefined for solo journeys)
     if (journeyData.groupId) {
@@ -980,10 +990,88 @@ export default {
   leaderboard: leaderboardAPI,
   gallery: galleryAPI,
   places: placesAPI,
+  vehicles: vehicleAPI,
   apiRequest,
   apiRequestWithOptions,
   getAuthToken,
   setAuthToken,
   removeAuthToken,
   getCurrentApiUrl,
+};
+
+// ─── Vehicle API ─────────────────────────────────────────────────────────────
+
+export interface GarageVehicle {
+  id: string;
+  userId: string;
+  name: string;
+  make: string;
+  model: string;
+  year?: number | null;
+  color?: string | null;
+  type: 'car' | 'bike' | 'motorcycle' | 'scooter' | 'truck' | 'van';
+  photoURL?: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const vehicleAPI = {
+  list: async (): Promise<{ success: boolean; vehicles: GarageVehicle[] }> => {
+    return apiRequest('/vehicles', 'GET');
+  },
+
+  create: async (data: {
+    name: string;
+    make: string;
+    model: string;
+    year?: number | null;
+    color?: string | null;
+    type?: string;
+    isDefault?: boolean;
+  }): Promise<{ success: boolean; vehicle: GarageVehicle }> => {
+    return apiRequest('/vehicles', 'POST', data);
+  },
+
+  update: async (
+    id: string,
+    data: Partial<{
+      name: string;
+      make: string;
+      model: string;
+      year: number | null;
+      color: string | null;
+      type: string;
+      isDefault: boolean;
+    }>
+  ): Promise<{ success: boolean; vehicle: GarageVehicle }> => {
+    return apiRequest(`/vehicles/${id}`, 'PUT', data);
+  },
+
+  delete: async (id: string): Promise<{ success: boolean }> => {
+    return apiRequest(`/vehicles/${id}`, 'DELETE');
+  },
+
+  setDefault: async (id: string): Promise<{ success: boolean; vehicle: GarageVehicle }> => {
+    return apiRequest(`/vehicles/${id}/set-default`, 'POST');
+  },
+
+  uploadPhoto: async (id: string, uri: string): Promise<{ success: boolean; vehicle: GarageVehicle }> => {
+    const token = await getAuthToken();
+    if (!token) throw new Error('Not authenticated');
+
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'photo.jpg';
+    const ext = /\.(\w+)$/.exec(filename)?.[1] ?? 'jpg';
+    formData.append('vehiclePhoto', { uri, name: filename, type: `image/${ext}` } as any);
+
+    const apiUrl = getCurrentApiUrl();
+    const response = await fetch(`${apiUrl}/vehicles/${id}/photo`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!response.ok) throw new Error('Photo upload failed');
+    return response.json();
+  },
 };

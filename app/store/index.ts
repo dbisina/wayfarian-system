@@ -10,6 +10,7 @@ import authReducer from './slices/authSlice';
 import journeyReducer from './slices/journeySlice';
 import groupReducer from './slices/groupSlice';
 import uiReducer from './slices/uiSlice';
+import vehicleReducer from './slices/vehicleSlice';
 
 const journeyPersistConfig = {
   key: 'journey',
@@ -46,6 +47,7 @@ const rootReducer = combineReducers({
   journey: persistReducer(journeyPersistConfig, journeyReducer),
   group: groupReducer,
   ui: uiReducer,
+  vehicles: vehicleReducer,
 });
 
 // Persisted reducer

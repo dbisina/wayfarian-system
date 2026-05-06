@@ -48,6 +48,9 @@ const getUserProfile = async (req, res) => {
         totalTrips: true,
         createdAt: true,
         updatedAt: true,
+        vehicles: {
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+        },
       },
     });
     

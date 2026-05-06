@@ -22,6 +22,7 @@ const groupRoutes = require('./routes/group');
 const userRoutes = require('./routes/user');
 const mapsRoutes = require('./routes/maps');
 const groupJourneyRoutes = require('./routes/groupJourney');
+const vehicleRoutes = require('./routes/vehicles');
 
 // Import middleware
 const authMiddleware = require('./middleware/auth');
@@ -288,6 +289,7 @@ app.use('/api/gallery', authMiddleware, galleryRoutes);
 app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRoutes);
 app.use('/api/group', authMiddleware, groupRoutes);
 app.use('/api/user', authMiddleware, userRoutes);
+app.use('/api/vehicles', authMiddleware, vehicleRoutes);
 
 // Allow maps endpoints without database-backed auth so the app works offline/while DB is unavailable.
 // Also allows unauthenticated users (e.g. during registration) to use location search.
