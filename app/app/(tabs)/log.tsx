@@ -279,9 +279,10 @@ export default function RideLogScreen(): React.JSX.Element {
                   j.photos?.[0]?.firebasePath;
 
                 return (
-                  <TouchableOpacity 
-                    key={j.id} 
-                    style={styles.challengeCard}
+                  <TouchableOpacity
+                    key={j.id}
+                    style={styles.memoryCard}
+                    activeOpacity={0.88}
                     onPress={() => {
                       router.push({
                         pathname: '/journey-detail',
@@ -289,37 +290,41 @@ export default function RideLogScreen(): React.JSX.Element {
                       });
                     }}
                   >
-                    {coverUri ? (
-                      <Image source={{ uri: coverUri }} style={styles.challengeImage} />
-                    ) : (
-                      <LinearGradient
-                        colors={['#F9A825', '#FF6F00']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={[styles.challengeImage, styles.gradientPlaceholder]}
-                      >
-                        <Text style={styles.gradientTitle} numberOfLines={2}>
-                          {j.title || t('log.soloRideDefault')}
-                        </Text>
-                      </LinearGradient>
-                    )}
-                    <JourneyCardMenu
-                      journeyId={j.id}
-                      journeyTitle={j.title || t('log.soloRideDefault')}
-                      onRename={() => loadData()}
-                      onDelete={() => {
-                        setSoloJourneys(prev => prev.filter(journey => journey.id !== j.id));
-                      }}
-                      iconColor="#757575"
-                      iconSize={16}
-                    />
-                    <View style={styles.challengeContent}>
-                      <Text style={styles.challengeTitle}>{j.title || t('log.soloRideDefault')}</Text>
-                      <Text style={styles.challengeDuration}>{formatDuration(j.totalTime)}</Text>
-                      <Text style={styles.challengeDistance}>{formatDistance(j.totalDistance)}</Text>
-                      <View style={styles.challengeProgressContainer}>
-                        <Text style={styles.challengeStatus}>{new Date(j.startTime || '').toDateString()}</Text>
+                    <View style={styles.memoryCoverWrapper}>
+                      {coverUri ? (
+                        <Image source={{ uri: coverUri }} style={styles.memoryCover} />
+                      ) : (
+                        <LinearGradient
+                          colors={['#F9A825', '#FF6F00']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={[styles.memoryCover, styles.gradientPlaceholder]}
+                        >
+                          <Text style={styles.gradientTitle} numberOfLines={2}>
+                            {j.title || t('log.soloRideDefault')}
+                          </Text>
+                        </LinearGradient>
+                      )}
+                      <View style={styles.memoryMenuOverlay}>
+                        <JourneyCardMenu
+                          journeyId={j.id}
+                          journeyTitle={j.title || t('log.soloRideDefault')}
+                          onRename={() => loadData()}
+                          onDelete={() => {
+                            setSoloJourneys(prev => prev.filter(journey => journey.id !== j.id));
+                          }}
+                          iconColor="#fff"
+                          iconSize={18}
+                        />
                       </View>
+                    </View>
+                    <View style={styles.memoryInfo}>
+                      <Text style={styles.memoryTitle} numberOfLines={1}>
+                        {j.title || t('log.soloRideDefault')}
+                      </Text>
+                      <Text style={styles.memoryMeta}>
+                        {formatDate(j.startTime)} · {formatDistance(j.totalDistance)} · {formatDuration(j.totalTime)}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -645,6 +650,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 8,
+  },
+  memoryCard: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  memoryCoverWrapper: {
+    position: 'relative',
+  },
+  memoryCover: {
+    width: '100%',
+    height: 180,
+  },
+  memoryMenuOverlay: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+  },
+  memoryInfo: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  memoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 4,
+  },
+  memoryMeta: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    fontFamily: 'Poppins',
   },
   gradientTitle: {
     fontSize: 14,

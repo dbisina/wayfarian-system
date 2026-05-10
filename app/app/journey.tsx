@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { fetchDirections, getGoogleMapsApiKey } from '../services/directions';
 import { apiRequest } from '../services/api';
 import TrackingOverlay from '../components/TrackingOverlay';
+import JourneyEndModal from '../components/JourneyEndModal';
 import { useJourneyState, useJourneyStats } from '../hooks/useJourneyState';
 import { useSettings } from '../contexts/SettingsContext';
 import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
@@ -87,6 +88,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const [manualRouteCoords, setManualRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const lastOriginRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const [isStartBusy, setIsStartBusy] = useState(false);
+  const [showEndModal, setShowEndModal] = useState(false);
   const [celebrationEvent, setCelebrationEvent] = useState<CelebrationEvent | null>(null);
   const [isNavigationMode, setIsNavigationMode] = useState(true); // Default to following user
   const [snappedLocation, setSnappedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -591,31 +593,11 @@ export default function JourneyScreen(): React.JSX.Element {
   };
 
   const handleStopJourney = async () => {
-    try {
-      // Solo journey complete
-      if (isTracking || currentJourney?.status === 'paused') {
-        Alert.alert(
-          t('alerts.stopJourneyConfirm'),
-          t('alerts.stopSoloConfirm'),
-          [
-            { text: t('common.cancel'), style: 'cancel' },
-            { text: t('common.stop'), style: 'destructive', onPress: async () => {
-              try {
-                await endJourney();
-                try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
-              } catch {
-                Alert.alert(t('alerts.error'), t('alerts.failedStop'));
-              }
-            }}
-          ]
-        );
-        return;
-      }
-
-      Alert.alert(t('alerts.stopJourneyConfirm'), t('alerts.noActiveStop'));
-    } catch {
-      Alert.alert(t('alerts.error'), t('alerts.failedStop'));
+    if (isTracking || currentJourney?.status === 'paused') {
+      setShowEndModal(true);
+      return;
     }
+    Alert.alert(t('alerts.stopJourneyConfirm'), t('alerts.noActiveStop'));
   };
 
   return (
@@ -1013,6 +995,14 @@ export default function JourneyScreen(): React.JSX.Element {
           )}
         </>
       )}
+
+      <JourneyEndModal
+        visible={showEndModal}
+        onDone={(journeyId) => {
+          setShowEndModal(false);
+          try { router.replace('/(tabs)/map'); } catch { router.push('/(tabs)/map'); }
+        }}
+      />
     </View>
   );
 }

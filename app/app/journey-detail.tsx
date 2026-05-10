@@ -371,56 +371,30 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 
           {/* Stats Grid */}
           <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="navigate-outline" size={20} color="#F9A825" />
-              </View>
-              <View style={styles.statTextContainer}>
-                <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
-                <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
-              </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
+              <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
             </View>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="time-outline" size={20} color="#F9A825" />
-              </View>
-              <View style={styles.statTextContainer}>
-                <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
-                <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
-              </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
+              <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
             </View>
             {journey.avgSpeed > 0 && (
-              <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="speedometer-outline" size={20} color="#F9A825" />
-                </View>
-                <View style={styles.statTextContainer}>
-                  <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
-                  <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
-                </View>
+              <View style={styles.statCell}>
+                <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
+                <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
               </View>
             )}
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="flash-outline" size={20} color="#F9A825" />
-              </View>
-              <View style={styles.statTextContainer}>
-                <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
-                <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
-              </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
+              <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
             </View>
           </View>
 
-          {/* Vehicle info — shows garage vehicle name/make/model if available, falls back to type */}
           {(journey.vehicleName || journey.vehicle) && (
-            <View style={styles.vehicleBadge}>
-              <Text style={styles.vehicleEmoji}>
-                {({ car: '🚗', bike: '🚲', motorcycle: '🏍️', scooter: '🛵', truck: '🚚', van: '🚐' } as any)[journey.vehicleType ?? journey.vehicle ?? ''] ?? '🚗'}
-              </Text>
-              <Text style={styles.vehicleText}>
-                {journey.vehicleName ?? journey.vehicle}
-              </Text>
-            </View>
+            <Text style={styles.vehicleName}>
+              {journey.vehicleName ?? journey.vehicle}
+            </Text>
           )}
         </View>
 
@@ -813,24 +787,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginHorizontal: -8,
   },
-  statItem: {
+  statCell: {
     width: '50%',
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 8,
     marginBottom: 4,
-  },
-  statIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(249, 168, 37, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  statTextContainer: {
-    flex: 1,
   },
   statValue: {
     fontSize: 18,
@@ -844,26 +804,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Space Grotesk',
     marginTop: 2,
   },
-  vehicleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(249, 168, 37, 0.08)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+  vehicleName: {
     marginTop: 16,
-    alignSelf: 'center',
-    gap: 6,
-  },
-  vehicleEmoji: {
-    fontSize: 20,
-  },
-  vehicleText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#3E4751',
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#AAAAAA',
     fontFamily: 'Space Grotesk',
+    textAlign: 'center',
   },
   addPhotosSection: {
     flexDirection: 'row',

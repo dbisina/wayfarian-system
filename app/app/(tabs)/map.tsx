@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings, MapType } from '../../contexts/SettingsContext';
+import { useJourney } from '../../contexts/JourneyContext';
+import { useJourneyStats, useJourneyRoutePoints } from '../../hooks/useJourneyState';
 import { placesAPI, userAPI } from '../../services/api';
 import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import JourneyEndModal from '../../components/JourneyEndModal';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -36,7 +39,10 @@ interface MapJourney {
 
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
-  const { mapType } = useSettings();
+  const { mapType, vehicle: settingsVehicle } = useSettings();
+  const { isTracking, startJourney } = useJourney();
+  const stats = useJourneyStats();
+  const routePoints = useJourneyRoutePoints();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
@@ -51,6 +57,24 @@ export default function MapScreen(): React.JSX.Element {
   const [suggestions, setSuggestions] = useState<{ id: string; description: string; placeId: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [initialRegion, setInitialRegion] = useState<Region | null>(null);
+  const [isStartBusy, setIsStartBusy] = useState(false);
+  const [showEndModal, setShowEndModal] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isTracking) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.18, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+    pulseAnim.setValue(1);
+    return undefined;
+  }, [isTracking, pulseAnim]);
 
   const filterTypes = useMemo(() => [
     { key: 'gas', serverType: 'gas_station', label: t('map.filters.gas') },
@@ -252,12 +276,63 @@ export default function MapScreen(): React.JSX.Element {
 
 
 
-  const handleStartJourney = () => {
+  const handleStartJourney = async () => {
     if (!isAuthenticated) {
       Alert.alert(t('map.authRequired'), t('map.loginToStart'));
       return;
     }
-    router.push('/new-journey');
+    if (isTracking) {
+      setShowEndModal(true);
+      return;
+    }
+    if (isStartBusy) return;
+    setIsStartBusy(true);
+    try {
+      const success = await startJourney({
+        title: 'My Journey',
+        vehicle: settingsVehicle,
+      });
+      if (success) {
+        router.push('/journey');
+      } else {
+        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
+      }
+    } finally {
+      setIsStartBusy(false);
+    }
+  };
+
+  const handleStartJourneyToDestination = async () => {
+    if (!isAuthenticated) {
+      Alert.alert(t('map.authRequired'), t('map.loginToStart'));
+      return;
+    }
+    if (isStartBusy) return;
+    setIsStartBusy(true);
+    try {
+      const success = await startJourney({
+        title: 'My Journey',
+        vehicle: settingsVehicle,
+        endLocation: destination
+          ? { latitude: destination.latitude, longitude: destination.longitude, address: destination.name || 'Destination' }
+          : undefined,
+      });
+      if (success) {
+        router.push('/journey');
+      } else {
+        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
+      }
+    } finally {
+      setIsStartBusy(false);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   const handleFilterPress = (filterKey: string) => {
@@ -391,6 +466,11 @@ export default function MapScreen(): React.JSX.Element {
             />
           )}
           
+          {/* Active journey route breadcrumb */}
+          {isTracking && routePoints.length > 1 && (
+            <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#F9A825" />
+          )}
+
           {/* Completed Journeys Cards */}
           {mapJourneys.map((journey) => {
             if (!journey.endLatitude || !journey.endLongitude) return null;
@@ -523,18 +603,88 @@ export default function MapScreen(): React.JSX.Element {
         ))}
       </ScrollView>
 
+      {/* Destination bottom sheet — shown when user has searched a location */}
+      {destination && !isTracking && (
+        <View style={[styles.destinationSheet, { bottom: insets.bottom + 100 }]}>
+          <View style={styles.destinationInfo}>
+            <MaterialIcons name="place" size={18} color="#F9A825" />
+            <Text style={styles.destinationName} numberOfLines={1}>
+              {destination.name || t('map.destination')}
+            </Text>
+            <TouchableOpacity onPress={() => { setDestination(null); setQuery(''); }}>
+              <MaterialIcons name="close" size={18} color="#888" />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={[styles.startJourneyDestBtn, isStartBusy && { opacity: 0.6 }]}
+            onPress={handleStartJourneyToDestination}
+            disabled={isStartBusy}
+            activeOpacity={0.85}
+          >
+            {isStartBusy ? (
+              <ActivityIndicator color="#000" size="small" />
+            ) : (
+              <Text style={styles.startJourneyDestBtnText}>Start Journey</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Active journey mini-stats sheet on map tab */}
+      {isTracking && (
+        <View style={[styles.miniStatsSheet, { bottom: insets.bottom + 80 }]}>
+          <View style={styles.miniStatsRow}>
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{formatTime(Math.floor(stats?.totalTime || 0))}</Text>
+              <Text style={styles.miniStatLabel}>{t('journey.time')}</Text>
+            </View>
+            <View style={styles.miniStatDivider} />
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{stats?.currentSpeed?.toFixed(0) || '0'}</Text>
+              <Text style={styles.miniStatLabel}>km/h</Text>
+            </View>
+            <View style={styles.miniStatDivider} />
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{(stats?.totalDistance || 0).toFixed(2)}</Text>
+              <Text style={styles.miniStatLabel}>km</Text>
+            </View>
+            <TouchableOpacity style={styles.expandBtn} onPress={() => router.push('/journey')}>
+              <MaterialIcons name="open-in-full" size={18} color="#F9A825" />
+            </TouchableOpacity>
+          </View>
+          {/* Red live indicator strip */}
+          <View style={styles.liveStrip}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
+        </View>
+      )}
+
       {/* Floating Action Buttons */}
       <TouchableOpacity
         style={[styles.floatingButton, { bottom: insets.bottom + 150 }]}
         onPress={handleStartJourney}
         activeOpacity={0.8}
+        disabled={isStartBusy && !isTracking}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <Image
-          source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
-          style={styles.floatingButtonImage}
-          contentFit="contain"
-        />
+        {isTracking ? (
+          <Animated.View style={[styles.stopButtonOuter, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={styles.stopButtonInner}>
+              <MaterialIcons name="stop" size={22} color="#fff" />
+            </View>
+          </Animated.View>
+        ) : isStartBusy ? (
+          <View style={[styles.floatingButtonImage, styles.loadingButton]}>
+            <ActivityIndicator color="#000" size="small" />
+          </View>
+        ) : (
+          <Image
+            source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
+            style={styles.floatingButtonImage}
+            contentFit="contain"
+          />
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -549,6 +699,11 @@ export default function MapScreen(): React.JSX.Element {
           contentFit="contain"
         />
       </TouchableOpacity>
+
+      <JourneyEndModal
+        visible={showEndModal}
+        onDone={() => setShowEndModal(false)}
+      />
 
     </View>
   );
@@ -730,6 +885,134 @@ const styles = StyleSheet.create({
   floatingButtonImage: {
     width: 50,
     height: 50,
+  },
+  loadingButton: {
+    borderRadius: 25,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopButtonOuter: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 3,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  stopButtonInner: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  destinationSheet: {
+    position: 'absolute',
+    left: 15,
+    right: 15,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    zIndex: 50,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    gap: 10,
+  },
+  destinationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  destinationName: {
+    flex: 1,
+    fontFamily: 'Space Grotesk',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+  },
+  startJourneyDestBtn: {
+    backgroundColor: '#BEFFA7',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  startJourneyDestBtnText: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
+  },
+  miniStatsSheet: {
+    position: 'absolute',
+    left: 15,
+    right: 80,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    zIndex: 50,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    overflow: 'hidden',
+  },
+  miniStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  miniStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  miniStatValue: {
+    fontFamily: 'Poppins',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  miniStatLabel: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 9,
+    color: '#888',
+  },
+  miniStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#eee',
+  },
+  expandBtn: {
+    padding: 6,
+  },
+  liveStrip: {
+    backgroundColor: '#ef4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  liveText: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 1.5,
   },
   centerContainer: {
     flex: 1,
