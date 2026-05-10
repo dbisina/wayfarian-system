@@ -167,12 +167,14 @@ export default function MapScreen(): React.JSX.Element {
       const lastKnown = await Location.getLastKnownPositionAsync();
       if (lastKnown) {
         setLocation(lastKnown);
-        setInitialRegion({
+        const region = {
           latitude: lastKnown.coords.latitude,
           longitude: lastKnown.coords.longitude,
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
-        });
+        };
+        setInitialRegion(region);
+        if (promptIfMissing) animateToRegion(region);
       }
 
       // Then fetch fresh high-accuracy location
@@ -181,13 +183,20 @@ export default function MapScreen(): React.JSX.Element {
       });
       
       setLocation(currentLocation);
+      const freshRegion = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      
       if (!lastKnown) {
-         setInitialRegion({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
+         setInitialRegion(freshRegion);
+      }
+      
+      // If user manually pressed the button (promptIfMissing=true), animate to fresh location
+      if (promptIfMissing) {
+        animateToRegion(freshRegion);
       }
     } catch (error: any) {
       console.error('Location error:', error);

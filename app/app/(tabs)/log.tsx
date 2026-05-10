@@ -1,4 +1,4 @@
-import React, {useMemo, useState, useCallback} from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +18,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useUserData } from '../../hooks/useUserData';
 import { userAPI, leaderboardAPI } from '../../services/api';
 import XPProgress from '../../components/ui/XPProgress';
+import { Ionicons, Feather } from '@expo/vector-icons';
 
 import { ACHIEVEMENT_BADGES } from '../../constants/achievements';
 import { useTranslation } from 'react-i18next';
@@ -40,7 +43,6 @@ type JourneyItem = {
   }[];
 };
 
-// Key for caching log data
 const CACHE_KEY_LOG_DATA = 'wayfarian_log_screen_data';
 
 export default function RideLogScreen(): React.JSX.Element {
@@ -48,9 +50,8 @@ export default function RideLogScreen(): React.JSX.Element {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { t, i18n } = useTranslation();
-  const { convertDistance } = useSettings(); // MUST be called before any conditional hooks
+  const { convertDistance } = useSettings();
   
-  // Use the shared user data hook — same source of truth as home screen
   const { dashboardData, refreshData: refreshUserData } = useUserData();
 
   const [activeTab, setActiveTab] = useState('solo');
@@ -61,14 +62,10 @@ export default function RideLogScreen(): React.JSX.Element {
   const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Separate function to process and set data to state
   const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
     const position = positionRes?.position ?? positionRes?.rank ?? null;
     if (typeof position === 'number') setRank(position);
 
-    // XP is now handled by the shared useUserData() hook — no local state needed
-
-    // Find next locked tier name as next badge
     let nextName = t('log.nextMilestone');
     const ach = achievementsRes?.achievements || [];
     for (const a of ach) {
@@ -77,7 +74,6 @@ export default function RideLogScreen(): React.JSX.Element {
     }
     setNextBadge(nextName);
 
-    // Build badges from unlocked tiers (top 4)
     const unlockedBadges: { id: string; title: string; achievementId: string }[] = [];
     ach.forEach((a: any) => {
       (a.tiers || []).forEach((tier: any) => {
@@ -86,7 +82,6 @@ export default function RideLogScreen(): React.JSX.Element {
     });
     setBadges(unlockedBadges.slice(0, 4));
 
-    // Split journeys into solo vs group
     const journeys: JourneyItem[] = historyRes?.journeys || [];
     const solo = journeys.filter(j => !j.group);
     const group = journeys.filter(j => !!j.group);
@@ -97,7 +92,6 @@ export default function RideLogScreen(): React.JSX.Element {
   const loadData = React.useCallback(async (useCache = true) => {
     if (!isAuthenticated) return;
 
-    // 1. Try to load from cache first for instant render
     if (useCache) {
       try {
         const cached = await AsyncStorage.getItem(CACHE_KEY_LOG_DATA);
@@ -115,17 +109,14 @@ export default function RideLogScreen(): React.JSX.Element {
          setLoading(true);
       }
 
-      // 2. Fetch fresh data (XP comes from the shared useUserData hook)
       const [positionRes, achievementsRes, historyRes] = await Promise.all([
         leaderboardAPI.getUserPosition(),
         userAPI.getAchievements(),
-        userAPI.getJourneyHistory({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
+        userAPI.getJourneyHistory({ limit: 40, sortBy: 'startTime', sortOrder: 'desc' }),
       ]);
 
-      // 3. Update state with fresh data
       processAndSetData(positionRes, achievementsRes, historyRes);
 
-      // 4. Update cache
       AsyncStorage.setItem(CACHE_KEY_LOG_DATA, JSON.stringify({
         positionRes,
         achievementsRes,
@@ -140,23 +131,22 @@ export default function RideLogScreen(): React.JSX.Element {
     }
   }, [isAuthenticated, soloJourneys.length, groupJourneys.length, processAndSetData]);
 
-  // Refresh data on screen focus (matches home screen behavior)
   useFocusEffect(
     useCallback(() => {
       loadData(true);
-      refreshUserData(); // Sync XP with home screen
+      refreshUserData();
     }, [loadData, refreshUserData])
   );
 
   const normalizeDistance = (value?: number) => {
     if (!value || value <= 0) return 0;
-    // API returns distance in kilometers, use as-is
     return value;
   };
 
   const formatDistance = (km?: number) => {
     return convertDistance(normalizeDistance(km));
   };
+  
   const formatDuration = (seconds?: number) => {
     if (!seconds || seconds <= 0) return '0m';
     const hrs = Math.floor(seconds / 3600);
@@ -164,253 +154,251 @@ export default function RideLogScreen(): React.JSX.Element {
     if (hrs > 0) return `${hrs}h ${mins}m`;
     return `${mins}m`;
   };
-  const formatDate = (iso?: string) => {
+
+  const formatDateLabel = (iso?: string) => {
     if (!iso) return '';
-    return new Date(iso).toLocaleDateString(i18n.language, {
+    const date = new Date(iso);
+    return date.toLocaleDateString(i18n.language, {
       month: 'short',
       day: 'numeric',
     });
   };
 
-  const groupedGroupJourneys = useMemo(() => {
-    const sections = new Map<string, { groupName: string; journeys: JourneyItem[] }>();
-    groupJourneys.forEach(journey => {
-      const key = journey.group?.id || journey.id;
-      const name = journey.group?.name || t('log.groupRideDefault');
-      if (!sections.has(key)) {
-        sections.set(key, { groupName: name, journeys: [] });
-      }
-      sections.get(key)!.journeys.push(journey);
+  const getTimeLabel = (iso?: string) => {
+    if (!iso) return '';
+    const date = new Date(iso);
+    return date.toLocaleTimeString(i18n.language, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
-    return Array.from(sections.entries()).map(([groupId, data]) => ({
-      groupId,
-      ...data,
-    }));
-  }, [groupJourneys]);
+  };
+
+  const groupedSoloByDate = useMemo(() => {
+    const groups: { month: string; journeys: JourneyItem[] }[] = [];
+    soloJourneys.forEach(j => {
+      const date = new Date(j.startTime || '');
+      const month = date.toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' });
+      const group = groups.find(g => g.month === month);
+      if (group) {
+        group.journeys.push(j);
+      } else {
+        groups.push({ month, journeys: [j] });
+      }
+    });
+    return groups;
+  }, [soloJourneys, i18n.language]);
+
+  const groupedGroupJourneys = useMemo(() => {
+    const groups: { month: string; items: { name: string; journeys: JourneyItem[] }[] }[] = [];
+    groupJourneys.forEach(j => {
+      const date = new Date(j.startTime || '');
+      const month = date.toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' });
+      const monthGroup = groups.find(g => g.month === month);
+      
+      const groupName = j.group?.name || t('log.groupRideDefault');
+      
+      if (monthGroup) {
+        const item = monthGroup.items.find(i => i.name === groupName);
+        if (item) {
+          item.journeys.push(j);
+        } else {
+          monthGroup.items.push({ name: groupName, journeys: [j] });
+        }
+      } else {
+        groups.push({ 
+          month, 
+          items: [{ name: groupName, journeys: [j] }] 
+        });
+      }
+    });
+    return groups;
+  }, [groupJourneys, i18n.language, t]);
+
+  const renderTimelineNode = (journey: JourneyItem, isLast: boolean) => {
+    const coverUri =
+      journey.coverPhotoUrl ||
+      journey.photos?.[0]?.thumbnailUrl ||
+      journey.photos?.[0]?.imageUrl ||
+      journey.photos?.[0]?.firebasePath;
+
+    return (
+      <View key={journey.id} style={styles.timelineNode}>
+        <View style={styles.pathColumn}>
+          <View style={styles.timelineDot} />
+          {!isLast && <View style={styles.timelinePath} />}
+        </View>
+
+        <TouchableOpacity
+          style={styles.nodeContent}
+          activeOpacity={0.7}
+          onPress={() => {
+            router.push({
+              pathname: '/journey-detail',
+              params: { journeyId: journey.id }
+            });
+          }}
+        >
+          <View style={styles.nodeLeft}>
+            <Text style={styles.nodeTime}>{getTimeLabel(journey.startTime)}</Text>
+            <Text style={styles.nodeTitle} numberOfLines={1}>
+              {journey.title || t('log.soloRideDefault')}
+            </Text>
+            <View style={styles.nodeStats}>
+              <Text style={styles.nodeStatText}>{formatDistance(journey.totalDistance)}</Text>
+              <View style={styles.statDot} />
+              <Text style={styles.nodeStatText}>{formatDuration(journey.totalTime)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.nodeRight}>
+            {coverUri ? (
+              <Image source={{ uri: coverUri }} style={styles.nodeThumb} />
+            ) : (
+              <LinearGradient
+                colors={['#F9A825', '#FF8F00']}
+                style={styles.nodeThumb}
+              >
+                <Ionicons name="map" size={16} color="#FFF" />
+              </LinearGradient>
+            )}
+            <JourneyCardMenu
+              journeyId={journey.id}
+              journeyTitle={journey.title || t('log.soloRideDefault')}
+              onRename={() => loadData()}
+              onDelete={() => {
+                setSoloJourneys(prev => prev.filter(j => j.id !== journey.id));
+              }}
+              iconColor="#CCC"
+              iconSize={16}
+            />
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Progress Card — shared XP source with home screen */}
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.explorerBadge}>{rank ? t('log.rank', { rank }) : t('log.rankPlaceholder')}</Text>
-          </View>
+      <StatusBar barStyle="dark-content" />
+      
+      <View style={styles.header}>
+        <View style={styles.rankBadge}>
+          <Text style={styles.rankText}>{rank ? `#${rank}` : '--'}</Text>
+          <Text style={styles.rankLabel}>{t('log.globalRank')}</Text>
+        </View>
+        <View style={styles.headerXP}>
           <XPProgress
             xp={dashboardData?.user?.xp || 0}
             level={dashboardData?.user?.level || 1}
             compact
           />
-          <Text style={styles.nextBadgeText}>{t('log.nextBadge')} <Text style={styles.trailblazerText}>{nextBadge || '—'}</Text></Text>
         </View>
-        
-        {/* Badges Section */}
-        <View style={styles.badgesSection}>
-          <View style={styles.badgesGrid}>
-            {badges.length === 0 ? (
-              <Text style={styles.badgeTitle}>{t('log.noBadges')}</Text>
-            ) : (
-              badges.map((badge) => {
-                const badgeSource = ACHIEVEMENT_BADGES[badge.achievementId as keyof typeof ACHIEVEMENT_BADGES];
-                return (
-                  <View key={badge.id} style={styles.badgeContainer}>
-                    <View style={[styles.badgeImage, { alignItems: 'center', justifyContent: 'center' }]}>
-                      {badgeSource ? (
-                        <Image
-                          source={badgeSource}
-                          style={{ width: 50, height: 50 }}
-                          resizeMode="contain"
-                        />
-                      ) : (
-                        <Text style={{ fontSize: 20 }}>🏅</Text>
-                      )}
-                    </View>
-                    {badge.title ? <Text style={styles.badgeTitle}>{badge.title}</Text> : null}
-                  </View>
-                );
-              })
-            )}
-          </View>
-        </View>
+      </View>
 
-        {/* Tabs Container */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'solo' && styles.activeTab]}
-            onPress={() => setActiveTab('solo')}
+      <View style={styles.tabBar}>
+        {['solo', 'group', 'challenges'].map(tab => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
+            onPress={() => setActiveTab(tab)}
           >
-            <Text style={[styles.tabText, activeTab === 'solo' && styles.activeTabText]}>
-              {t('log.tabSolo')}
+            <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
+              {t(`log.tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`)}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'group' && styles.activeTab]}
-            onPress={() => setActiveTab('group')}
-          >
-            <Text style={[styles.tabText, activeTab === 'group' && styles.activeTabText]}>
-              {t('log.tabGroup')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'challenges' && styles.activeTab]}
-            onPress={() => setActiveTab('challenges')}
-          >
-            <Text style={[styles.tabText, activeTab === 'challenges' && styles.activeTabText]}>
-              {t('log.tabChallenges')}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        ))}
+      </View>
 
-        {/* Rides Sections */}
+      <ScrollView 
+        style={styles.timelineContainer}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.timelineContent}
+      >
         {activeTab === 'solo' && (
-          <View style={styles.challengesSection}>
-            {soloJourneys.length === 0 ? (
-              <Text style={styles.badgeTitle}>{t('log.noSoloRides')}</Text>
-            ) : (
-              soloJourneys.map((j) => {
-                const coverUri =
-                  j.coverPhotoUrl ||
-                  j.photos?.[0]?.thumbnailUrl ||
-                  j.photos?.[0]?.imageUrl ||
-                  j.photos?.[0]?.firebasePath;
-
-                return (
-                  <TouchableOpacity
-                    key={j.id}
-                    style={styles.memoryCard}
-                    activeOpacity={0.88}
-                    onPress={() => {
-                      router.push({
-                        pathname: '/journey-detail',
-                        params: { journeyId: j.id }
-                      });
-                    }}
-                  >
-                    <View style={styles.memoryCoverWrapper}>
-                      {coverUri ? (
-                        <Image source={{ uri: coverUri }} style={styles.memoryCover} />
-                      ) : (
-                        <LinearGradient
-                          colors={['#F9A825', '#FF6F00']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={[styles.memoryCover, styles.gradientPlaceholder]}
-                        >
-                          <Text style={styles.gradientTitle} numberOfLines={2}>
-                            {j.title || t('log.soloRideDefault')}
-                          </Text>
-                        </LinearGradient>
-                      )}
-                      <View style={styles.memoryMenuOverlay}>
-                        <JourneyCardMenu
-                          journeyId={j.id}
-                          journeyTitle={j.title || t('log.soloRideDefault')}
-                          onRename={() => loadData()}
-                          onDelete={() => {
-                            setSoloJourneys(prev => prev.filter(journey => journey.id !== j.id));
-                          }}
-                          iconColor="#fff"
-                          iconSize={18}
-                        />
-                      </View>
-                    </View>
-                    <View style={styles.memoryInfo}>
-                      <Text style={styles.memoryTitle} numberOfLines={1}>
-                        {j.title || t('log.soloRideDefault')}
-                      </Text>
-                      <Text style={styles.memoryMeta}>
-                        {formatDate(j.startTime)} · {formatDistance(j.totalDistance)} · {formatDuration(j.totalTime)}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </View>
+          groupedSoloByDate.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Feather name="map" size={48} color="#EEE" />
+              <Text style={styles.emptyText}>{t('log.noSoloRides')}</Text>
+            </View>
+          ) : (
+            groupedSoloByDate.map((group, gIdx) => (
+              <View key={group.month} style={styles.monthSection}>
+                <Text style={styles.monthTitle}>{group.month}</Text>
+                {group.journeys.map((j, jIdx) => 
+                  renderTimelineNode(j, gIdx === groupedSoloByDate.length - 1 && jIdx === group.journeys.length - 1)
+                )}
+              </View>
+            ))
+          )
         )}
 
         {activeTab === 'group' && (
-          <View style={styles.groupJourneySection}>
-            {groupedGroupJourneys.length === 0 ? (
-              <Text style={styles.badgeTitle}>{t('log.noGroupRides')}</Text>
-            ) : (
-              groupedGroupJourneys.map(section => (
-                <View key={section.groupId} style={styles.groupRideCard}>
-                  <View style={styles.groupHeaderRow}>
-                    <Text style={styles.groupRideTitle}>{section.groupName}</Text>
-                    <Text style={styles.groupRideCount}>
-                      {section.journeys.length === 1 ? t('log.oneRide') : `${section.journeys.length} ${t('log.ridesSuffix')}`}
-                    </Text>
-                  </View>
-                  {section.journeys.map((journey, index) => {
-                    const coverUri =
-                      journey.coverPhotoUrl ||
-                      journey.photos?.[0]?.thumbnailUrl ||
-                      journey.photos?.[0]?.imageUrl ||
-                      journey.photos?.[0]?.firebasePath;
-
-                    return (
-                      <View key={journey.id}>
-                        <TouchableOpacity
-                          style={styles.groupRideRow}
-                          onPress={() => {
-                            if (journey.groupJourneyId) {
-                              router.push({
-                                pathname: '/group-journey-detail',
-                                params: { groupJourneyId: journey.groupJourneyId },
-                              } as any);
-                            } else {
-                              router.push({
-                                pathname: '/journey-detail',
-                                params: { journeyId: journey.id },
-                              });
-                            }
-                          }}
-                        >
-                          {coverUri ? (
-                            <Image source={{ uri: coverUri }} style={styles.groupRideImage} />
-                          ) : (
-                            <LinearGradient
-                              colors={['#F9A825', '#FF6F00']}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 1 }}
-                              style={[styles.groupRideImage, styles.gradientPlaceholder]}
-                            >
-                              <Text style={styles.gradientTitleSmall} numberOfLines={2}>
-                                {journey.title || section.groupName || t('log.groupRideDefault')}
-                              </Text>
-                            </LinearGradient>
-                          )}
-                          <View style={styles.groupRideContent}>
-                            <Text style={styles.groupRideName} numberOfLines={1}>
-                              {journey.title || section.groupName || t('log.groupRideDefault')}
-                            </Text>
-                            <Text style={styles.groupRideMeta}>
-                              {formatDate(journey.startTime)} · {formatDistance(journey.totalDistance)} · {formatDuration(journey.totalTime)}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        {index < section.journeys.length - 1 && <View style={styles.groupRideDivider} />}
+          groupedGroupJourneys.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Feather name="users" size={48} color="#EEE" />
+              <Text style={styles.emptyText}>{t('log.noGroupRides')}</Text>
+            </View>
+          ) : (
+            groupedGroupJourneys.map(monthGroup => (
+              <View key={monthGroup.month} style={styles.monthSection}>
+                <Text style={styles.monthTitle}>{monthGroup.month}</Text>
+                {monthGroup.items.map(group => (
+                  <View key={group.name} style={styles.groupTimelineCard}>
+                    <View style={styles.groupCardHeader}>
+                      <Text style={styles.groupCardTitle}>{group.name}</Text>
+                      <View style={styles.groupBadge}>
+                        <Text style={styles.groupBadgeText}>{group.journeys.length}</Text>
                       </View>
-                    );
-                  })}
-                </View>
-              ))
-            )}
-          </View>
+                    </View>
+                    {group.journeys.map((j, idx) => (
+                      <TouchableOpacity
+                        key={j.id}
+                        style={styles.groupRideItem}
+                        onPress={() => {
+                          if (j.groupJourneyId) {
+                            router.push({
+                              pathname: '/group-journey-detail',
+                              params: { groupJourneyId: j.groupJourneyId },
+                            } as any);
+                          } else {
+                            router.push({
+                              pathname: '/journey-detail',
+                              params: { journeyId: j.id },
+                            });
+                          }
+                        }}
+                      >
+                        <View style={styles.groupRideDot} />
+                        <View style={styles.groupRideContent}>
+                          <Text style={styles.groupRideDate}>{formatDateLabel(j.startTime)}</Text>
+                          <Text style={styles.groupRideStats}>
+                            {formatDistance(j.totalDistance)} · {formatDuration(j.totalTime)}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color="#DDD" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ))
+          )
         )}
 
         {activeTab === 'challenges' && (
-          <View style={[styles.challengesSection, { alignItems: 'center' }]}>
-            <Text style={styles.challengeTitle}>{t('log.comingSoon')}</Text>
+          <View style={styles.comingSoon}>
+            <LinearGradient
+              colors={['#FFF8E1', '#FFFDE7']}
+              style={styles.comingSoonCard}
+            >
+              <Ionicons name="trophy-outline" size={40} color="#F9A825" />
+              <Text style={styles.comingSoonTitle}>{t('log.challengesComingSoon') || 'Challenges Coming Soon'}</Text>
+              <Text style={styles.comingSoonText}>Compete with friends and earn exclusive badges.</Text>
+            </LinearGradient>
           </View>
         )}
       </ScrollView>
-
     </View>
   );
 }
@@ -420,285 +408,262 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 120,
-  },
-  progressCard: {
-    marginHorizontal: 15,
-    marginTop: 16,
-    backgroundColor: '#F9A825',
-    borderRadius: 10,
-    padding: 18,
-  },
-  progressHeader: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
-    marginBottom: 5,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
   },
-  explorerBadge: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    fontFamily: 'Poppins',
-  },
-  nextBadgeText: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    textAlign: 'right',
-  },
-  trailblazerText: {
-    fontWeight: '700',
-  },
-  badgesSection: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-  badgesGrid: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    gap: 16,
-  },
-  badgeContainer: {
-    alignItems: 'center',
-  },
-  badgeImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginBottom: 8,
-  },
-  badgeTitle: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    textAlign: 'center',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    marginTop: 20,
-    marginBottom: 20,
-    gap: 8,
-  },
-  tab: {
-    paddingHorizontal: 16,
+  rankBadge: {
+    backgroundColor: '#000',
+    borderRadius: 12,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
+    alignItems: 'center',
+    marginRight: 15,
   },
-  activeTab: {
-    backgroundColor: '#F9A825',
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#000000',
+  rankText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
     fontFamily: 'Space Grotesk',
   },
-  activeTabText: {
-    color: '#000000',
+  rankLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 8,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  challengesSection: {
-    paddingHorizontal: 16,
-    gap: 16,
+  headerXP: {
+    flex: 1,
   },
-  groupJourneySection: {
-    paddingHorizontal: 16,
-    gap: 16,
-    marginBottom: 20,
-  },
-  challengeCard: {
+  tabBar: {
     flexDirection: 'row',
-    backgroundColor: 'transparent',
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  challengeImage: {
-    width: 165,
-    height: 80,
-    borderRadius: 5,
+  tabItem: {
+    paddingVertical: 12,
+    marginRight: 24,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: '#F9A825',
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9E9E9E',
+    fontFamily: 'Space Grotesk',
+  },
+  tabLabelActive: {
+    color: '#000',
+  },
+  timelineContainer: {
+    flex: 1,
+  },
+  timelineContent: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  monthSection: {
+    marginBottom: 30,
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#000',
+    fontFamily: 'Space Grotesk',
+    marginBottom: 20,
+    textTransform: 'capitalize',
+  },
+  timelineNode: {
+    flexDirection: 'row',
+    minHeight: 80,
+    marginBottom: 0,
+  },
+  pathColumn: {
+    width: 24,
+    alignItems: 'center',
     marginRight: 12,
   },
-  challengeContent: {
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#F9A825',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    zIndex: 2,
+    marginTop: 6,
+    shadowColor: "#F9A825",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  timelinePath: {
+    position: 'absolute',
+    top: 12,
+    bottom: -12,
+    width: 2,
+    backgroundColor: '#F5F5F5',
+    zIndex: 1,
+  },
+  nodeContent: {
     flex: 1,
-    justifyContent: 'flex-start',
-    paddingTop: 4,
+    flexDirection: 'row',
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'center',
   },
-  challengeTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-    fontFamily: 'Space Grotesk',
-    marginBottom: 4,
+  nodeLeft: {
+    flex: 1,
   },
-  challengeDuration: {
+  nodeTime: {
     fontSize: 10,
-    fontWeight: '400',
-    color: '#000000',
+    color: '#9E9E9E',
+    fontWeight: '600',
     fontFamily: 'Poppins',
     marginBottom: 2,
   },
-  challengeDistance: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    marginBottom: 8,
-  },
-  challengeProgressContainer: {
-    alignItems: 'flex-end',
-  },
-  challengeProgressBar: {
-    width: 180,
-    height: 2,
-    backgroundColor: '#D9D9D9',
-    borderRadius: 5,
+  nodeTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
+    fontFamily: 'Space Grotesk',
     marginBottom: 4,
   },
-  challengeProgressFill: {
-    height: '100%',
-    width: '36%', // 65/180 from Figma
-    backgroundColor: '#F9A825',
-    borderRadius: 5,
+  nodeStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  challengeStatus: {
-    fontSize: 5,
-    fontWeight: '400',
-    color: '#000000',
+  nodeStatText: {
+    fontSize: 11,
+    color: '#616161',
+    fontWeight: '500',
     fontFamily: 'Poppins',
   },
-  groupRideCard: {
-    backgroundColor: '#F5F5F5',
+  statDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#DDD',
+    marginHorizontal: 6,
+  },
+  nodeRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  nodeThumb: {
+    width: 48,
+    height: 48,
     borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 60,
     gap: 12,
   },
-  groupHeaderRow: {
+  emptyText: {
+    fontSize: 14,
+    color: '#9E9E9E',
+    fontFamily: 'Poppins',
+  },
+  groupTimelineCard: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  groupCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 16,
   },
-  groupRideTitle: {
+  groupCardTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#000000',
+    fontWeight: '800',
+    color: '#000',
     fontFamily: 'Space Grotesk',
   },
-  groupRideCount: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#424242',
-    fontFamily: 'Poppins',
+  groupBadge: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
-  groupRideRow: {
+  groupBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#666',
+  },
+  groupRideItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 4,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
-  groupRideImage: {
-    width: 80,
-    height: 60,
-    borderRadius: 8,
+  groupRideDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#DDD',
+    marginRight: 12,
   },
   groupRideContent: {
     flex: 1,
   },
-  groupRideName: {
-    fontSize: 14,
+  groupRideDate: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#000000',
+    color: '#424242',
     fontFamily: 'Space Grotesk',
   },
-  groupRideMeta: {
-    fontSize: 12,
-    color: '#616161',
+  groupRideStats: {
+    fontSize: 11,
+    color: '#9E9E9E',
     fontFamily: 'Poppins',
     marginTop: 2,
   },
-  groupRideDivider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginVertical: 6,
+  comingSoon: {
+    paddingTop: 20,
   },
-  viewAllButton: {
-    marginHorizontal: 142,
-    marginTop: 20,
-    backgroundColor: '#F9A825',
-    borderRadius: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
+  comingSoonCard: {
+    padding: 30,
+    borderRadius: 24,
     alignItems: 'center',
-    width: 106,
-    height: 28,
-  },
-  viewAllText: {
-    fontSize: 8,
-    fontWeight: '400',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  gradientPlaceholder: {
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 8,
+    borderWidth: 1,
+    borderColor: '#FFF59D',
   },
-  memoryCard: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  memoryCoverWrapper: {
-    position: 'relative',
-  },
-  memoryCover: {
-    width: '100%',
-    height: 180,
-  },
-  memoryMenuOverlay: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-  },
-  memoryInfo: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-  },
-  memoryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000000',
+  comingSoonTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#000',
     fontFamily: 'Space Grotesk',
-    marginBottom: 4,
+    marginTop: 16,
+    marginBottom: 8,
   },
-  memoryMeta: {
-    fontSize: 12,
-    color: '#9E9E9E',
+  comingSoonText: {
+    fontSize: 13,
+    color: '#616161',
+    textAlign: 'center',
     fontFamily: 'Poppins',
-  },
-  gradientTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'Space Grotesk',
-    textAlign: 'center',
-  },
-  gradientTitleSmall: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'Space Grotesk',
-    textAlign: 'center',
+    lineHeight: 20,
   },
 });
-

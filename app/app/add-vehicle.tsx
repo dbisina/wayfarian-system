@@ -1,6 +1,3 @@
-// app/app/add-vehicle.tsx
-// Add or edit a garage vehicle
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,8 +11,9 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -27,12 +25,12 @@ import {
 } from '../store/slices/vehicleSlice';
 
 const VEHICLE_TYPES = [
-  { value: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' },
-  { value: 'car',        label: 'Car',        emoji: '🚗' },
-  { value: 'scooter',    label: 'Scooter',    emoji: '🛵' },
-  { value: 'bike',       label: 'Bicycle',    emoji: '🚲' },
-  { value: 'truck',      label: 'Truck',      emoji: '🚚' },
-  { value: 'van',        label: 'Van',        emoji: '🚐' },
+  { value: 'motorcycle', label: 'Motorcycle', image: require('../assets/images/vehicles/motorcycle.png') },
+  { value: 'scooter',    label: 'Scooty',     image: require('../assets/images/vehicles/motorcycle.png') }, // Placeholder for Indian Scooty
+  { value: 'car',        label: 'Car',        image: require('../assets/images/vehicles/car.png') },
+  { value: 'bike',       label: 'Bicycle',    image: require('../assets/images/vehicles/bicycle.png') },
+  { value: 'boat',       label: 'Boat',       image: require('../assets/images/vehicles/boat.png') },
+  { value: 'other',      label: 'Other',      icon: 'more-horiz' },
 ] as const;
 
 export default function AddVehicleScreen() {
@@ -121,7 +119,11 @@ export default function AddVehicleScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -145,14 +147,18 @@ export default function AddVehicleScreen() {
         )}
       </View>
 
-      {/* Onboarding hint */}
-      {isOnboarding && (
-        <Text style={styles.onboardingHint}>
-          Add a vehicle to show on your journeys and leaderboard. You can add more later in Settings.
-        </Text>
-      )}
+      <ScrollView 
+        contentContainerStyle={styles.content} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Onboarding hint */}
+        {isOnboarding && (
+          <Text style={styles.onboardingHint}>
+            Add a vehicle to show on your journeys and leaderboard. You can add more later in Settings.
+          </Text>
+        )}
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Photo */}
         <TouchableOpacity style={styles.photoContainer} onPress={handlePickPhoto} disabled={uploadingPhoto}>
           {photoUri ? (
@@ -172,75 +178,89 @@ export default function AddVehicleScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Vehicle Type */}
-        <Text style={styles.sectionLabel}>Type</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeScroll}>
+        {/* Vehicle Type Selection Grid */}
+        <Text style={styles.sectionLabel}>Vehicle Type</Text>
+        <View style={styles.typeGrid}>
           {VEHICLE_TYPES.map(t => (
             <TouchableOpacity
               key={t.value}
-              style={[styles.typeChip, type === t.value && styles.typeChipSelected]}
+              style={[styles.typeCard, type === t.value && styles.typeCardSelected]}
               onPress={() => setType(t.value)}
+              activeOpacity={0.7}
             >
-              <Text style={styles.typeEmoji}>{t.emoji}</Text>
+              <View style={styles.typeIconContainer}>
+                {'image' in t ? (
+                  <Image source={t.image} style={styles.typeImage} resizeMode="contain" />
+                ) : (
+                  <MaterialIcons name={t.icon as any} size={32} color={type === t.value ? '#F9A825' : '#9E9E9E'} />
+                )}
+              </View>
               <Text style={[styles.typeLabel, type === t.value && styles.typeLabelSelected]}>{t.label}</Text>
+              {type === t.value && (
+                <View style={styles.selectedBadge}>
+                  <Ionicons name="checkmark-circle" size={16} color="#F9A825" />
+                </View>
+              )}
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {/* Fields */}
-        <Text style={styles.sectionLabel}>Nickname *</Text>
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g. My Kawasaki"
-          placeholderTextColor="#BDBDBD"
-          maxLength={60}
-        />
+        <View style={styles.formSection}>
+          <Text style={styles.fieldLabel}>Nickname *</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. My Kawasaki"
+            placeholderTextColor="#BDBDBD"
+            maxLength={60}
+          />
 
-        <Text style={styles.sectionLabel}>Make *</Text>
-        <TextInput
-          style={styles.input}
-          value={make}
-          onChangeText={setMake}
-          placeholder="e.g. Kawasaki"
-          placeholderTextColor="#BDBDBD"
-          maxLength={60}
-        />
+          <Text style={styles.fieldLabel}>Make *</Text>
+          <TextInput
+            style={styles.input}
+            value={make}
+            onChangeText={setMake}
+            placeholder="e.g. Kawasaki"
+            placeholderTextColor="#BDBDBD"
+            maxLength={60}
+          />
 
-        <Text style={styles.sectionLabel}>Model *</Text>
-        <TextInput
-          style={styles.input}
-          value={model}
-          onChangeText={setModel}
-          placeholder="e.g. Z900"
-          placeholderTextColor="#BDBDBD"
-          maxLength={60}
-        />
+          <Text style={styles.fieldLabel}>Model *</Text>
+          <TextInput
+            style={styles.input}
+            value={model}
+            onChangeText={setModel}
+            placeholder="e.g. Z900"
+            placeholderTextColor="#BDBDBD"
+            maxLength={60}
+          />
 
-        <View style={styles.row}>
-          <View style={styles.halfCol}>
-            <Text style={styles.sectionLabel}>Year</Text>
-            <TextInput
-              style={styles.input}
-              value={year}
-              onChangeText={setYear}
-              placeholder="2022"
-              placeholderTextColor="#BDBDBD"
-              keyboardType="numeric"
-              maxLength={4}
-            />
-          </View>
-          <View style={styles.halfCol}>
-            <Text style={styles.sectionLabel}>Color</Text>
-            <TextInput
-              style={styles.input}
-              value={color}
-              onChangeText={setColor}
-              placeholder="Metallic Blue"
-              placeholderTextColor="#BDBDBD"
-              maxLength={40}
-            />
+          <View style={styles.row}>
+            <View style={styles.halfCol}>
+              <Text style={styles.fieldLabel}>Year</Text>
+              <TextInput
+                style={styles.input}
+                value={year}
+                onChangeText={setYear}
+                placeholder="2022"
+                placeholderTextColor="#BDBDBD"
+                keyboardType="numeric"
+                maxLength={4}
+              />
+            </View>
+            <View style={styles.halfCol}>
+              <Text style={styles.fieldLabel}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="Metallic Blue"
+                placeholderTextColor="#BDBDBD"
+                maxLength={40}
+              />
+            </View>
           </View>
         </View>
 
@@ -249,18 +269,19 @@ export default function AddVehicleScreen() {
           style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
           onPress={handleSave}
           disabled={saving}
+          activeOpacity={0.8}
         >
           {saving ? (
             <ActivityIndicator color="#FFF" />
           ) : (
             <>
-              <Ionicons name="checkmark" size={20} color="#FFF" />
               <Text style={styles.saveBtnText}>{isEditing ? 'Save Changes' : 'Add Vehicle'}</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </>
           )}
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -273,93 +294,155 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 56 : 16,
     paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#000' },
-  content: { padding: 20, paddingBottom: 48 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#000', fontFamily: 'Space Grotesk' },
+  content: { padding: 20, paddingBottom: 60 },
+  onboardingHint: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+    fontFamily: 'Poppins',
+  },
   photoContainer: {
     alignSelf: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
     position: 'relative',
   },
-  photo: { width: 160, height: 120, borderRadius: 16, backgroundColor: '#F5F5F5', resizeMode: 'cover' },
+  photo: { width: 140, height: 140, borderRadius: 70, backgroundColor: '#F5F5F5' },
   photoPlaceholder: {
-    width: 160,
-    height: 120,
-    borderRadius: 16,
-    backgroundColor: '#F5F5F5',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#F9F9F9',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#F0F0F0',
     borderStyle: 'dashed',
-    gap: 6,
+    gap: 8,
   },
-  photoPlaceholderText: { fontSize: 13, color: '#9E9E9E', fontWeight: '500' },
+  photoPlaceholderText: { fontSize: 13, color: '#9E9E9E', fontWeight: '600', fontFamily: 'Space Grotesk' },
   cameraButton: {
     position: 'absolute',
-    bottom: -6,
-    right: -6,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    bottom: 4,
+    right: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#F9A825',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#FFFFFF',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
   },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#757575', marginBottom: 6, marginTop: 16, textTransform: 'uppercase', letterSpacing: 0.4 },
-  typeScroll: { marginHorizontal: -4 },
-  typeChip: {
+  sectionLabel: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#000', 
+    marginBottom: 16, 
+    fontFamily: 'Space Grotesk' 
+  },
+  typeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 32,
+  },
+  typeCard: {
+    width: '31%',
+    aspectRatio: 0.9,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 10,
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    marginHorizontal: 4,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  typeCardSelected: {
+    borderColor: '#F9A825',
+    backgroundColor: 'rgba(249, 168, 37, 0.04)',
     borderWidth: 2,
-    borderColor: 'transparent',
+  },
+  typeIconContainer: {
+    width: 50,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
-  typeChipSelected: { borderColor: '#F9A825', backgroundColor: 'rgba(249, 168, 37, 0.08)' },
-  typeEmoji: { fontSize: 22, marginBottom: 3 },
-  typeLabel: { fontSize: 12, fontWeight: '500', color: '#424242' },
-  typeLabelSelected: { color: '#E65100', fontWeight: '700' },
+  typeImage: {
+    width: '100%',
+    height: '100%',
+  },
+  typeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#616161',
+    fontFamily: 'Space Grotesk',
+    textAlign: 'center',
+  },
+  typeLabelSelected: {
+    color: '#F9A825',
+  },
+  selectedBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  formSection: {
+    gap: 16,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#424242',
+    marginBottom: -8,
+    fontFamily: 'Space Grotesk',
+  },
   input: {
-    backgroundColor: '#F8F8F8',
+    backgroundColor: '#F9F9F9',
     borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
     color: '#000',
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    borderColor: '#F0F0F0',
+    fontFamily: 'Poppins',
   },
   row: { flexDirection: 'row', gap: 12 },
-  halfCol: { flex: 1 },
+  halfCol: { flex: 1, gap: 16 },
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#F9A825',
+    gap: 10,
+    backgroundColor: '#000000',
     borderRadius: 16,
-    paddingVertical: 16,
-    marginTop: 32,
+    paddingVertical: 18,
+    marginTop: 40,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
-  skipText: { fontSize: 14, fontWeight: '600', color: '#F9A825' },
-  onboardingHint: {
-    fontSize: 13,
-    color: '#757575',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 4,
-    lineHeight: 18,
-  },
+  saveBtnText: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', fontFamily: 'Space Grotesk' },
+  skipText: { fontSize: 15, fontWeight: '600', color: '#F9A825', fontFamily: 'Space Grotesk' },
 });

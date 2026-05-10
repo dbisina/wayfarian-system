@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -114,87 +115,92 @@ export default function JourneyEndModal({ visible, onDone }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent>
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          {/* Handle bar */}
-          <View style={styles.handle} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            {/* Handle bar */}
+            <View style={styles.handle} />
 
-          <Text style={styles.heading}>Journey Complete</Text>
+            <Text style={styles.heading}>Journey Complete</Text>
 
-          {/* Stats summary */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{timeStr}</Text>
-              <Text style={styles.statLabel}>Time</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{distStr}</Text>
-              <Text style={styles.statLabel}>Distance</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{speedStr}</Text>
-              <Text style={styles.statLabel}>Top Speed</Text>
-            </View>
-          </View>
-
-          {/* Title input */}
-          <Text style={styles.label}>Give it a name</Text>
-          <TextInput
-            style={styles.titleInput}
-            placeholder="My Journey"
-            placeholderTextColor="#aaa"
-            value={title}
-            onChangeText={setTitle}
-            maxLength={80}
-            returnKeyType="done"
-          />
-
-          {/* Photos */}
-          <Text style={styles.label}>Add Photos</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.photosScroll}
-            contentContainerStyle={styles.photosContent}
-          >
-            {pendingPhotos.map((uri, i) => (
-              <View key={i} style={styles.photoWrapper}>
-                <Image source={{ uri }} style={styles.photoThumb} />
-                <TouchableOpacity
-                  style={styles.removePhotoBtn}
-                  onPress={() => setPendingPhotos(prev => prev.filter((_, idx) => idx !== i))}
-                >
-                  <MaterialIcons name="close" size={14} color="#fff" />
-                </TouchableOpacity>
+            {/* Stats summary */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{timeStr}</Text>
+                <Text style={styles.statLabel}>Time</Text>
               </View>
-            ))}
-            <TouchableOpacity style={styles.addPhotoBtn} onPress={handleAddPhoto}>
-              <MaterialIcons name="camera-alt" size={22} color="#666" />
-              <Text style={styles.addPhotoText}>Camera</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.addPhotoBtn} onPress={handlePickFromLibrary}>
-              <MaterialIcons name="photo-library" size={22} color="#666" />
-              <Text style={styles.addPhotoText}>Library</Text>
-            </TouchableOpacity>
-          </ScrollView>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{distStr}</Text>
+                <Text style={styles.statLabel}>Distance</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{speedStr}</Text>
+                <Text style={styles.statLabel}>Top Speed</Text>
+              </View>
+            </View>
 
-          {/* Save button */}
-          <TouchableOpacity
-            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
-            onPress={handleSave}
-            disabled={isSaving}
-            activeOpacity={0.85}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#000" />
-            ) : (
-              <Text style={styles.saveBtnText}>Save Journey</Text>
-            )}
-          </TouchableOpacity>
+            {/* Title input */}
+            <Text style={styles.label}>Give it a name</Text>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="My Journey"
+              placeholderTextColor="#aaa"
+              value={title}
+              onChangeText={setTitle}
+              maxLength={80}
+              returnKeyType="done"
+            />
+
+            {/* Photos */}
+            <Text style={styles.label}>Add Photos</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.photosScroll}
+              contentContainerStyle={styles.photosContent}
+            >
+              {pendingPhotos.map((uri, i) => (
+                <View key={i} style={styles.photoWrapper}>
+                  <Image source={{ uri }} style={styles.photoThumb} />
+                  <TouchableOpacity
+                    style={styles.removePhotoBtn}
+                    onPress={() => setPendingPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                  >
+                    <MaterialIcons name="close" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addPhotoBtn} onPress={handleAddPhoto}>
+                <MaterialIcons name="camera-alt" size={22} color="#666" />
+                <Text style={styles.addPhotoText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.addPhotoBtn} onPress={handlePickFromLibrary}>
+                <MaterialIcons name="photo-library" size={22} color="#666" />
+                <Text style={styles.addPhotoText}>Library</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={isSaving}
+              activeOpacity={0.85}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Journey</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
