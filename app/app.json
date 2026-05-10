@@ -2,7 +2,7 @@
   "expo": {
     "name": "Wayfarian",
     "slug": "wayfarian",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icons/adaptive-icon.png",
     "description": "Wayfarian is your group journey companion. Track, share, and relive your adventures with friends.",
@@ -151,7 +151,7 @@
         "CAMERA"
       ],
       "package": "com.wayfarian.wayfarianadventures",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "config": {}
     },
