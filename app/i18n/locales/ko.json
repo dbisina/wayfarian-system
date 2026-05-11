@@ -195,12 +195,14 @@
         "failedStop": "종료 실패.",
         "startJourneyError": "시작 실패",
         "location": {
-            "backgroundTitle": "Wayfarian 백그라운드 위치 정보",
-            "backgroundMessage": "Wayfarian은 앱이 닫혀 있거나 사용 중이 아닐 때도 경로 추적, 거리 계산 및 실시간 내비게이션을 지원하기 위해 위치 데이터를 수집합니다.",
-            "backgroundPurpose": "이 데이터는 정확한 주행 통계를 제공하고 주행 기록과 업적이 올바르게 저장되도록 하는 데 사용됩니다.",
-            "backgroundAction": "이 기능을 활성화하려면 아래의 '권한 허용'을 누르고 시스템 설정에서 '항상 허용'을 선택하십시오.",
-            "grant": "권한 허용",
-            "notNow": "나중에"
+            "backgroundTitle": "Wayfarian이 위치 데이터를 수집합니다",
+            "backgroundMessage": "Wayfarian은 앱이 닫혀 있거나 사용 중이 아닐 때도 여정 추적, 거리 및 속도 통계, 실시간 그룹 주행 공유, 실시간 활동 알림을 활성화하기 위해 위치 데이터를 수집합니다.",
+            "backgroundPurpose": "위치 데이터는 휴대폰이 잠겨 있거나 Wayfarian이 백그라운드에서 실행 중일 때도 주행 기록을 계속하는 데 사용됩니다. 여정을 종료하거나 기기 설정에서 권한을 취소하여 언제든지 이를 중단할 수 있습니다.",
+            "backgroundFeature1": "앱이 닫혀 있거나 사용 중이 아닐 때 여정 추적",
+            "backgroundFeature2": "주행 중 그룹원과 실시간 위치 공유",
+            "backgroundFeature3": "속도와 거리를 표시하는 실시간 활동 알림",
+            "accept": "동의하고 계속하기",
+            "decline": "나중에"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "로그북",
+        "globalRank": "전 세계 순위",
+        "challengesComingSoon": "챌린지 준비 중",
         "allJourneys": "모든 여정",
         "noJourneysYet": "기록이 없습니다",
         "startExploring": "주행을 시작하고 추억을 기록하세요!",

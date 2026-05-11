@@ -195,12 +195,14 @@
         "failedStop": "停止に失敗しました。",
         "startJourneyError": "開始に失敗しました",
         "location": {
-            "backgroundTitle": "Wayfarian のバックグラウンドの位置情報",
-            "backgroundMessage": "Wayfarian は、アプリが閉じているときや使用されていないときでも、走行の追跡、距離 de 距離の計算、およびリアルタイムのナビゲーションを可能にするために位置情報を収集します。",
-            "backgroundPurpose": "このデータは、正確な走行統計を提供し、履歴や実績のために走行が正しく記録されるようにするために使用されます。",
-            "backgroundAction": "この機能を有効にするには、下の [権限を許可] をタップし、システム設定で [常に許可] を選択してください。",
-            "grant": "権限を許可",
-            "notNow": "後で"
+            "backgroundTitle": "Wayfarian が位置情報を収集します",
+            "backgroundMessage": "Wayfarian は、アプリが閉じているときや使用されていないときでも、旅の追跡、距離と速度の統計、リアルタイムのグループ走行共有、およびライブアクティビティ通知を可能にするために位置情報を収集します。",
+            "backgroundPurpose": "位置情報は、電話がロックされているときや Wayfarian がバックグラウンドで実行されているときに、走行の記録を続行するためにも使用されます。旅を終了するか、デバイスの設定で権限を取り消すことにより、いつでもこれを停止できます。",
+            "backgroundFeature1": "アプリが閉じているときや使用されていないときの走行追跡",
+            "backgroundFeature2": "走行中のグループとのリアルタイムの位置共有",
+            "backgroundFeature3": "速度と距離を表示するライブアクティビティ通知",
+            "accept": "同意して続行",
+            "decline": "今はしない"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "ログブック",
+        "globalRank": "世界ランク",
+        "challengesComingSoon": "近日公開予定のチャレンジ",
         "allJourneys": "すべての記録",
         "noJourneysYet": "まだ記録がありません",
         "startExploring": "旅を始めて思い出を作りましょう！",

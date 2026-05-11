@@ -832,8 +832,11 @@ export default function JourneyScreen(): React.JSX.Element {
           </View>
 
           {/* Floating Camera Button */}
-          <TouchableOpacity onPress={handleTakePhoto} style={styles.floatingCameraButton}>
-            <MaterialIcons name="camera-alt" size={22} color="#fff" />
+          <TouchableOpacity 
+            onPress={handleTakePhoto} 
+            style={[styles.floatingCameraButton, { bottom: insets.bottom + 230 }]}
+          >
+            <MaterialIcons name="camera-alt" size={24} color="#fff" />
           </TouchableOpacity>
 
           {/* Recenter Button (Navigation Mode) */}
@@ -872,9 +875,9 @@ export default function JourneyScreen(): React.JSX.Element {
                 // Prime the throttle so the periodic effect doesn't snap again immediately
                 lastCameraUpdateRef.current = Date.now();
               }}
-              style={styles.recenterButton}
+              style={[styles.recenterButton, { bottom: insets.bottom + 295 }]}
             >
-              <MaterialIcons name="navigation" size={24} color="#000" />
+              <MaterialIcons name="navigation" size={20} color="#F9A825" />
               <Text style={styles.recenterText}>{t('journey.recenter') || 'Recenter'}</Text>
             </TouchableOpacity>
           )}
@@ -1038,37 +1041,41 @@ const styles = StyleSheet.create({
   floatingCameraButton: {
     position: 'absolute',
     right: 15,
-    top: 532,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
   },
   recenterButton: {
     position: 'absolute',
     right: 15,
-    top: 590,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 25,
-    elevation: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     zIndex: 11,
   },
   recenterText: {
-    marginLeft: 8,
-    fontWeight: 'bold',
+    fontFamily: 'Space Grotesk',
     fontSize: 14,
-    color: '#000',
+    fontWeight: '700',
+    color: '#F9A825',
+    marginLeft: 8,
   },
   profileImage: {
     width: 45,

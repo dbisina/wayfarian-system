@@ -195,12 +195,14 @@
         "failedStop": "Beenden fehlgeschlagen.",
         "startJourneyError": "Start fehlgeschlagen",
         "location": {
-            "backgroundTitle": "Wayfarian Hintergrund-Standort",
-            "backgroundMessage": "Wayfarian sammelt Standortdaten, um die Reiseaufzeichnung, Distanzberechnung und Echtzeit-Navigation zu ermöglichen, selbst wenn die App geschlossen ist oder nicht verwendet wird.",
-            "backgroundPurpose": "Diese Daten werden verwendet, um genaue Fahrtstatistiken bereitzustellen und sicherzustellen, dass Ihre Reise korrekt für Ihren Verlauf und Ihre Erfolge aufgezeichnet wird.",
-            "backgroundAction": "Um diese Funktion zu aktivieren, tippen Sie bitte unten auf 'Berechtigung erteilen' und wählen Sie in den Systemeinstellungen 'Immer zulassen'.",
-            "grant": "Berechtigung erteilen",
-            "notNow": "Nicht jetzt"
+            "backgroundTitle": "Wayfarian sammelt Standortdaten",
+            "backgroundMessage": "Wayfarian sammelt Standortdaten, um die Reiseverfolgung, Entfernungs- und Geschwindigkeitsstatistiken, die gemeinsame Nutzung von Gruppenfahrten in Echtzeit und Live-Aktivitätsbenachrichtigungen zu ermöglichen – auch wenn die App geschlossen ist oder nicht verwendet wird.",
+            "backgroundPurpose": "Standortdaten werden auch verwendet, um die Aufzeichnung Ihrer Fahrt fortzusetzen, wenn Ihr Telefon gesperrt ist oder Wayfarian im Hintergrund läuft. Sie können dies jederzeit beenden, indem Sie die Reise beenden oder die Erlaubnis in Ihren Geräteeinstellungen widerrufen.",
+            "backgroundFeature1": "Reiseverfolgung, wenn die App geschlossen ist oder nicht verwendet wird",
+            "backgroundFeature2": "Echtzeit-Positionsfreigabe mit Ihrer Gruppe während der Fahrt",
+            "backgroundFeature3": "Live-Aktivitätsbenachrichtigungen mit Geschwindigkeit und Entfernung",
+            "accept": "Ich stimme zu, Weiter",
+            "decline": "Nicht jetzt"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "Logbuch",
+        "globalRank": "Weltweiter Rang",
+        "challengesComingSoon": "Herausforderungen bald verfügbar",
         "allJourneys": "Alle Reisen",
         "noJourneysYet": "Noch keine Reisen",
         "startExploring": "Gehe auf Entdeckung!",

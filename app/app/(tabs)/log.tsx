@@ -240,13 +240,27 @@ export default function RideLogScreen(): React.JSX.Element {
           }}
         >
           <View style={styles.nodeLeft}>
-            <Text style={styles.nodeTime}>{getTimeLabel(journey.startTime)}</Text>
-            <Text style={styles.nodeTitle} numberOfLines={1}>
+            <View style={styles.nodeHeader}>
+              <Text style={styles.nodeTime}>{getTimeLabel(journey.startTime)}</Text>
+              <JourneyCardMenu
+                journeyId={journey.id}
+                journeyTitle={journey.title || t('log.soloRideDefault')}
+                onRename={() => loadData()}
+                onDelete={() => {
+                  setSoloJourneys(prev => prev.filter(j => j.id !== journey.id));
+                }}
+                iconColor="#CCC"
+                iconSize={18}
+              />
+            </View>
+            <Text style={styles.nodeTitle} numberOfLines={2}>
               {journey.title || t('log.soloRideDefault')}
             </Text>
             <View style={styles.nodeStats}>
+              <Ionicons name="location-outline" size={12} color="#616161" style={{ marginRight: 4 }} />
               <Text style={styles.nodeStatText}>{formatDistance(journey.totalDistance)}</Text>
               <View style={styles.statDot} />
+              <Ionicons name="time-outline" size={12} color="#616161" style={{ marginRight: 4 }} />
               <Text style={styles.nodeStatText}>{formatDuration(journey.totalTime)}</Text>
             </View>
           </View>
@@ -259,19 +273,9 @@ export default function RideLogScreen(): React.JSX.Element {
                 colors={['#F9A825', '#FF8F00']}
                 style={styles.nodeThumb}
               >
-                <Ionicons name="map" size={16} color="#FFF" />
+                <Ionicons name="map" size={24} color="#FFF" />
               </LinearGradient>
             )}
-            <JourneyCardMenu
-              journeyId={journey.id}
-              journeyTitle={journey.title || t('log.soloRideDefault')}
-              onRename={() => loadData()}
-              onDelete={() => {
-                setSoloJourneys(prev => prev.filter(j => j.id !== journey.id));
-              }}
-              iconColor="#CCC"
-              iconSize={16}
-            />
           </View>
         </TouchableOpacity>
       </View>
@@ -283,16 +287,49 @@ export default function RideLogScreen(): React.JSX.Element {
       <StatusBar barStyle="dark-content" />
       
       <View style={styles.header}>
-        <View style={styles.rankBadge}>
-          <Text style={styles.rankText}>{rank ? `#${rank}` : '--'}</Text>
-          <Text style={styles.rankLabel}>{t('log.globalRank')}</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.rankBadge}>
+            <Text style={styles.rankText}>{rank ? `#${rank}` : '--'}</Text>
+            <Text style={styles.rankLabel}>{t('log.globalRank')}</Text>
+          </View>
+          <View style={styles.headerXP}>
+            <XPProgress
+              xp={dashboardData?.user?.xp || 0}
+              level={dashboardData?.user?.level || 1}
+              compact
+            />
+          </View>
         </View>
-        <View style={styles.headerXP}>
-          <XPProgress
-            xp={dashboardData?.user?.xp || 0}
-            level={dashboardData?.user?.level || 1}
-            compact
-          />
+
+        {/* Achievements Section */}
+        <View style={styles.achievementsRow}>
+          <View style={styles.achievementsList}>
+            {badges.length > 0 ? (
+              badges.map((badge) => (
+                <View key={badge.id} style={styles.badgeWrapper}>
+                  <Image 
+                    source={ACHIEVEMENT_BADGES[badge.achievementId as keyof typeof ACHIEVEMENT_BADGES]} 
+                    style={styles.miniBadge}
+                    resizeMode="contain"
+                  />
+                </View>
+              ))
+            ) : (
+              <Text style={styles.noBadgesText}>{t('log.noBadges')}</Text>
+            )}
+            {badges.length > 0 && (
+              <TouchableOpacity 
+                style={styles.moreBadges}
+                onPress={() => router.push('/(tabs)/profile')}
+              >
+                <Ionicons name="chevron-forward" size={14} color="#9E9E9E" />
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.nextBadgeContainer}>
+            <Text style={styles.nextBadgeLabel}>{t('log.nextBadge')}</Text>
+            <Text style={styles.nextBadgeValue} numberOfLines={1}>{nextBadge}</Text>
+          </View>
         </View>
       </View>
 
@@ -409,54 +446,126 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 15,
     backgroundColor: '#FFFFFF',
+    gap: 16,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   rankBadge: {
     backgroundColor: '#000',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     alignItems: 'center',
     marginRight: 15,
+    minWidth: 70,
   },
   rankText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
     fontFamily: 'Space Grotesk',
   },
   rankLabel: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 8,
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
+    marginTop: 2,
   },
   headerXP: {
     flex: 1,
+  },
+  achievementsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9F9F9',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  achievementsList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badgeWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  miniBadge: {
+    width: 24,
+    height: 24,
+  },
+  moreBadges: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  noBadgesText: {
+    fontSize: 11,
+    color: '#9E9E9E',
+    fontFamily: 'Poppins',
+    fontStyle: 'italic',
+  },
+  nextBadgeContainer: {
+    alignItems: 'flex-end',
+    flex: 1,
+    marginLeft: 12,
+  },
+  nextBadgeLabel: {
+    fontSize: 9,
+    color: '#9E9E9E',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    fontFamily: 'Space Grotesk',
+  },
+  nextBadgeValue: {
+    fontSize: 12,
+    color: '#F9A825',
+    fontWeight: '700',
+    fontFamily: 'Space Grotesk',
+    marginTop: 1,
   },
   tabBar: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFF',
   },
   tabItem: {
-    paddingVertical: 12,
-    marginRight: 24,
-    borderBottomWidth: 2,
+    paddingVertical: 14,
+    marginRight: 28,
+    borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
   tabItemActive: {
     borderBottomColor: '#F9A825',
   },
   tabLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9E9E9E',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#BDBDBD',
     fontFamily: 'Space Grotesk',
   },
   tabLabelActive: {
@@ -470,102 +579,115 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   monthSection: {
-    marginBottom: 30,
+    marginBottom: 32,
   },
   monthTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#000',
     fontFamily: 'Space Grotesk',
-    marginBottom: 20,
+    marginBottom: 24,
     textTransform: 'capitalize',
   },
   timelineNode: {
     flexDirection: 'row',
-    minHeight: 80,
-    marginBottom: 0,
+    minHeight: 110,
   },
   pathColumn: {
     width: 24,
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#F9A825',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#FFF',
     zIndex: 2,
-    marginTop: 6,
+    marginTop: 8,
     shadowColor: "#F9A825",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 4,
   },
   timelinePath: {
     position: 'absolute',
-    top: 12,
-    bottom: -12,
+    top: 14,
+    bottom: -16,
     width: 2,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F0F0F0',
     zIndex: 1,
   },
   nodeContent: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#F9F9F9',
-    borderRadius: 16,
+    backgroundColor: '#FDFDFD',
+    borderRadius: 20,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 20,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F5F5F5',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
   },
   nodeLeft: {
     flex: 1,
+    paddingRight: 12,
+  },
+  nodeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   nodeTime: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#9E9E9E',
-    fontWeight: '600',
-    fontFamily: 'Poppins',
-    marginBottom: 2,
+    fontWeight: '700',
+    fontFamily: 'Space Grotesk',
+    textTransform: 'uppercase',
   },
   nodeTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#000',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#212121',
     fontFamily: 'Space Grotesk',
-    marginBottom: 4,
+    marginBottom: 8,
+    lineHeight: 20,
   },
   nodeStats: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   nodeStatText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#616161',
-    fontWeight: '500',
+    fontWeight: '600',
     fontFamily: 'Poppins',
   },
   statDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#DDD',
-    marginHorizontal: 6,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: 8,
   },
   nodeRight: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
   nodeThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#F0F0F0',
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -26,7 +26,7 @@ import {
 
 const VEHICLE_TYPES = [
   { value: 'motorcycle', label: 'Motorcycle', image: require('../assets/images/vehicles/motorcycle.png') },
-  { value: 'scooter',    label: 'Scooty',     image: require('../assets/images/vehicles/motorcycle.png') }, // Placeholder for Indian Scooty
+  { value: 'scooter',    label: 'Scooty',     image: require('../assets/images/vehicles/scooter.png') },
   { value: 'car',        label: 'Car',        image: require('../assets/images/vehicles/car.png') },
   { value: 'bike',       label: 'Bicycle',    image: require('../assets/images/vehicles/bicycle.png') },
   { value: 'boat',       label: 'Boat',       image: require('../assets/images/vehicles/boat.png') },

@@ -40,7 +40,7 @@ interface MapJourney {
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { mapType, vehicle: settingsVehicle } = useSettings();
-  const { isTracking, startJourney } = useJourney();
+  const { isTracking, startJourney, currentLocation } = useJourney();
   const stats = useJourneyStats();
   const routePoints = useJourneyRoutePoints();
   const { t } = useTranslation();
@@ -61,6 +61,12 @@ export default function MapScreen(): React.JSX.Element {
   const [showEndModal, setShowEndModal] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // Navigation / Follow Mode State
+  const [isNavigationMode, setIsNavigationMode] = useState(true);
+  const isManuallyPanningRef = useRef(false);
+  const lastUserGestureAtRef = useRef(0);
+  const lastCameraUpdateRef = useRef(0);
+
   useEffect(() => {
     if (isTracking) {
       const pulse = Animated.loop(
@@ -75,6 +81,28 @@ export default function MapScreen(): React.JSX.Element {
     pulseAnim.setValue(1);
     return undefined;
   }, [isTracking, pulseAnim]);
+
+  // Auto-follow Logic for Main Map Tab
+  useEffect(() => {
+    if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
+
+    const now = Date.now();
+    // Throttle camera updates to every 2 seconds to avoid excessive churn
+    if (now - lastCameraUpdateRef.current < 2000) return;
+    // Cooldown after user interaction (3 seconds)
+    if (now - lastUserGestureAtRef.current < 3000) return;
+
+    lastCameraUpdateRef.current = now;
+    
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 1000);
+    }
+  }, [currentLocation, isTracking, isNavigationMode]);
 
   const filterTypes = useMemo(() => [
     { key: 'gas', serverType: 'gas_station', label: t('map.filters.gas') },
@@ -453,8 +481,23 @@ export default function MapScreen(): React.JSX.Element {
           ref={mapRef as any}
           initialRegion={initialRegion}
           showsUserLocation={true}
-          showsMyLocationButton={true}
-          mapType={mapType}
+          showsMyLocationButton={false}
+          mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
+          onTouchStart={() => {
+            isManuallyPanningRef.current = true;
+            lastUserGestureAtRef.current = Date.now();
+            setIsNavigationMode(false);
+          }}
+          onPanDrag={() => {
+            lastUserGestureAtRef.current = Date.now();
+          }}
+          onRegionChangeComplete={(r, { isGesture }) => {
+            if (isGesture) {
+              isManuallyPanningRef.current = true;
+              lastUserGestureAtRef.current = Date.now();
+              setIsNavigationMode(false);
+            }
+          }}
         >
           {places.map((place) => (
             <Marker
@@ -671,7 +714,7 @@ export default function MapScreen(): React.JSX.Element {
 
       {/* Floating Action Buttons */}
       <TouchableOpacity
-        style={[styles.floatingButton, { bottom: insets.bottom + 150 }]}
+        style={[styles.floatingButton, { bottom: insets.bottom + (isTracking ? 230 : 150) }]}
         onPress={handleStartJourney}
         activeOpacity={0.8}
         disabled={isStartBusy && !isTracking}
@@ -697,7 +740,7 @@ export default function MapScreen(): React.JSX.Element {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.floatingButton, { bottom: insets.bottom + 90 }]}
+        style={[styles.floatingButton, { bottom: insets.bottom + (isTracking ? 165 : 85) }]}
         onPress={() => getCurrentLocation(true)}
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -708,6 +751,31 @@ export default function MapScreen(): React.JSX.Element {
           contentFit="contain"
         />
       </TouchableOpacity>
+
+      {/* Recenter Button (Main Map) */}
+      {!isNavigationMode && isTracking && (
+        <TouchableOpacity
+          onPress={() => {
+            isManuallyPanningRef.current = false;
+            lastUserGestureAtRef.current = 0;
+            setIsNavigationMode(true);
+            if (mapRef.current && currentLocation) {
+               mapRef.current.animateToRegion({
+                 latitude: currentLocation.latitude,
+                 longitude: currentLocation.longitude,
+                 latitudeDelta: 0.01,
+                 longitudeDelta: 0.01,
+               }, 1000);
+            }
+            lastCameraUpdateRef.current = Date.now();
+          }}
+          style={[styles.recenterButton, { bottom: insets.bottom + 295 }]}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="navigation" size={20} color="#F9A825" />
+          <Text style={styles.recenterText}>{t('journey.recenter') || 'Recenter'}</Text>
+        </TouchableOpacity>
+      )}
 
       <JourneyEndModal
         visible={showEndModal}
@@ -1135,6 +1203,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 1,
     elevation: 1,
+  },
+  recenterButton: {
+    position: 'absolute',
+    right: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    zIndex: 100,
+  },
+  recenterText: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F9A825',
+    marginLeft: 8,
   },
 });
 

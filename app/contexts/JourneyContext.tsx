@@ -872,35 +872,31 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       }));
       dispatch(clearRoutePoints());
 
+      // Standard foreground request first for all platforms
+      let { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+      if (fgStatus !== 'granted') {
+        fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
+      }
+      
+      if (fgStatus !== 'granted') {
+        throw new Error('Location permission denied');
+      }
+
       // Android Background Location Policy Compliance.
-      // Prominent Disclosure must be shown BEFORE ANY background location permission
-      // access — including getBackgroundPermissionsAsync(). Checking permissions before
-      // the disclosure is itself a policy violation Google's scanner can detect.
-      // So we gate ONLY on the accepted flag; all permission checks happen in onAccept.
+      // Prominent Disclosure must be shown AFTER foreground permission but
+      // BEFORE background location permission access.
       if (Platform.OS === 'android') {
         const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
         const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
-        if (accepted !== '1') {
-          setPendingJourneyData(journeyData);
-          setShowLocationDisclosure(true);
-          return false; // UI will re-invoke startJourney after acceptance
-        }
-        // Disclosure accepted — ensure permissions are still granted before proceeding.
-        const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-        if (fgStatus !== 'granted' || bgStatus !== 'granted') {
-          // Permissions were revoked after disclosure was accepted — re-request.
+
+        if (accepted !== '1' || bgStatus !== 'granted') {
+          // If not accepted OR background permission not granted (e.g. revoked),
+          // show the disclosure modal before requesting background access.
           setPendingJourneyData(journeyData);
           setShowLocationDisclosure(true);
-          return false;
+          return false; // Modal will handle the background request and re-invoke startJourney
         }
-      } else {
-        // iOS or Web: standard foreground request first
-        let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
-        if (fgStatus !== 'granted') {
-          fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
-        }
-        if (fgStatus !== 'granted') throw new Error('Location permission denied');
       }
 
       // STEP 2: Get location FAST using layered strategy

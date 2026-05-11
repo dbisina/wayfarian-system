@@ -195,12 +195,14 @@
         "failedStop": "Falha ao parar.",
         "startJourneyError": "Erro ao iniciar",
         "location": {
-            "backgroundTitle": "Localização em Segundo Plano do Wayfarian",
-            "backgroundMessage": "O Wayfarian coleta dados de localização para permitir o rastreamento da viagem, o cálculo da distância e a navegação em tempo real, mesmo quando o aplicativo está fechado ou não está em uso.",
-            "backgroundPurpose": "Estes dados são usados para fornecer estatísticas de viagem precisas e garantir que sua viagem seja gravada corretamente para seu histórico e conquistas.",
-            "backgroundAction": "Para ativar este recurso, toque em 'Conceder Permissão' abaixo e selecione 'Permitir o tempo todo' nas configurações do sistema.",
-            "grant": "Conceder Permissão",
-            "notNow": "Agora Não"
+            "backgroundTitle": "Wayfarian coleta dados de localização",
+            "backgroundMessage": "O Wayfarian coleta dados de localização para permitir o rastreamento da viagem, estatísticas de distância e velocidade, compartilhamento de viagens em grupo em tempo real e notificações de atividade ao vivo — mesmo quando o aplicativo está fechado ou não está em uso.",
+            "backgroundPurpose": "Os dados de localização também são usados para continuar gravando sua jornada quando o telefone está bloqueado ou o Wayfarian está em segundo plano. Você pode interromper isso a qualquer momento encerrando a jornada ou revogando a permissão nas configurações do seu dispositivo.",
+            "backgroundFeature1": "Rastreamento de jornada quando o aplicativo está fechado ou não está em uso",
+            "backgroundFeature2": "Compartilhamento de localização em tempo real com seu grupo durante o trajeto",
+            "backgroundFeature3": "Notificações de atividade ao vivo mostrando velocidade e distância",
+            "accept": "Concordo, Continuar",
+            "decline": "Agora não"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "Diário",
+        "globalRank": "Rank Global",
+        "challengesComingSoon": "Desafios em Breve",
         "allJourneys": "Todas as jornadas",
         "noJourneysYet": "Sem registros",
         "startExploring": "Comece a explorar!",

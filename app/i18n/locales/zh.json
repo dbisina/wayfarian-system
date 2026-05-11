@@ -195,12 +195,14 @@
         "failedStop": "操作失败。",
         "startJourneyError": "启动追踪失败",
         "location": {
-            "backgroundTitle": "Wayfarian 后台位置信息",
-            "backgroundMessage": "Wayfarian 收集位置数据以实现在应用关闭或未使用时进行行程追踪、距离计算和实时导航。",
-            "backgroundPurpose": "这些数据用于提供准确的骑行统计数据，并确保您的行程被正确记录到历史记录和成就中。",
-            "backgroundAction": "要启用此功能，请点击下方的“授予权限”，并在系统设置中选择“始终允许”。",
-            "grant": "授予权限",
-            "notNow": "以后再说"
+            "backgroundTitle": "Wayfarian 收集位置数据",
+            "backgroundMessage": "Wayfarian 收集位置数据以实现在应用关闭或未使用时进行行程追踪、距离和速度统计、实时群组骑行分享以及实时活动通知。",
+            "backgroundPurpose": "位置数据也用于在您的手机锁定或 Wayfarian 在后台运行时继续记录您的骑行。您可以随时通过结束行程或在设备设置中撤销权限来停止此操作。",
+            "backgroundFeature1": "在应用关闭或未使用时进行行程追踪",
+            "backgroundFeature2": "骑行时与您的群组实时分享位置",
+            "backgroundFeature3": "显示速度和距离的实时活动通知",
+            "accept": "我同意，继续",
+            "decline": "以后再说"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "探踪志",
+        "globalRank": "全球排名",
+        "challengesComingSoon": "挑战即将推出",
         "allJourneys": "全部回忆",
         "noJourneysYet": "暂无记录",
         "startExploring": "现在出发，书写您的旅途日志！",

@@ -195,12 +195,14 @@
         "failedStop": "Error al detener el viaje.",
         "startJourneyError": "Error al iniciar el seguimiento del viaje",
         "location": {
-            "backgroundTitle": "Ubicación en segundo plano de Wayfarian",
-            "backgroundMessage": "Wayfarian recopila datos de ubicación para permitir el seguimiento de viajes, el cálculo de distancias y la navegación en tiempo real, incluso cuando la aplicación está cerrada o no se está utilizando.",
-            "backgroundPurpose": "Estos datos se utilizan para proporcionar estadísticas de viaje precisas y garantizar que su viaje se registre correctamente para su historial y logros.",
-            "backgroundAction": "Para habilitar esta función, pulse 'Conceder permiso' a continuación y seleccione 'Permitir todo el tiempo' en la configuración del sistema.",
-            "grant": "Conceder permiso",
-            "notNow": "Ahora no"
+            "backgroundTitle": "Wayfarian recopila datos de ubicación",
+            "backgroundMessage": "Wayfarian recopila datos de ubicación para permitir el seguimiento del viaje, estadísticas de distancia y velocidad, uso compartido de viajes en grupo en tiempo real y notificaciones de actividad en vivo, incluso cuando la aplicación está cerrada o no está en uso.",
+            "backgroundPurpose": "Los datos de ubicación también se utilizan para continuar registrando su viaje cuando su teléfono está bloqueado o Wayfarian está en segundo plano. Puede detener esto en cualquier momento finalizando el viaje o revocando el permiso en la configuración de su dispositivo.",
+            "backgroundFeature1": "Seguimiento del viaje cuando la aplicación está cerrada o no está en uso",
+            "backgroundFeature2": "Posición compartida en tiempo real con su grupo mientras viaja",
+            "backgroundFeature3": "Notificaciones de actividad en vivo que muestran velocidad y distancia",
+            "accept": "Acepto, Continuar",
+            "decline": "Ahora no"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "Registro de Viajes",
+        "globalRank": "Rango Global",
+        "challengesComingSoon": "Desafíos Próximamente",
         "allJourneys": "Todos los Viajes",
         "noJourneysYet": "No hay viajes aún",
         "startExploring": "¡Empieza a explorar para ver tus viajes aquí!",

@@ -195,12 +195,14 @@
         "failedStop": "Échec de l'arrêt du trajet.",
         "startJourneyError": "Échec du démarrage du suivi du trajet",
         "location": {
-            "backgroundTitle": "Localisation en arrière-plan Wayfarian",
-            "backgroundMessage": "Wayfarian collecte des données de localisation pour permettre le suivi des trajets, le calcul de la distance et la navigation en temps réel, même lorsque l'application est fermée ou n'est pas utilisée.",
-            "backgroundPurpose": "Ces données sont utilisées pour fournir des statistiques de trajet précises et garantir que votre trajet est enregistré correctement pour votre historique et vos accomplissements.",
-            "backgroundAction": "Pour activer cette fonctionnalité, veuillez appuyer sur 'Accorder l'autorisation' ci-dessous et sélectionner 'Toujours autoriser' dans les paramètres du système.",
-            "grant": "Accorder l'autorisation",
-            "notNow": "Pas maintenant"
+            "backgroundTitle": "Wayfarian collecte des données de localisation",
+            "backgroundMessage": "Wayfarian collecte des données de localisation pour permettre le suivi des trajets, les statistiques de distance et de vitesse, le partage de trajets en groupe en temps réel et les notifications d'activité en direct — même lorsque l'application est fermée ou n'est pas utilisée.",
+            "backgroundPurpose": "Les données de localisation sont également utilisées pour continuer à enregistrer votre trajet lorsque votre téléphone est verrouillé ou que Wayfarian est en arrière-plan. Vous pouvez arrêter cela à tout moment en mettant fin au trajet ou en révoquant l'autorisation dans les paramètres de votre appareil.",
+            "backgroundFeature1": "Suivi du trajet lorsque l'application est fermée ou n'est pas utilisée",
+            "backgroundFeature2": "Partage de position en temps réel avec votre groupe pendant le trajet",
+            "backgroundFeature3": "Notifications d'activité en direct affichant la vitesse et la distance",
+            "accept": "Je suis d'accord, Continuer",
+            "decline": "Pas maintenant"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "Journal de Bord",
+        "globalRank": "Rang Mondial",
+        "challengesComingSoon": "Défis Bientôt Disponibles",
         "allJourneys": "Tous les Trajets",
         "noJourneysYet": "Aucun trajet pour le moment",
         "startExploring": "Commencez à explorer pour voir vos trajets ici !",

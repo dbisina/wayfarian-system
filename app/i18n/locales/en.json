@@ -205,6 +205,20 @@
             "decline": "Not Now"
         }
     },
+    "log": {
+        "globalRank": "Global Rank",
+        "challengesComingSoon": "Challenges Coming Soon",
+        "tabSolo": "Solo",
+        "tabGroup": "Group",
+        "tabChallenges": "Challenges",
+        "nextMilestone": "Next Milestone",
+        "nextBadge": "Next Badge",
+        "noBadges": "No badges yet",
+        "soloRideDefault": "Solo Ride",
+        "groupRideDefault": "Group Ride",
+        "noSoloRides": "No solo rides yet",
+        "noGroupRides": "No group rides yet"
+    },
     "profile": {
         "myProfile": "My Profile",
         "edit": "Edit",
@@ -300,6 +314,8 @@
         "noGroupRides": "No group rides yet",
         "rank": "Rank #{{rank}}",
         "rankPlaceholder": "Rank —",
+        "globalRank": "Global Rank",
+        "challengesComingSoon": "Challenges Coming Soon",
         "motivation": "The road is your XP — keep going buddy!",
         "nextBadge": "Next badge:",
         "nextMilestone": "Next milestone",

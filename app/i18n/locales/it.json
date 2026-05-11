@@ -195,12 +195,14 @@
         "failedStop": "Chiusura viaggio fallita.",
         "startJourneyError": "Inizio monitoraggio fallito",
         "location": {
-            "backgroundTitle": "Posizione in background di Wayfarian",
-            "backgroundMessage": "Wayfarian raccoglie i dati sulla posizione per consentire il monitoraggio del viaggio, il calcolo della distanza e la navigazione in tempo reale anche quando l'app è chiusa o non in uso.",
-            "backgroundPurpose": "Questi dati vengono utilizzati per fornire statistiche di viaggio accurate e garantire che il viaggio venga registrato correttamente per la cronologia e i risultati.",
-            "backgroundAction": "Per abilitare questa funzione, tocca 'Concedi autorizzazione' di seguito e seleziona 'Consenti sempre' nelle impostazioni di sistema.",
-            "grant": "Concedi autorizzazione",
-            "notNow": "Non ora"
+            "backgroundTitle": "Wayfarian raccoglie dati sulla posizione",
+            "backgroundMessage": "Wayfarian raccoglie dati sulla posizione per consentire il monitoraggio del viaggio, statistiche su distanza e velocità, condivisione di viaggi di gruppo in tempo reale e notifiche di attività live — anche quando l'app è chiusa o non in uso.",
+            "backgroundPurpose": "I dati sulla posizione vengono utilizzati anche per continuare a registrare la tua corsa quando il telefono è bloccato o Wayfarian è in background. Puoi interrompere l'operazione in qualsiasi momento terminando il viaggio o revocando il permesso nelle impostazioni del dispositivo.",
+            "backgroundFeature1": "Monitoraggio del viaggio quando l'app è chiusa o non in uso",
+            "backgroundFeature2": "Condivisione della posizione in tempo reale con il gruppo durante la corsa",
+            "backgroundFeature3": "Notifiche di attività live che mostrano velocità e distanza",
+            "accept": "Accetto, Continua",
+            "decline": "Non ora"
         }
     },
     "profile": {
@@ -285,6 +287,8 @@
     },
     "log": {
         "title": "Diario di Viaggio",
+        "globalRank": "Rango Globale",
+        "challengesComingSoon": "Sfide in arrivo",
         "allJourneys": "Tutti i Viaggi",
         "noJourneysYet": "Nessun viaggio",
         "startExploring": "Inizia a esplorare per vedere i viaggi qui!",
