@@ -355,16 +355,26 @@ export async function dismissJourneyNotification(): Promise<void> {
         lastGeocodedName = null;
         lastGeocodeTime = 0;
 
+        // Stop notifee's foreground service (the one posted with asForegroundService: true).
+        // On Android a foreground-service notification cannot be swiped away by the user;
+        // stopping the service is the only reliable way to remove it.
         try {
             await notifee.stopForegroundService();
         } catch (e) {
-            // Foreground service may not be running if we used regular notification
+            // Not running — safe to continue
             console.warn('[LiveNotification] stopForegroundService failed (may not be running):', e);
         }
         try {
             await notifee.cancelNotification(NOTIFICATION_ID);
         } catch (e) {
             console.warn('[LiveNotification] cancelNotification failed:', e);
+        }
+        // Final sweep: cancel every notifee notification in case the service restarted
+        // between the calls above (e.g. a background-task flush raced with stop).
+        try {
+            await notifee.cancelAllNotifications();
+        } catch (e) {
+            console.warn('[LiveNotification] cancelAllNotifications failed:', e);
         }
     } else {
         await endIOSLiveActivity();

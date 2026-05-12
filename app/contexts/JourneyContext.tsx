@@ -233,7 +233,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
   }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.myInstance, journeyState.isTracking, localElapsedTime]);
 
-  // Sync Smart Tracking data to Redux Store
+  // Sync Smart Tracking stats to Redux Store (runs at GPS rate ~1 Hz — stats are cheap)
   useEffect(() => {
     if (!journeyState.isTracking) return;
 
@@ -245,19 +245,21 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       topSpeed: maxSpeed,
       currentSpeed: derivedStats.currentSpeed,
     };
-    
     dispatch(setStats(newStats));
 
-    // Map snapped path to RoutePoints
-    // Note: officialSnappedPath is just geometry. We might want to append liveRawLocation as the latest point?
-    // Or just use officialSnappedPath for the line.
-    // RoutePoint expects { latitude, longitude, timestamp, speed, accuracy, altitude }
-    // We'll reconstruct it from the snapped path, though we lose per-point metadata.
-    // For the visual line, lat/lng is key.
-    const newRoutePoints = officialSnappedPath.map((p, index) => ({
+  }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
+
+  // Sync route points to Redux — ONLY when the snapped path itself changes (every ~8 s on flush),
+  // NOT on every GPS location update. Previously this was merged with the stats effect above,
+  // which caused up to 5 000-point arrays to be created and dispatched at 1 Hz, generating
+  // heavy GC pressure that caused OOM crashes / ANR on long rides.
+  useEffect(() => {
+    if (!journeyState.isTracking) return;
+
+    const newRoutePoints = officialSnappedPath.map((p) => ({
       latitude: p.latitude,
       longitude: p.longitude,
-      timestamp: Date.now(), // Placeholder
+      timestamp: Date.now(),
       speed: 0,
       accuracy: 0,
       altitude: 0
@@ -271,7 +273,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     bgMergedRoutePointsRef.current = [];
     dispatch(setRoutePoints(combined));
 
-  }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, officialSnappedPath, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
+  }, [officialSnappedPath, journeyState.isTracking, dispatch]);
 
   // Foreground → Live Activity / Notification sync
   // This ensures the iOS Live Activity and Android notification get accurate data
@@ -336,26 +338,12 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     // our freshly-pushed values with its own (less-accurate) snapshot while the app is open.
     AsyncStorage.setItem('wayfarian.fgNotificationLeaseAt', String(now)).catch(() => {});
 
-    // Sync authoritative foreground stats into the persisted journey state so if the app
-    // gets backgrounded mid-ride, the background task picks up where foreground left off
-    // instead of resetting to its own (possibly lagging) numbers. Best-effort, non-blocking.
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem('activeJourneyState');
-        if (!raw) return;
-        const prev = JSON.parse(raw);
-        if (prev?.journeyId !== journey.id) return;
-        prev.totalDistance = officialDistance;
-        prev.movingTime = movingTime;
-        prev.topSpeed = Math.max(prev.topSpeed || 0, maxSpeed);
-        if (liveRawLocation) {
-          prev.lastLatitude = liveRawLocation.latitude;
-          prev.lastLongitude = liveRawLocation.longitude;
-          prev.lastTimestamp = liveRawLocation.timestamp;
-        }
-        await AsyncStorage.setItem('activeJourneyState', JSON.stringify(prev));
-      } catch {}
-    })();
+    // Background-state sync on suspend is handled by syncToBackgroundOnSuspend()
+    // (called via the AppState 'background' handler). A redundant read-modify-write
+    // of the full 175KB+ background JSON every 3s was causing severe GC pressure
+    // on long rides and has been removed. The lease timestamp above is sufficient
+    // to let the background task know the foreground is alive and to skip its own
+    // (less accurate) notification update.
   }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
 
   // Backend & Socket Updates (throttled to every 5 seconds)
@@ -844,6 +832,21 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
               await persistStartTime(startTime);
             }
             dispatch(setTracking(true));
+
+            // After a crash / process kill the background task is also dead.
+            // Re-arm it here so the journey survives the next backgrounding.
+            // Background permission check is intentionally non-blocking.
+            const bgAlreadyRunning = await BackgroundTaskService.isBackgroundTrackingActive().catch(() => false);
+            if (!bgAlreadyRunning) {
+              const { status: bgPerm } = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
+              if (bgPerm === 'granted') {
+                BackgroundTaskService.startBackgroundTracking(soloJourney.id, {
+                  startTime: soloJourney.startTime ? new Date(soloJourney.startTime).getTime() : undefined,
+                  vehicle: (soloJourney.vehicle as 'car' | 'bike' | 'scooter') || 'car',
+                  startLocationName: soloJourney.startAddress || undefined,
+                }).catch(e => console.warn('[JourneyContext] Background tracking restart on cold-start recovery failed:', e));
+              }
+            }
           }
 
           if (soloJourney.groupId) {

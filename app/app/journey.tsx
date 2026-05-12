@@ -240,7 +240,7 @@ export default function JourneyScreen(): React.JSX.Element {
       const diff = Math.abs(((normalizedTarget - prev + 540) % 360) - 180);
       return diff > 1 ? normalizedTarget : prev;
     });
-  }, [currentLocation, snappedLocation, routePoints, markerPosition, markerRotation]);
+  }, [currentLocation, snappedLocation, markerPosition, markerRotation]);
 
   // Handle scheduled journey start via activeJourneyId param
   // This is triggered when user starts a scheduled journey from future-rides screen

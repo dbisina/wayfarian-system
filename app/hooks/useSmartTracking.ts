@@ -43,8 +43,11 @@ const MIN_MOVE_METERS_FOR_SPEED = 2; // meters needed between points to trust a 
 const MAX_SPEED_SAMPLES_REQUIRED = 4; // Require 4 sustained samples for max speed (stricter)
 
 // Cap polyline length to prevent memory bloat / render jank on very long rides.
-// 5000 points ≈ enough fidelity for a 100km+ ride without overloading the map renderer.
-const MAX_SNAPPED_PATH_POINTS = 5000;
+// 2000 points matches the Redux routePoints cap and the background-task cap so all
+// three pipelines stay consistent. The old 5000-point limit was never surfaced to the
+// map (Redux always truncated to 2000 before rendering), but it kept a 5 000-element
+// array alive in hook state, wasting ~80 KB of heap that GC had to chase on every flush.
+const MAX_SNAPPED_PATH_POINTS = 2000;
 
 // Calculate distance between two points (Haversine formula)
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

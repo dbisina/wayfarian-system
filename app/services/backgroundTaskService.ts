@@ -1,229 +1,124 @@
 // app/services/backgroundTaskService.ts
-// Background location tracking with persistent notifications for journey continuation
+// Background location tracking with persistent notifications for journey continuation.
+//
+// STORAGE ARCHITECTURE — why two AsyncStorage keys:
+//
+// A naïve approach stores everything (route arrays + stats) in one JSON blob written on
+// every GPS fix (every 5 s). For a 7-hour ride that means 5,040 writes × ~175 KB = 882 MB
+// of SQLite I/O. The WAL file grows without bound, each write takes longer than the last,
+// Android eventually kills the background task for missing its deadline, and the journey
+// "crashes" with no log entry.
+//
+// Fix: split into HOT and COLD state.
+//   HOT  (activeJourneyState)  — scalar stats + tiny pending-points buffer.
+//                                Written every GPS fix  (~200 bytes → <1 MB / 7 h).
+//   COLD (activeJourneyRoutes) — full route arrays (up to 2 000 pts + 500 raw buffer).
+//                                Written every COLD_FLUSH_EVERY_N fixes (≈ 60 s) → ~88 MB / 7 h.
+//
+// Public API is unchanged: getPersistedJourneyState() merges both keys before returning.
 
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 import LiveNotificationService, { JourneyNotificationData } from './liveNotificationService';
 
-// Task name for background location tracking
+// ─── Storage keys ────────────────────────────────────────────────────────────
 const BACKGROUND_LOCATION_TASK = 'WAYFARIAN_BACKGROUND_LOCATION';
+/** HOT key — scalar stats, written every GPS fix. */
 const JOURNEY_STATE_KEY = 'activeJourneyState';
+/** COLD key — route arrays, written every ~60 s. */
+const JOURNEY_ROUTES_KEY = 'activeJourneyRoutes';
 const SETTINGS_UNITS_KEY = 'settings.units';
 const NOTIFICATION_ID = 'journey-tracking-notification';
 
 // When the foreground smart-tracking loop is actively pushing notification updates,
-// the background task's own update would race/flicker with it. The foreground sets
-// this timestamp on every notification push; the background skips the notification
-// write (but still persists stats) if foreground was active within this window.
+// the background task skips its own notification write (but still persists stats)
+// if foreground was active within this window.
 const FG_NOTIFICATION_LEASE_KEY = 'wayfarian.fgNotificationLeaseAt';
 const FG_LEASE_FRESHNESS_MS = 8000;
 
-// Configuration constants
-const MIN_MOVEMENT_THRESHOLD_M = 10; // Minimum movement to count (meters)
-const MAX_REASONABLE_SPEED_MPS = 50.0; // 180 km/h in m/s (hard ceiling for any vehicle)
-const MAX_SPEED_FOR_RECORDING_MPS = 0.5; // Speed threshold to count as moving (m/s)
-
-// Cap route arrays to prevent AsyncStorage bloat and OOM on long rides.
-// At 1 point every ~5s, 2000 points ≈ 2.7h of active riding — plenty for the polyline
-// while keeping the persisted state small enough to serialize without crashing.
+// ─── Configuration ────────────────────────────────────────────────────────────
+const MIN_MOVEMENT_THRESHOLD_M = 10;
+const MAX_REASONABLE_SPEED_MPS = 50.0; // ~180 km/h hard ceiling
+const MAX_SPEED_FOR_RECORDING_MPS = 0.5;
 const MAX_ROUTE_POINTS = 2000;
-const MAX_RAW_BUFFER_POINTS = 500; // Raw buffer is flushed to backend, just a staging area
+const MAX_RAW_BUFFER_POINTS = 500;
 
-// Per-vehicle top-speed cap (km/h) — mirrors useSmartTracking so background and foreground agree.
+// Flush pending route points from hot state to cold state every N task invocations.
+// At 5 s per invocation → flush every 60 s.
+const COLD_FLUSH_EVERY_N = 12;
+// Slightly more than one flush cycle as a safety margin.
+const MAX_PENDING_ROUTE_POINTS = 15;
+const MAX_PENDING_RAW_POINTS = 15;
+
 const VEHICLE_MAX_SPEED_KMH: Record<string, number> = {
-  car: 180,
-  bike: 50,
-  scooter: 80,
+    car: 180,
+    bike: 50,
+    scooter: 80,
 };
 
-// Journey state interface for persistence
+// ─── Internal types ───────────────────────────────────────────────────────────
+
+/** Written every GPS fix — scalar stats only, stays tiny. */
+interface JourneyHotState {
+    journeyId: string;
+    startTime: number;
+    totalDistance: number;
+    movingTime: number;
+    topSpeed: number;
+    vehicle?: 'car' | 'bike' | 'scooter';
+    lastLatitude: number;
+    lastLongitude: number;
+    lastTimestamp: number;
+    lastSpeed?: number;
+    recentHighSpeeds?: number[];
+    startLocationName?: string;
+    destinationName?: string;
+    destinationLatitude?: number;
+    destinationLongitude?: number;
+    estimatedTotalDistance?: number;
+    /** Running count of task invocations; triggers cold flush at N. */
+    invocationCount: number;
+    /** Route points accumulated since last cold flush. */
+    pendingRoutePoints: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+    /** Raw points accumulated since last cold flush. */
+    pendingRawPoints: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+}
+
+/** Written every ~60 s — full route arrays. */
+interface JourneyColdState {
+    journeyId: string;
+    routePoints: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+    rawPointsBuffer: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+}
+
+// ─── Public type (backwards-compatible merged view) ───────────────────────────
 export interface PersistedJourneyState {
     journeyId: string;
     startTime: number;
     totalDistance: number;
     movingTime: number;
     topSpeed: number;
-    vehicle?: 'car' | 'bike' | 'scooter'; // Used for vehicle-aware max speed cap
+    vehicle?: 'car' | 'bike' | 'scooter';
     lastLatitude: number;
     lastLongitude: number;
     lastTimestamp: number;
-    lastSpeed?: number; // Track last valid speed for validation
-    recentHighSpeeds?: number[]; // Track recent high speed readings for sustained detection
-    routePoints: Array<{
-        latitude: number;
-        longitude: number;
-        timestamp: number;
-        speed?: number;
-    }>;
-    // Buffered raw points for later Roads API snapping
-    rawPointsBuffer: Array<{
-        latitude: number;
-        longitude: number;
-        timestamp: number;
-        speed?: number;
-    }>;
-    // Destination info for Uber-style progress
+    lastSpeed?: number;
+    recentHighSpeeds?: number[];
+    routePoints: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
+    rawPointsBuffer: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
     startLocationName?: string;
     destinationName?: string;
     destinationLatitude?: number;
     destinationLongitude?: number;
-    estimatedTotalDistance?: number; // Total expected journey distance in km
+    estimatedTotalDistance?: number;
 }
 
-// Define the background location task
-TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskManager.TaskManagerTaskBody<{ locations: Location.LocationObject[] }>) => {
-    if (error) {
-        console.error('[BackgroundTask] Error:', error);
-        return;
-    }
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    if (data) {
-        const { locations } = data as { locations: Location.LocationObject[] };
-
-        if (locations && locations.length > 0) {
-            const location = locations[locations.length - 1];
-
-            try {
-                // Load persisted journey state
-                const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
-                if (!stateJson) return;
-
-                const state: PersistedJourneyState = JSON.parse(stateJson);
-
-                // Calculate distance from last point
-                if (state.lastLatitude && state.lastLongitude) {
-                    const distanceKm = calculateHaversineDistance(
-                        state.lastLatitude,
-                        state.lastLongitude,
-                        location.coords.latitude,
-                        location.coords.longitude
-                    );
-
-                    const distanceMeters = distanceKm * 1000;
-                    const timeDelta = (location.timestamp - state.lastTimestamp) / 1000;
-                    const reportedSpeed = location.coords.speed || 0;
-
-                    // Calculate implied speed from position change
-                    const impliedSpeedMps = timeDelta > 0 ? distanceMeters / timeDelta : 0;
-                    // Prefer reported speed; fall back to implied when device reports 0 (some GPS chips)
-                    const effectiveSpeedMps = reportedSpeed > 0 ? reportedSpeed : impliedSpeedMps;
-
-                    // Validate: Skip if implied speed is impossible (GPS jitter)
-                    const isReasonableSpeed = impliedSpeedMps <= MAX_REASONABLE_SPEED_MPS;
-                    const hasSignificantMovement = distanceMeters > MIN_MOVEMENT_THRESHOLD_M;
-                    // Guard against stationary GPS drift — background task lacks the dwell-detection
-                    // that foreground uses, so a stationary device with good accuracy can still produce
-                    // 10-15m Haversine jumps (valid position change, not actually moving).
-                    const isActuallyMoving = effectiveSpeedMps > MAX_SPEED_FOR_RECORDING_MPS;
-
-                    if (hasSignificantMovement && isReasonableSpeed && isActuallyMoving) {
-                        state.totalDistance += distanceKm;
-
-                        // Add to route points (for polyline display)
-                        state.routePoints.push({
-                            latitude: location.coords.latitude,
-                            longitude: location.coords.longitude,
-                            timestamp: location.timestamp,
-                            speed: reportedSpeed,
-                        });
-                        // Cap to prevent unbounded growth on long rides (OOM on AsyncStorage writes)
-                        if (state.routePoints.length > MAX_ROUTE_POINTS) {
-                            // Keep first point (start marker) + most recent points so the polyline stays connected
-                            const first = state.routePoints[0];
-                            state.routePoints = [first, ...state.routePoints.slice(-(MAX_ROUTE_POINTS - 1))];
-                        }
-
-                        // Also buffer raw point for later Roads API snapping
-                        if (!state.rawPointsBuffer) {
-                            state.rawPointsBuffer = [];
-                        }
-                        state.rawPointsBuffer.push({
-                            latitude: location.coords.latitude,
-                            longitude: location.coords.longitude,
-                            timestamp: location.timestamp,
-                            speed: reportedSpeed,
-                        });
-                        if (state.rawPointsBuffer.length > MAX_RAW_BUFFER_POINTS) {
-                            state.rawPointsBuffer = state.rawPointsBuffer.slice(-MAX_RAW_BUFFER_POINTS);
-                        }
-
-                        // Update top speed - use the lower of reported and implied (more accurate)
-                        // Sustained speed detection: require 2 consecutive high readings
-                        const validatedSpeedMps = Math.min(Math.max(reportedSpeed, 0), impliedSpeedMps > 0 ? impliedSpeedMps : reportedSpeed);
-                        const speedKmh = Math.abs(validatedSpeedMps) * 3.6;
-
-                        // Initialize recentHighSpeeds if needed
-                        if (!state.recentHighSpeeds) {
-                            state.recentHighSpeeds = [];
-                        }
-
-                        // Vehicle-aware top-speed cap: anything above the cap is treated as a
-                        // GPS glitch and rejected outright. Stricter sustainment (3 samples).
-                        const vehicleCapKmh = VEHICLE_MAX_SPEED_KMH[state.vehicle || 'car'] ?? VEHICLE_MAX_SPEED_KMH.car;
-                        if (speedKmh > vehicleCapKmh) {
-                            state.recentHighSpeeds = [];
-                        } else if (speedKmh > state.topSpeed * 0.5 || speedKmh > 20) {
-                            state.recentHighSpeeds.push(speedKmh);
-                            // Keep last 5 readings (more robust than 3)
-                            if (state.recentHighSpeeds.length > 5) {
-                                state.recentHighSpeeds.shift();
-                            }
-
-                            // Require 3+ consistent high readings before promoting max speed.
-                            if (state.recentHighSpeeds.length >= 3) {
-                                const minRecent = Math.min(...state.recentHighSpeeds);
-                                const maxRecent = Math.max(...state.recentHighSpeeds);
-                                if (minRecent > maxRecent * 0.75 && speedKmh > state.topSpeed) {
-                                    const sorted = [...state.recentHighSpeeds].sort((a, b) => a - b);
-                                    const median = sorted[Math.floor(sorted.length / 2)];
-                                    // Final clamp to vehicle cap.
-                                    state.topSpeed = Math.min(vehicleCapKmh, Math.max(state.topSpeed, median));
-                                }
-                            }
-                        } else {
-                            state.recentHighSpeeds = [];
-                        }
-
-                        // Calculate moving time only if actually moving
-                        if (validatedSpeedMps > MAX_SPEED_FOR_RECORDING_MPS) {
-                            state.movingTime += timeDelta;
-                        }
-
-                        state.lastSpeed = validatedSpeedMps;
-                    } else if (!isReasonableSpeed) {
-                        console.warn(`[BackgroundTask] Filtered GPS jitter: ${impliedSpeedMps.toFixed(1)} m/s implied from ${distanceMeters.toFixed(1)}m in ${timeDelta.toFixed(1)}s`);
-                    }
-                }
-
-                // Update last known location
-                state.lastLatitude = location.coords.latitude;
-                state.lastLongitude = location.coords.longitude;
-                state.lastTimestamp = location.timestamp;
-
-                // Persist updated state
-                await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(state));
-
-                // Update notification
-                await updateTrackingNotification(state);
-
-            } catch (e) {
-                console.error('[BackgroundTask] Failed to process location:', e);
-            }
-        }
-    }
-});
-
-// Haversine distance calculation
-function calculateHaversineDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number
-): number {
-    const R = 6371; // Earth's radius in km
+function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a =
@@ -232,29 +127,16 @@ function calculateHaversineDistance(
         Math.cos(lat2 * (Math.PI / 180)) *
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Format duration for notification
 function formatDuration(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-    }
+    if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
 }
 
-// Create visual progress bar for notification
-function createProgressBar(progress: number): string {
-    const totalBlocks = 10;
-    const filledBlocks = Math.min(Math.round(progress * totalBlocks), totalBlocks);
-    const emptyBlocks = totalBlocks - filledBlocks;
-    return '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
-}
-
-// Get units preference from AsyncStorage
 async function getUnitsPreference(): Promise<'km' | 'mi'> {
     try {
         const units = await AsyncStorage.getItem(SETTINGS_UNITS_KEY);
@@ -264,195 +146,302 @@ async function getUnitsPreference(): Promise<'km' | 'mi'> {
     }
 }
 
-// Update the persistent tracking notification with Uber-style progress
-async function updateTrackingNotification(state: PersistedJourneyState) {
+/** Build notification from hot state (all required stats live there). */
+async function updateTrackingNotification(hot: JourneyHotState): Promise<void> {
     try {
-        // Yield to foreground when it's actively updating the notification — prevents
-        // flicker between background (persisted state) and foreground (smart-tracking) values.
+        // Yield to foreground when it's actively updating the notification.
         try {
             const leaseStr = await AsyncStorage.getItem(FG_NOTIFICATION_LEASE_KEY);
             if (leaseStr) {
                 const leaseAt = parseInt(leaseStr, 10);
-                if (Number.isFinite(leaseAt) && Date.now() - leaseAt < FG_LEASE_FRESHNESS_MS) {
-                    return;
-                }
+                if (Number.isFinite(leaseAt) && Date.now() - leaseAt < FG_LEASE_FRESHNESS_MS) return;
             }
         } catch {}
 
-        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-        const avgSpeed = state.movingTime > 0
-            ? (state.totalDistance / state.movingTime) * 3600
-            : 0;
+        const avgSpeed = hot.movingTime > 0 ? (hot.totalDistance / hot.movingTime) * 3600 : 0;
 
-        // Calculate distance remaining if we have a destination
         let distanceRemaining = 0;
         let progress = 0;
-        if (state.destinationLatitude && state.destinationLongitude) {
+        if (hot.destinationLatitude && hot.destinationLongitude) {
             distanceRemaining = calculateHaversineDistance(
-                state.lastLatitude,
-                state.lastLongitude,
-                state.destinationLatitude,
-                state.destinationLongitude
+                hot.lastLatitude, hot.lastLongitude,
+                hot.destinationLatitude, hot.destinationLongitude,
             );
-
-            // Calculate progress if we have estimated total distance
-            if (state.estimatedTotalDistance && state.estimatedTotalDistance > 0) {
-                progress = Math.min(state.totalDistance / state.estimatedTotalDistance, 1);
+            if (hot.estimatedTotalDistance && hot.estimatedTotalDistance > 0) {
+                progress = Math.min(hot.totalDistance / hot.estimatedTotalDistance, 1);
             }
         }
 
-        // Get units preference for notification display
         const units = await getUnitsPreference();
-
-        // Use new live notification service for enhanced Android notifications
         const notificationData: JourneyNotificationData = {
-            journeyId: state.journeyId,
-            startTime: state.startTime,
-            totalDistance: state.totalDistance,
-            currentSpeed: (state.lastSpeed || 0) * 3.6, // Convert m/s to km/h
+            journeyId: hot.journeyId,
+            startTime: hot.startTime,
+            totalDistance: hot.totalDistance,
+            currentSpeed: (hot.lastSpeed || 0) * 3.6,
             avgSpeed,
-            topSpeed: state.topSpeed,
-            movingTime: state.movingTime,
+            topSpeed: hot.topSpeed,
+            movingTime: hot.movingTime,
             progress,
             distanceRemaining: distanceRemaining > 0 ? distanceRemaining : undefined,
-            startLocationName: state.startLocationName,
-            destinationName: state.destinationName,
-            currentLatitude: state.lastLatitude,
-            currentLongitude: state.lastLongitude,
+            startLocationName: hot.startLocationName,
+            destinationName: hot.destinationName,
+            currentLatitude: hot.lastLatitude,
+            currentLongitude: hot.lastLongitude,
             units,
         };
 
         await LiveNotificationService.updateNotification(notificationData);
     } catch (e) {
         console.warn('[BackgroundTask] Failed to update notification:', e);
-        // Fallback to simple notification if live notification fails
-        await fallbackToSimpleNotification(state);
+        await fallbackToSimpleNotification(hot);
     }
 }
 
-// Fallback notification using expo-notifications (simpler format)
-async function fallbackToSimpleNotification(state: PersistedJourneyState) {
+async function fallbackToSimpleNotification(hot: JourneyHotState): Promise<void> {
     try {
-        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+        const elapsed = Math.floor((Date.now() - hot.startTime) / 1000);
         await Notifications.scheduleNotificationAsync({
             identifier: NOTIFICATION_ID,
             content: {
                 title: 'Journey in Progress',
-                body: `${state.totalDistance.toFixed(2)} km • ${formatDuration(elapsed)}`,
-                data: { type: 'JOURNEY_TRACKING', journeyId: state.journeyId },
+                body: `${hot.totalDistance.toFixed(2)} km • ${formatDuration(elapsed)}`,
+                data: { type: 'JOURNEY_TRACKING', journeyId: hot.journeyId },
                 sticky: true,
                 sound: false,
             },
             trigger: null,
         });
-    } catch (e) {
-        console.warn('[BackgroundTask] Fallback notification also failed:', e);
-    }
+    } catch {}
 }
 
-// Start background location tracking with optional destination info
+// ─── Background task definition ───────────────────────────────────────────────
+
+TaskManager.defineTask(
+    BACKGROUND_LOCATION_TASK,
+    async ({ data, error }: TaskManager.TaskManagerTaskBody<{ locations: Location.LocationObject[] }>) => {
+        if (error) {
+            console.error('[BackgroundTask] Error:', error);
+            return;
+        }
+        if (!data) return;
+
+        const { locations } = data as { locations: Location.LocationObject[] };
+        if (!locations || locations.length === 0) return;
+
+        const location = locations[locations.length - 1];
+
+        try {
+            // ── Read HOT state only (~200 bytes) ──────────────────────────────
+            const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+            if (!hotJson) return; // Journey ended — state was cleared before stop
+
+            const hot: JourneyHotState = JSON.parse(hotJson);
+
+            // ── Process location ──────────────────────────────────────────────
+            if (hot.lastLatitude && hot.lastLongitude) {
+                const distanceKm = calculateHaversineDistance(
+                    hot.lastLatitude, hot.lastLongitude,
+                    location.coords.latitude, location.coords.longitude,
+                );
+                const distanceMeters = distanceKm * 1000;
+                const timeDelta = (location.timestamp - hot.lastTimestamp) / 1000;
+                const reportedSpeed = location.coords.speed || 0;
+                const impliedSpeedMps = timeDelta > 0 ? distanceMeters / timeDelta : 0;
+                const effectiveSpeedMps = reportedSpeed > 0 ? reportedSpeed : impliedSpeedMps;
+
+                const isReasonableSpeed = impliedSpeedMps <= MAX_REASONABLE_SPEED_MPS;
+                const hasSignificantMovement = distanceMeters > MIN_MOVEMENT_THRESHOLD_M;
+                const isActuallyMoving = effectiveSpeedMps > MAX_SPEED_FOR_RECORDING_MPS;
+
+                if (hasSignificantMovement && isReasonableSpeed && isActuallyMoving) {
+                    hot.totalDistance += distanceKm;
+
+                    // Validate speed
+                    const validatedSpeedMps = Math.min(
+                        Math.max(reportedSpeed, 0),
+                        impliedSpeedMps > 0 ? impliedSpeedMps : reportedSpeed,
+                    );
+                    const speedKmh = Math.abs(validatedSpeedMps) * 3.6;
+
+                    // Top speed — vehicle-aware cap + sustainment
+                    if (!hot.recentHighSpeeds) hot.recentHighSpeeds = [];
+                    const vehicleCapKmh = VEHICLE_MAX_SPEED_KMH[hot.vehicle || 'car'] ?? VEHICLE_MAX_SPEED_KMH.car;
+                    if (speedKmh > vehicleCapKmh) {
+                        hot.recentHighSpeeds = [];
+                    } else if (speedKmh > hot.topSpeed * 0.5 || speedKmh > 20) {
+                        hot.recentHighSpeeds.push(speedKmh);
+                        if (hot.recentHighSpeeds.length > 5) hot.recentHighSpeeds.shift();
+                        if (hot.recentHighSpeeds.length >= 3) {
+                            const minR = Math.min(...hot.recentHighSpeeds);
+                            const maxR = Math.max(...hot.recentHighSpeeds);
+                            if (minR > maxR * 0.75 && speedKmh > hot.topSpeed) {
+                                const sorted = [...hot.recentHighSpeeds].sort((a, b) => a - b);
+                                const median = sorted[Math.floor(sorted.length / 2)];
+                                hot.topSpeed = Math.min(vehicleCapKmh, Math.max(hot.topSpeed, median));
+                            }
+                        }
+                    } else {
+                        hot.recentHighSpeeds = [];
+                    }
+
+                    if (validatedSpeedMps > MAX_SPEED_FOR_RECORDING_MPS) {
+                        hot.movingTime += timeDelta;
+                    }
+                    hot.lastSpeed = validatedSpeedMps;
+
+                    // Accumulate pending route point (bounded buffer between cold flushes)
+                    if (!hot.pendingRoutePoints) hot.pendingRoutePoints = [];
+                    hot.pendingRoutePoints.push({
+                        latitude: location.coords.latitude,
+                        longitude: location.coords.longitude,
+                        timestamp: location.timestamp,
+                        speed: reportedSpeed,
+                    });
+                    if (hot.pendingRoutePoints.length > MAX_PENDING_ROUTE_POINTS) {
+                        hot.pendingRoutePoints = hot.pendingRoutePoints.slice(-MAX_PENDING_ROUTE_POINTS);
+                    }
+
+                    if (!hot.pendingRawPoints) hot.pendingRawPoints = [];
+                    hot.pendingRawPoints.push({
+                        latitude: location.coords.latitude,
+                        longitude: location.coords.longitude,
+                        timestamp: location.timestamp,
+                        speed: reportedSpeed,
+                    });
+                    if (hot.pendingRawPoints.length > MAX_PENDING_RAW_POINTS) {
+                        hot.pendingRawPoints = hot.pendingRawPoints.slice(-MAX_PENDING_RAW_POINTS);
+                    }
+                } else if (!isReasonableSpeed) {
+                    console.warn(`[BackgroundTask] Filtered GPS jitter: ${impliedSpeedMps.toFixed(1)} m/s`);
+                }
+            }
+
+            // Update last known position
+            hot.lastLatitude = location.coords.latitude;
+            hot.lastLongitude = location.coords.longitude;
+            hot.lastTimestamp = location.timestamp;
+            hot.invocationCount = (hot.invocationCount || 0) + 1;
+
+            // ── Cold flush every COLD_FLUSH_EVERY_N invocations (~60 s) ────────
+            // Moves pending route points to the large cold-state JSON so the hot
+            // state stays tiny on every GPS-fix write.
+            const shouldFlushCold =
+                hot.invocationCount % COLD_FLUSH_EVERY_N === 0 &&
+                ((hot.pendingRoutePoints?.length ?? 0) > 0 || (hot.pendingRawPoints?.length ?? 0) > 0);
+
+            if (shouldFlushCold) {
+                try {
+                    const coldJson = await AsyncStorage.getItem(JOURNEY_ROUTES_KEY);
+                    const cold: JourneyColdState = coldJson
+                        ? JSON.parse(coldJson)
+                        : { journeyId: hot.journeyId, routePoints: [], rawPointsBuffer: [] };
+
+                    // Append pending points and enforce caps
+                    cold.routePoints = [...cold.routePoints, ...(hot.pendingRoutePoints ?? [])];
+                    if (cold.routePoints.length > MAX_ROUTE_POINTS) {
+                        const first = cold.routePoints[0];
+                        cold.routePoints = [first, ...cold.routePoints.slice(-(MAX_ROUTE_POINTS - 1))];
+                    }
+
+                    cold.rawPointsBuffer = [...cold.rawPointsBuffer, ...(hot.pendingRawPoints ?? [])];
+                    if (cold.rawPointsBuffer.length > MAX_RAW_BUFFER_POINTS) {
+                        cold.rawPointsBuffer = cold.rawPointsBuffer.slice(-MAX_RAW_BUFFER_POINTS);
+                    }
+
+                    await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(cold));
+
+                    // Clear pending buffers now that they're safely in cold storage
+                    hot.pendingRoutePoints = [];
+                    hot.pendingRawPoints = [];
+                } catch (coldErr) {
+                    // Cold flush failed — leave pending points in hot state for next attempt
+                    console.warn('[BackgroundTask] Cold flush failed, will retry:', coldErr);
+                }
+            }
+
+            // ── Write HOT state (~200 bytes, fast) ───────────────────────────
+            await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hot));
+
+            // ── Update notification (reads hot state only) ────────────────────
+            await updateTrackingNotification(hot);
+
+        } catch (e) {
+            console.error('[BackgroundTask] Failed to process location:', e);
+        }
+    },
+);
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
 export interface BackgroundTrackingOptions {
     startLocationName?: string;
     destinationName?: string;
     destinationLatitude?: number;
     destinationLongitude?: number;
     estimatedTotalDistance?: number;
-    // CRITICAL: Pass startTime from foreground to ensure timer sync
-    // This fixes Android issue where timer starts at wrong value
     startTime?: number;
-    // Pass initial location from foreground to avoid redundant GPS call
-    // This saves 2-15 seconds during journey start
-    initialLocation?: {
-        latitude: number;
-        longitude: number;
-        timestamp: number;
-    };
-    // Vehicle kind drives the max-speed cap used to reject bogus GPS samples
+    initialLocation?: { latitude: number; longitude: number; timestamp: number };
     vehicle?: 'car' | 'bike' | 'scooter';
 }
 
 export async function startBackgroundTracking(
     journeyId: string,
-    options?: BackgroundTrackingOptions
+    options?: BackgroundTrackingOptions,
 ): Promise<boolean> {
     try {
-        // Check if background location is granted (do NOT request here, should be handled by UI disclosure)
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
         if (bgStatus !== 'granted') {
             console.warn('[BackgroundTask] Background location permission not granted');
             return false;
         }
 
-        // OPTIMIZATION: Use initial location from foreground if available,
-        // otherwise get current location. This eliminates the redundant second GPS call
-        // that was adding 2-15s to journey start time.
         let initialCoords: { latitude: number; longitude: number; timestamp: number };
         if (options?.initialLocation) {
             initialCoords = options.initialLocation;
-            console.log('[BackgroundTask] Using pre-fetched location (saved GPS call)');
         } else {
-            const currentLocation = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced, // Balanced is faster than BestForNavigation
-            });
-            initialCoords = {
-                latitude: currentLocation.coords.latitude,
-                longitude: currentLocation.coords.longitude,
-                timestamp: currentLocation.timestamp,
-            };
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            initialCoords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude, timestamp: loc.timestamp };
         }
 
-        // Create initial persisted state with destination info
-        // CRITICAL: Use passed startTime for timer sync between foreground and background
-        // This ensures Android timer doesn't start at wrong value
         const syncedStartTime = options?.startTime || Date.now();
-        const initialState: PersistedJourneyState = {
+
+        // ── Write initial HOT state (small) ────────────────────────────────────
+        const hotState: JourneyHotState = {
             journeyId,
             startTime: syncedStartTime,
             totalDistance: 0,
             movingTime: 0,
             topSpeed: 0,
+            vehicle: options?.vehicle ?? 'car',
             lastLatitude: initialCoords.latitude,
             lastLongitude: initialCoords.longitude,
             lastTimestamp: initialCoords.timestamp,
-            routePoints: [{
-                latitude: initialCoords.latitude,
-                longitude: initialCoords.longitude,
-                timestamp: initialCoords.timestamp,
-                speed: 0,
-            }],
-            // Buffer for raw points to snap to roads later
-            rawPointsBuffer: [{
-                latitude: initialCoords.latitude,
-                longitude: initialCoords.longitude,
-                timestamp: initialCoords.timestamp,
-                speed: 0,
-            }],
-            // Include destination info if provided
             startLocationName: options?.startLocationName,
             destinationName: options?.destinationName,
             destinationLatitude: options?.destinationLatitude,
             destinationLongitude: options?.destinationLongitude,
             estimatedTotalDistance: options?.estimatedTotalDistance,
-            vehicle: options?.vehicle ?? 'car',
+            invocationCount: 0,
+            pendingRoutePoints: [],
+            pendingRawPoints: [],
         };
+        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hotState));
 
-        // Persist initial state
-        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(initialState));
+        // ── Write initial COLD state (route arrays) ────────────────────────────
+        const coldState: JourneyColdState = {
+            journeyId,
+            routePoints: [{ latitude: initialCoords.latitude, longitude: initialCoords.longitude, timestamp: initialCoords.timestamp, speed: 0 }],
+            rawPointsBuffer: [{ latitude: initialCoords.latitude, longitude: initialCoords.longitude, timestamp: initialCoords.timestamp, speed: 0 }],
+        };
+        await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(coldState));
 
-        // Initialize notification channel (for notifee on Android)
-        await LiveNotificationService.initializeChannel();
-
-        // Start background location updates FIRST — expo-location provides the foreground service
-        // that keeps the app alive. Starting this before notifee's notification avoids
-        // ForegroundServiceDidNotStartInTimeException on Android 12+.
+        // ── Start background location task ─────────────────────────────────────
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 5000, // Update every 5 seconds
-            distanceInterval: 10, // Or every 10 meters
+            timeInterval: 5000,
+            distanceInterval: 10,
             foregroundService: {
-                notificationTitle: options?.destinationName
-                    ? `Heading to ${options.destinationName}`
-                    : 'Wayfarian Journey',
+                notificationTitle: options?.destinationName ? `Heading to ${options.destinationName}` : 'Wayfarian Journey',
                 notificationBody: 'Tracking your journey...',
                 notificationColor: '#F9A825',
             },
@@ -460,12 +449,11 @@ export async function startBackgroundTracking(
             activityType: Location.ActivityType.AutomotiveNavigation,
         });
 
-        // Now that expo-location's foreground service is running, update notification
-        // with richer content via live notification service (non-blocking)
+        // Initial rich notification (non-blocking)
         const units = await getUnitsPreference();
-        const initialNotificationData: JourneyNotificationData = {
+        LiveNotificationService.updateNotification({
             journeyId,
-            startTime: initialState.startTime,
+            startTime: syncedStartTime,
             totalDistance: 0,
             currentSpeed: 0,
             avgSpeed: 0,
@@ -475,55 +463,51 @@ export async function startBackgroundTracking(
             distanceRemaining: options?.estimatedTotalDistance,
             startLocationName: options?.startLocationName,
             destinationName: options?.destinationName,
-            currentLatitude: initialState.lastLatitude,
-            currentLongitude: initialState.lastLongitude,
+            currentLatitude: initialCoords.latitude,
+            currentLongitude: initialCoords.longitude,
             units,
-        };
-        LiveNotificationService.updateNotification(initialNotificationData).catch(e => {
-            console.warn('[BackgroundTask] Initial notification update failed (non-critical):', e);
-        });
+        }).catch(e => console.warn('[BackgroundTask] Initial notification failed (non-critical):', e));
+
+        await LiveNotificationService.initializeChannel();
 
         console.log('[BackgroundTask] Started background tracking for journey:', journeyId);
         return true;
-
     } catch (error) {
         console.error('[BackgroundTask] Failed to start background tracking:', error);
         return false;
     }
 }
 
-// Stop background location tracking
 export async function stopBackgroundTracking(): Promise<PersistedJourneyState | null> {
+    let savedState: PersistedJourneyState | null = null;
     try {
-        // Check if task is running
-        const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        // 1. Read & merge both states BEFORE clearing — callers may need the final stats.
+        savedState = await getPersistedJourneyState();
 
+        // 2. Clear HOT state FIRST so a racing background task invocation sees null and exits
+        //    without re-posting the notification (the race that caused the notification to persist).
+        await AsyncStorage.removeItem(JOURNEY_STATE_KEY);
+        await AsyncStorage.removeItem(JOURNEY_ROUTES_KEY);
+
+        // 3. Stop the location task (now safe — background task exits on null hot state)
+        const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         if (isRunning) {
             await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         }
 
-        // Dismiss notification via live notification service
+        // 4. Dismiss notification
         await LiveNotificationService.dismissNotification();
-        // Also try to cancel any expo-notifications fallback
-        await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID).catch(() => { });
-
-        // Get persisted state
-        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
-        const state: PersistedJourneyState | null = stateJson ? JSON.parse(stateJson) : null;
-
-        // Clear persisted state
-        await AsyncStorage.removeItem(JOURNEY_STATE_KEY);
+        await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID).catch(() => {});
 
         console.log('[BackgroundTask] Stopped background tracking');
-        return state;
-
+        return savedState;
     } catch (error) {
         console.error('[BackgroundTask] Failed to stop background tracking:', error);
-        return null;
+        LiveNotificationService.dismissNotification().catch(() => {});
+        return savedState;
     }
 }
 
-// Check if background tracking is active
 export async function isBackgroundTrackingActive(): Promise<boolean> {
     try {
         return await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
@@ -532,70 +516,104 @@ export async function isBackgroundTrackingActive(): Promise<boolean> {
     }
 }
 
-// Get persisted journey state (for recovery)
+/** Reads both HOT and COLD state and returns a merged PersistedJourneyState. */
 export async function getPersistedJourneyState(): Promise<PersistedJourneyState | null> {
     try {
-        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
-        return stateJson ? JSON.parse(stateJson) : null;
+        const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (!hotJson) return null;
+        const hot: JourneyHotState = JSON.parse(hotJson);
+
+        const coldJson = await AsyncStorage.getItem(JOURNEY_ROUTES_KEY);
+        const cold: JourneyColdState | null = coldJson ? JSON.parse(coldJson) : null;
+
+        return {
+            journeyId: hot.journeyId,
+            startTime: hot.startTime,
+            totalDistance: hot.totalDistance,
+            movingTime: hot.movingTime,
+            topSpeed: hot.topSpeed,
+            vehicle: hot.vehicle,
+            lastLatitude: hot.lastLatitude,
+            lastLongitude: hot.lastLongitude,
+            lastTimestamp: hot.lastTimestamp,
+            lastSpeed: hot.lastSpeed,
+            recentHighSpeeds: hot.recentHighSpeeds,
+            startLocationName: hot.startLocationName,
+            destinationName: hot.destinationName,
+            destinationLatitude: hot.destinationLatitude,
+            destinationLongitude: hot.destinationLongitude,
+            estimatedTotalDistance: hot.estimatedTotalDistance,
+            // Merge: cold (flushed history) + hot pending (recent points not yet flushed)
+            routePoints: [
+                ...(cold?.routePoints ?? []),
+                ...(hot.pendingRoutePoints ?? []),
+            ],
+            rawPointsBuffer: [
+                ...(cold?.rawPointsBuffer ?? []),
+                ...(hot.pendingRawPoints ?? []),
+            ],
+        };
     } catch {
         return null;
     }
 }
 
-// Recover journey state after app restart
 export async function recoverJourneyState(): Promise<PersistedJourneyState | null> {
     const state = await getPersistedJourneyState();
-
     if (state) {
-        // Check if journey is still active (background task running)
         const isActive = await isBackgroundTrackingActive();
-
         if (!isActive) {
-            // Journey was interrupted - clear state
             await AsyncStorage.removeItem(JOURNEY_STATE_KEY);
+            await AsyncStorage.removeItem(JOURNEY_ROUTES_KEY);
             return null;
         }
     }
-
     return state;
 }
 
-// Get buffered raw points from background tracking for Roads API snapping
-export async function getBufferedBackgroundPoints(): Promise<Array<{ latitude: number; longitude: number; timestamp: number; speed?: number }>> {
+export async function getBufferedBackgroundPoints(): Promise<{ latitude: number; longitude: number; timestamp: number; speed?: number }[]> {
     try {
         const state = await getPersistedJourneyState();
-        return state?.rawPointsBuffer || [];
+        return state?.rawPointsBuffer ?? [];
     } catch {
         return [];
     }
 }
 
-// Clear the background buffer after processing (call after snapping to Roads API)
 export async function clearBackgroundBuffer(): Promise<void> {
     try {
-        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
-        if (!stateJson) return;
-
-        const state: PersistedJourneyState = JSON.parse(stateJson);
-        state.rawPointsBuffer = [];
-        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(state));
+        // Clear from cold state
+        const coldJson = await AsyncStorage.getItem(JOURNEY_ROUTES_KEY);
+        if (coldJson) {
+            const cold: JourneyColdState = JSON.parse(coldJson);
+            cold.rawPointsBuffer = [];
+            await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(cold));
+        }
+        // Clear pending raw points from hot state
+        const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (hotJson) {
+            const hot: JourneyHotState = JSON.parse(hotJson);
+            hot.pendingRawPoints = [];
+            await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hot));
+        }
     } catch (e) {
         console.warn('[BackgroundTask] Failed to clear buffer:', e);
     }
 }
 
-// Get current background distance (for merging with foreground)
 export async function getBackgroundDistance(): Promise<number> {
     try {
-        const state = await getPersistedJourneyState();
-        return state?.totalDistance || 0;
+        // Distance lives in hot state — no need to read cold
+        const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (!hotJson) return 0;
+        const hot: JourneyHotState = JSON.parse(hotJson);
+        return hot.totalDistance ?? 0;
     } catch {
         return 0;
     }
 }
 
-// Sync foreground state to background persisted state
-// Called when app goes to background so the background task has accurate data
+/** Sync foreground stats into hot state only — fast, no route-array I/O. */
 export async function syncForegroundToBackground(foregroundState: {
     totalDistance: number;
     movingTime: number;
@@ -605,36 +623,28 @@ export async function syncForegroundToBackground(foregroundState: {
     currentLongitude?: number;
 }): Promise<void> {
     try {
-        const stateJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
-        if (!stateJson) return;
+        const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
+        if (!hotJson) return;
+        const hot: JourneyHotState = JSON.parse(hotJson);
 
-        const state: PersistedJourneyState = JSON.parse(stateJson);
+        hot.totalDistance = Math.max(hot.totalDistance, foregroundState.totalDistance);
+        hot.movingTime = Math.max(hot.movingTime, foregroundState.movingTime);
+        hot.topSpeed = Math.max(hot.topSpeed, foregroundState.topSpeed);
+        hot.lastSpeed = foregroundState.currentSpeed / 3.6;
 
-        // Use the maximum of foreground and background values to avoid losing data
-        // Foreground uses Roads API (more accurate) so prefer it when larger
-        state.totalDistance = Math.max(state.totalDistance, foregroundState.totalDistance);
-        state.movingTime = Math.max(state.movingTime, foregroundState.movingTime);
-        state.topSpeed = Math.max(state.topSpeed, foregroundState.topSpeed);
-
-        // Update speed for notification display
-        state.lastSpeed = foregroundState.currentSpeed / 3.6; // Convert km/h to m/s
-
-        // Update position if provided
         if (foregroundState.currentLatitude && foregroundState.currentLongitude) {
-            state.lastLatitude = foregroundState.currentLatitude;
-            state.lastLongitude = foregroundState.currentLongitude;
-            state.lastTimestamp = Date.now();
+            hot.lastLatitude = foregroundState.currentLatitude;
+            hot.lastLongitude = foregroundState.currentLongitude;
+            hot.lastTimestamp = Date.now();
         }
 
-        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(state));
-        console.log('[BackgroundTask] Synced foreground state to background - distance:', state.totalDistance.toFixed(2), 'km');
+        await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hot));
+        console.log('[BackgroundTask] Synced foreground state — distance:', hot.totalDistance.toFixed(2), 'km');
     } catch (e) {
         console.warn('[BackgroundTask] Failed to sync foreground state:', e);
     }
 }
 
-// Get background-accumulated delta since last sync
-// Returns the distance/time accumulated purely in background since the last foreground sync
 export async function getBackgroundAccumulatedState(): Promise<{
     totalDistance: number;
     movingTime: number;

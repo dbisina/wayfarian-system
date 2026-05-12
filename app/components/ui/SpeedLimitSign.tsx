@@ -12,32 +12,44 @@ interface SpeedLimitSignProps {
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const ROADS_API_SPEED_LIMITS_URL = 'https://roads.googleapis.com/v1/speedLimits';
 
+// Minimum distance (degrees ≈ 50m) between fetches
+const MIN_FETCH_DELTA = 0.0005;
+// Minimum time (ms) between fetches — never more than once per 30s
+const MIN_FETCH_INTERVAL_MS = 30_000;
+
 export const SpeedLimitSign: React.FC<SpeedLimitSignProps> = ({ latitude, longitude }) => {
   const [speedLimit, setSpeedLimit] = useState<number | null>(null);
+  const lastFetchCoordsRef = React.useRef<{ lat: number; lon: number } | null>(null);
+  const lastFetchTimeRef = React.useRef<number>(0);
 
   useEffect(() => {
     if (!GOOGLE_MAPS_API_KEY) return;
 
+    const now = Date.now();
+    const timeSinceLast = now - lastFetchTimeRef.current;
+    const prev = lastFetchCoordsRef.current;
+    const latDelta = prev ? Math.abs(latitude - prev.lat) : Infinity;
+    const lonDelta = prev ? Math.abs(longitude - prev.lon) : Infinity;
+
+    // Skip if we fetched recently AND haven't moved enough.
+    // This limits calls to at most once per 30s, and only when moved ~50m.
+    if (timeSinceLast < MIN_FETCH_INTERVAL_MS && latDelta < MIN_FETCH_DELTA && lonDelta < MIN_FETCH_DELTA) {
+      return;
+    }
+
+    lastFetchTimeRef.current = now;
+    lastFetchCoordsRef.current = { lat: latitude, lon: longitude };
+
     const fetchSpeedLimit = async () => {
       try {
-        // The Roads API requires a path or placeId. 
-        // For a single point, we can try to snap it first or just pass it as a path of one point (might not work well).
-        // Better approach: Use the nearest road segment.
-        // However, speedLimits endpoint takes 'path' or 'placeId'.
-        // Let's try passing the point as a path.
         const path = `${latitude},${longitude}`;
         const url = `${ROADS_API_SPEED_LIMITS_URL}?path=${path}&key=${GOOGLE_MAPS_API_KEY}`;
-
         const response = await fetch(url);
         const data = await response.json();
 
         if (data.speedLimits && data.speedLimits.length > 0) {
           const limit = data.speedLimits[0].speedLimit;
-          if (limit > 0) {
-            setSpeedLimit(limit);
-          } else {
-            setSpeedLimit(null);
-          }
+          setSpeedLimit(limit > 0 ? limit : null);
         } else {
           setSpeedLimit(null);
         }
@@ -46,11 +58,6 @@ export const SpeedLimitSign: React.FC<SpeedLimitSignProps> = ({ latitude, longit
       }
     };
 
-    // Debounce or throttle this call? 
-    // We shouldn't call it every second. Maybe every 10 seconds or on significant location change.
-    // For this component, we'll assume the parent controls when to render/update it, 
-    // or we can add a check to only fetch if location changed significantly.
-    
     fetchSpeedLimit();
 
   }, [latitude, longitude]);
