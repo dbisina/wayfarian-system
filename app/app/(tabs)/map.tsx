@@ -14,6 +14,13 @@ import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import JourneyEndModal from '../../components/JourneyEndModal';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import {
+  fetchVehicles,
+  selectDefaultVehicle,
+  selectSelectedVehicle,
+} from '../../store/slices/vehicleSlice';
+import type { Vehicle } from '../../contexts/SettingsContext';
 
 // const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -29,6 +36,7 @@ interface Place {
 interface MapJourney {
   id: string;
   title: string;
+  customTitle?: string | null;
   endLatitude?: number;
   endLongitude?: number;
   endAddress?: string;
@@ -40,6 +48,13 @@ interface MapJourney {
 export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { mapType, vehicle: settingsVehicle } = useSettings();
+  const dispatch = useAppDispatch();
+  // VehiclePicker writes only to the Redux garage slice — not SettingsContext —
+  // so the play-button must consult Redux first or it always falls back to "car".
+  const garageSelectedVehicle = useAppSelector(selectSelectedVehicle);
+  const garageDefaultVehicle = useAppSelector(selectDefaultVehicle);
+  const activeGarageVehicle = garageSelectedVehicle ?? garageDefaultVehicle;
+  const effectiveVehicleType: Vehicle = ((activeGarageVehicle?.type as Vehicle | undefined) ?? settingsVehicle) || 'car';
   const { isTracking, startJourney, currentLocation } = useJourney();
   const stats = useJourneyStats();
   const routePoints = useJourneyRoutePoints();
@@ -154,10 +169,15 @@ export default function MapScreen(): React.JSX.Element {
   useEffect(() => {
     getCurrentLocation(false);
     fetchMapJourneys();
+    // Hydrate the garage so the play button knows which vehicle to use.
+    // Without this, the effective vehicle stays "car" until the user opens
+    // new-journey or settings, which is the source of the "vehicle reverts"
+    // complaint from formless rides.
+    dispatch(fetchVehicles());
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, []);
+  }, [dispatch]);
 
   const fetchMapJourneys = async () => {
     try {
@@ -326,8 +346,14 @@ export default function MapScreen(): React.JSX.Element {
     setIsStartBusy(true);
     try {
       const success = await startJourney({
-        title: 'My Journey',
-        vehicle: settingsVehicle,
+        // Leave title undefined so the backend default ("My Journey") only
+        // appears when the user actually skips JourneyEndModal's name field.
+        // If the user types a name later, customTitle becomes the source of truth.
+        vehicle: effectiveVehicleType,
+        vehicleId: activeGarageVehicle?.id,
+        vehicleName: activeGarageVehicle
+          ? `${activeGarageVehicle.name} (${activeGarageVehicle.make} ${activeGarageVehicle.model})`
+          : undefined,
       });
       if (success) {
         router.push('/journey');
@@ -348,8 +374,11 @@ export default function MapScreen(): React.JSX.Element {
     setIsStartBusy(true);
     try {
       const success = await startJourney({
-        title: 'My Journey',
-        vehicle: settingsVehicle,
+        vehicle: effectiveVehicleType,
+        vehicleId: activeGarageVehicle?.id,
+        vehicleName: activeGarageVehicle
+          ? `${activeGarageVehicle.name} (${activeGarageVehicle.make} ${activeGarageVehicle.model})`
+          : undefined,
         endLocation: destination
           ? { latitude: destination.latitude, longitude: destination.longitude, address: destination.name || 'Destination' }
           : undefined,
@@ -553,12 +582,23 @@ export default function MapScreen(): React.JSX.Element {
                       )}
                       <View style={styles.cardContent}>
                         <Text style={styles.cardTitle} numberOfLines={1}>
-                          {journey.title || t('journey.defaultTitle')}
+                          {journey.customTitle || journey.title || t('journey.defaultTitle')}
                         </Text>
-                        <View style={styles.cardFooter}>
+                        {/* Use a TouchableOpacity here so the inner arrow has its own
+                            hit target. The parent Marker.onPress still fires when the
+                            user taps elsewhere on the card, but Android frequently
+                            swallows taps on icons sitting flush against a marker edge
+                            — explicit touchable + hitSlop fixes the "arrow not clickable"
+                            complaint. */}
+                        <TouchableOpacity
+                          style={styles.cardFooter}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          activeOpacity={0.7}
+                          onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
+                        >
                            <Text style={styles.cardSubtitle}>{t('common.view')}</Text>
                            <Ionicons name="arrow-forward" size={12} color="#000" />
-                        </View>
+                        </TouchableOpacity>
                       </View>
                     </View>
                     

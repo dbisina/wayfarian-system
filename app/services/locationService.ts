@@ -18,8 +18,18 @@ const MAX_ACCURACY_THRESHOLD = 60; // Ignore points with accuracy worse than thi
 const CURRENT_JOURNEY_ID_KEY = 'wayfarian_current_journey_id';
 const CURRENT_GROUP_ID_KEY = 'wayfarian_current_group_id';
 const MIN_TIME_DELTA_FOR_SPEED_CALC = 0.5; // Minimum seconds needed for accurate speed calculation
-const MAX_REASONABLE_SPEED_MPS = 139; // 500 km/h in m/s - only filter extreme GPS jitter outliers
+// 55.5 m/s = 200 km/h. Anything above that on a phone GPS is almost always a jitter
+// spike, not real motion. Old value (139 m/s / 500 km/h) was wide enough to let
+// glitches pollute the trip's top speed.
+const MAX_REASONABLE_SPEED_MPS = 55.5;
 const JITTER_ACCURACY_MULTIPLIER = 0.5; // distance must be > accuracy * mutliplier to count as movement
+// Require a sustained burst before promoting a new top speed — one stray sample
+// no longer becomes the trip's max.
+const TOP_SPEED_REQUIRED_SAMPLES = 3;
+// Bound the in-memory route polyline so a 5-hour ride doesn't OOM the JS thread.
+// At 1 Hz sampling, ~6000 points ≈ 100 minutes of pure motion. Older points are
+// dropped from memory but the backend still has them.
+const MAX_ROUTE_POINTS_IN_MEMORY = 6000;
 
 export interface LocationPoint {
   latitude: number;
@@ -87,6 +97,10 @@ class LocationService {
   private recentPoints: { point: LocationPoint; timestamp: number }[] = [];
   private readonly SPEED_CALCULATION_WINDOW_MS = 3000; // Use last 3 seconds of points for speed calculation
   private readonly MIN_SPEED_CALC_POINTS = 2; // Need at least 2 points to calculate speed
+  // Rolling buffer of recent high-speed samples used to validate a candidate top speed
+  // before it is committed to stats.topSpeed. Stops a single GPS glitch from setting
+  // an unrealistic max for the whole journey.
+  private topSpeedSamplesKmh: number[] = [];
 
   // Calculate distance between two points using Haversine formula
   private calculateDistance(
@@ -216,6 +230,7 @@ class LocationService {
       this.isCurrentlyMoving = false;
       this.routePoints = [startLocation];
       this.recentPoints = []; // Initialize recent points for speed calculation
+      this.topSpeedSamplesKmh = []; // Reset top-speed validation buffer
 
       // Reset stats
       this.stats = {
@@ -398,13 +413,31 @@ class LocationService {
         this.lastMovementTime = now;
       }
 
-      // Update top speed only when moving (use actual speed, not display speed)
+      // Update top speed only when moving (use actual speed, not display speed).
+      // Require TOP_SPEED_REQUIRED_SAMPLES consecutive samples within ±15% of the
+      // candidate before promoting it — kills single-sample GPS glitches.
       const actualSpeedKmh = finalSpeedMps * 3.6;
-      if (actualSpeedKmh > this.stats.topSpeed) {
-        this.stats.topSpeed = actualSpeedKmh;
+      if (actualSpeedKmh > 0) {
+        this.topSpeedSamplesKmh.push(actualSpeedKmh);
+        if (this.topSpeedSamplesKmh.length > TOP_SPEED_REQUIRED_SAMPLES) {
+          this.topSpeedSamplesKmh.shift();
+        }
+        if (this.topSpeedSamplesKmh.length >= TOP_SPEED_REQUIRED_SAMPLES) {
+          const minSample = Math.min(...this.topSpeedSamplesKmh);
+          const maxSample = Math.max(...this.topSpeedSamplesKmh);
+          const consistent = minSample >= maxSample * 0.85;
+          const sorted = [...this.topSpeedSamplesKmh].sort((a, b) => a - b);
+          const median = sorted[Math.floor(sorted.length / 2)];
+          if (consistent && median > this.stats.topSpeed) {
+            this.stats.topSpeed = median;
+          }
+        }
       }
     } else {
       this.isCurrentlyMoving = false;
+      // Stationary — drop the high-speed buffer so the next real burst has to
+      // re-qualify from scratch.
+      if (this.topSpeedSamplesKmh.length) this.topSpeedSamplesKmh = [];
     }
 
     // Update total time (includes stationary time)
@@ -419,9 +452,17 @@ class LocationService {
       this.stats.avgSpeed = 0;
     }
 
-    // Add point to route only if accepted (filters out jitter when stationary)
+    // Add point to route only if accepted (filters out jitter when stationary).
+    // Cap the buffer length so a multi-hour ride doesn't grow the JS array
+    // unboundedly — the backend has the full route, the client only needs the
+    // recent slice for breadcrumb rendering.
     if (acceptPoint) {
       this.routePoints.push(newPoint);
+      if (this.routePoints.length > MAX_ROUTE_POINTS_IN_MEMORY) {
+        // Drop the oldest 20% in one slice rather than shift() per point.
+        const dropCount = Math.floor(MAX_ROUTE_POINTS_IN_MEMORY * 0.2);
+        this.routePoints = this.routePoints.slice(dropCount);
+      }
     }
 
     // Share with listeners (UI state updates)
@@ -591,6 +632,7 @@ class LocationService {
       this.currentGroupId = null;
       this.routePoints = [];
       this.recentPoints = []; // Clear recent points for speed calculation
+      this.topSpeedSamplesKmh = []; // Clear top-speed validation buffer
       this.isCurrentlyMoving = false;
       this.lastMovementTime = 0;
       this.stats = {

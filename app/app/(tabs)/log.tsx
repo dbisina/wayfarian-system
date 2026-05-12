@@ -28,6 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 type JourneyItem = {
   id: string;
   title?: string;
+  customTitle?: string | null;
   startTime?: string;
   endTime?: string;
   totalDistance?: number;
@@ -63,7 +64,13 @@ export default function RideLogScreen(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
 
   const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
-    const position = positionRes?.position ?? positionRes?.rank ?? null;
+    // Server returns { success, user: { position, percentile, ... } }
+    // Older client code expected top-level position/rank — keep fallbacks for safety.
+    const position =
+      positionRes?.user?.position ??
+      positionRes?.position ??
+      positionRes?.rank ??
+      null;
     if (typeof position === 'number') setRank(position);
 
     let nextName = t('log.nextMilestone');
@@ -222,6 +229,9 @@ export default function RideLogScreen(): React.JSX.Element {
       journey.photos?.[0]?.imageUrl ||
       journey.photos?.[0]?.firebasePath;
 
+    // Prefer user-set customTitle over the auto-generated title so the formless
+    // "My Journey" default doesn't clobber what the user typed in JourneyEndModal.
+    const displayTitle = journey.customTitle || journey.title || t('log.soloRideDefault');
     return (
       <View key={journey.id} style={styles.timelineNode}>
         <View style={styles.pathColumn}>
@@ -244,7 +254,7 @@ export default function RideLogScreen(): React.JSX.Element {
               <Text style={styles.nodeTime}>{getTimeLabel(journey.startTime)}</Text>
               <JourneyCardMenu
                 journeyId={journey.id}
-                journeyTitle={journey.title || t('log.soloRideDefault')}
+                journeyTitle={displayTitle}
                 onRename={() => loadData()}
                 onDelete={() => {
                   setSoloJourneys(prev => prev.filter(j => j.id !== journey.id));
@@ -254,7 +264,7 @@ export default function RideLogScreen(): React.JSX.Element {
               />
             </View>
             <Text style={styles.nodeTitle} numberOfLines={2}>
-              {journey.title || t('log.soloRideDefault')}
+              {displayTitle}
             </Text>
             <View style={styles.nodeStats}>
               <Ionicons name="location-outline" size={12} color="#616161" style={{ marginRight: 4 }} />
@@ -318,9 +328,9 @@ export default function RideLogScreen(): React.JSX.Element {
               <Text style={styles.noBadgesText}>{t('log.noBadges')}</Text>
             )}
             {badges.length > 0 && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.moreBadges}
-                onPress={() => router.push('/(tabs)/profile')}
+                onPress={() => router.push('/profile')}
               >
                 <Ionicons name="chevron-forward" size={14} color="#9E9E9E" />
               </TouchableOpacity>

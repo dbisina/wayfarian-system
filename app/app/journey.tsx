@@ -99,6 +99,12 @@ export default function JourneyScreen(): React.JSX.Element {
     longitudeDelta: 0.01,
   })).current;
   const markerRotation = useRef(new Animated.Value(currentLocation?.heading || 0)).current;
+  // Mirror the animated heading into React state so Marker.rotation (which the
+  // native Android Google Maps view actually reads when tracksViewChanges=false)
+  // gets a real number. Animated.View+transform alone does NOT rotate the
+  // rendered Android marker bitmap once tracksViewChanges is off — that's why
+  // the arrow used to stay stuck pointing up.
+  const [renderedHeadingDeg, setRenderedHeadingDeg] = useState<number>(0);
   const lastHeadingRef = useRef<number>(0);
   // Rolling buffer of the last few raw GPS positions for bearing fallback.
   // routePoints come from snapped path (batched, up to 10s stale) — raw positions are fresher.
@@ -209,7 +215,8 @@ export default function JourneyScreen(): React.JSX.Element {
     if (delta > 180) delta -= 360;
     else if (delta < -180) delta += 360;
     const unwrappedTarget = prevHeading + delta;
-    lastHeadingRef.current = ((targetHeading % 360) + 360) % 360;
+    const normalizedTarget = ((targetHeading % 360) + 360) % 360;
+    lastHeadingRef.current = normalizedTarget;
 
     // Smoothly animate the marker to the new position
     markerPosition.timing({
@@ -226,6 +233,13 @@ export default function JourneyScreen(): React.JSX.Element {
       duration: 400,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
+
+    // Only push to React state when the change exceeds 1° — avoids re-rendering
+    // the marker every GPS tick when the user is heading in a straight line.
+    setRenderedHeadingDeg(prev => {
+      const diff = Math.abs(((normalizedTarget - prev + 540) % 360) - 180);
+      return diff > 1 ? normalizedTarget : prev;
+    });
   }, [currentLocation, snappedLocation, routePoints, markerPosition, markerRotation]);
 
   // Handle scheduled journey start via activeJourneyId param
@@ -417,15 +431,29 @@ export default function JourneyScreen(): React.JSX.Element {
     }
   }, [currentJourney?.startLocation]);
 
-  // Fit breadcrumb when active and no destination set
+  // Fit breadcrumb only when the user is NOT actively following / panning the map.
+  // Previously this fired on every routePoints update, yanking the camera back
+  // to fit the entire breadcrumb each tick. That's the "map fights the user"
+  // complaint: pinch to zoom out → next GPS tick → camera snaps to fit-all.
+  // Now we only fit when nav-mode is off (i.e. user manually exited follow)
+  // AND there has been no touch for a few seconds, so the breadcrumb is a
+  // passive snapshot of the route, not an attacker on the camera.
+  const lastFitRef = useRef<number>(0);
   useEffect(() => {
-    if (!currentJourney?.endLocation && routePoints.length > 1 && mapRef.current) {
-      mapRef.current.fitToCoordinates(routePoints, {
-        edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
-        animated: true,
-      });
-    }
-  }, [routePoints, currentJourney?.endLocation]);
+    if (currentJourney?.endLocation) return; // route mode handles its own framing
+    if (isNavigationMode) return; // follow mode owns the camera
+    if (routePoints.length < 2 || !mapRef.current) return;
+
+    const now = Date.now();
+    if (now - lastUserGestureAtRef.current < 5000) return; // user just touched, leave them alone
+    if (now - lastFitRef.current < 8000) return; // throttle to once per 8s
+    lastFitRef.current = now;
+
+    mapRef.current.fitToCoordinates(routePoints, {
+      edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+      animated: true,
+    });
+  }, [routePoints, currentJourney?.endLocation, isNavigationMode]);
 
   const haversine = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
     const R = 6371000; // meters
@@ -501,7 +529,7 @@ export default function JourneyScreen(): React.JSX.Element {
     setIsStartBusy(true);
     try {
       const success = await startJourney({
-        title: t('journey.defaultTitle') || 'My Journey',
+        // Don't override title here — JourneyEndModal will set customTitle.
         vehicle: settingsVehicle,
       });
       if (!success) {
@@ -708,12 +736,23 @@ export default function JourneyScreen(): React.JSX.Element {
                 coordinate={markerPosition as any}
                 anchor={{ x: 0.5, y: 0.5 }}
                 flat
+                // Use the native Marker rotation prop — on Android this is the
+                // ONLY way to actually rotate the rendered marker bitmap once
+                // tracksViewChanges is off. The Animated.View wrapper kept here
+                // for iOS where it animates smoothly between snapshots.
+                rotation={renderedHeadingDeg}
                 tracksViewChanges={Platform.OS === 'android' ? false : undefined}
               >
-                <Animated.View style={{ transform: [{ rotate: markerRotation.interpolate({
-                  inputRange: [-3600, 3600],
-                  outputRange: ['-3600deg', '3600deg'],
-                }) }] }}>
+                <Animated.View
+                  style={Platform.OS === 'ios' ? {
+                    transform: [{
+                      rotate: markerRotation.interpolate({
+                        inputRange: [-3600, 3600],
+                        outputRange: ['-3600deg', '3600deg'],
+                      }),
+                    }],
+                  } : undefined}
+                >
                   <NavArrowMarker size={44} />
                 </Animated.View>
               </Marker.Animated>

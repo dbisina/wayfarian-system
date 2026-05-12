@@ -430,7 +430,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                       style={[styles.journeyImage, styles.gradientPlaceholder]}
                     >
                       <Text style={styles.gradientTitle} numberOfLines={2}>
-                        {journey.title || t('history.defaultTitle')}
+                        {journey.customTitle || journey.title || t('history.defaultTitle')}
                       </Text>
                     </LinearGradient>
                   )}
@@ -441,7 +441,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
                   )}
                   <View style={styles.journeyInfo}>
                     <Text style={styles.journeyTitle} numberOfLines={1}>
-                      {journey.title || t('history.defaultTitle')}
+                      {journey.customTitle || journey.title || t('history.defaultTitle')}
                     </Text>
                     <Text style={styles.journeyDate}>
                       {formatDate(journey.startTime)}
@@ -472,7 +472,7 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
           <View style={styles.modalBackdrop} />
         </TouchableWithoutFeedback>
         <View style={styles.actionSheet}>
-          <Text style={styles.actionSheetTitle}>{actionsJourney?.title || 'Journey options'}</Text>
+          <Text style={styles.actionSheetTitle}>{actionsJourney?.customTitle || actionsJourney?.title || 'Journey options'}</Text>
           <TouchableOpacity
             style={styles.actionSheetButton}
             onPress={() => actionsJourney && beginRenameJourney(actionsJourney)}

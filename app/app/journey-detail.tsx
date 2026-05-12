@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentApiUrl, journeyAPI, galleryAPI } from '../services/api';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useSettings } from '../contexts/SettingsContext';
@@ -61,6 +62,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const params = useLocalSearchParams<{ journeyId: string | string[] }>();
   const journeyId = Array.isArray(params.journeyId) ? params.journeyId[0] : params.journeyId;
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
   
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -616,9 +618,22 @@ const JourneyDetailScreen = (): React.JSX.Element => {
           transparent={false}
           animationType="fade"
           onRequestClose={closePhotoViewer}
+          statusBarTranslucent
         >
           <View style={styles.photoViewerContainer}>
             <StatusBar barStyle="light-content" />
+            {/* Tap-anywhere fallback: a transparent overlay above the FlatList
+                that closes the viewer on a single tap. Pinned to the top safe-area
+                only so horizontal swipes between photos still work below.
+                Fixes the "image won't close" report — the close button was sometimes
+                hidden behind the status bar / dynamic island on tall devices. */}
+            <TouchableOpacity
+              style={[styles.photoViewerTopTapZone, { height: Math.max(insets.top, 24) + 56 }]}
+              activeOpacity={1}
+              onPress={closePhotoViewer}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close') || 'Close'}
+            />
 
             <FlatList
               data={journeyPhotos}
@@ -669,7 +684,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
             </View>
 
             <TouchableOpacity
-              style={styles.closeButton}
+              style={[styles.closeButton, { top: Math.max(insets.top, 24) + 4 }]}
               onPress={closePhotoViewer}
               activeOpacity={0.7}
               hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
@@ -1100,7 +1115,6 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 50,
     right: 16,
     zIndex: 100,
     elevation: 12,
@@ -1111,6 +1125,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  photoViewerTopTapZone: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    elevation: 6,
+    backgroundColor: 'transparent',
+  },
   closeButtonText: {
     fontSize: 24,
     color: '#FFFFFF',
@@ -1118,7 +1141,7 @@ const styles = StyleSheet.create({
   },
   photoCounter: {
     position: 'absolute',
-    top: 50,
+    top: 56,
     left: 0,
     right: 0,
     zIndex: 10,
