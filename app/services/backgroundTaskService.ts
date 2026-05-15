@@ -435,6 +435,10 @@ export async function startBackgroundTracking(
         };
         await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(coldState));
 
+        // ── Ensure notification channel exists BEFORE starting the foreground service ──
+        // Channel must exist so Android can attach the service notification immediately.
+        await LiveNotificationService.initializeChannel();
+
         // ── Start background location task ─────────────────────────────────────
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
             accuracy: Location.Accuracy.BestForNavigation,
@@ -467,8 +471,6 @@ export async function startBackgroundTracking(
             currentLongitude: initialCoords.longitude,
             units,
         }).catch(e => console.warn('[BackgroundTask] Initial notification failed (non-critical):', e));
-
-        await LiveNotificationService.initializeChannel();
 
         console.log('[BackgroundTask] Started background tracking for journey:', journeyId);
         return true;
@@ -559,16 +561,12 @@ export async function getPersistedJourneyState(): Promise<PersistedJourneyState 
 }
 
 export async function recoverJourneyState(): Promise<PersistedJourneyState | null> {
-    const state = await getPersistedJourneyState();
-    if (state) {
-        const isActive = await isBackgroundTrackingActive();
-        if (!isActive) {
-            await AsyncStorage.removeItem(JOURNEY_STATE_KEY);
-            await AsyncStorage.removeItem(JOURNEY_ROUTES_KEY);
-            return null;
-        }
-    }
-    return state;
+    // Return persisted state without side effects.
+    // Previously wiped storage when the background task wasn't running, which destroyed
+    // accumulated stats during pause/resume cycles (pausing stops JS tracking but the
+    // stored state must survive so resume can restore distance/time). Callers decide
+    // what to do when the task is not active.
+    return getPersistedJourneyState();
 }
 
 export async function getBufferedBackgroundPoints(): Promise<{ latitude: number; longitude: number; timestamp: number; speed?: number }[]> {

@@ -41,6 +41,7 @@ import BackgroundTaskService from '../services/backgroundTaskService';
 import LiveNotificationService, { JourneyNotificationData } from '../services/liveNotificationService';
 import OfflineQueueService from '../services/offlineQueueService';
 import BackgroundLocationDisclosureModal from '../components/BackgroundLocationDisclosureModal';
+import BatteryOptimizationModal from '../components/BatteryOptimizationModal';
 
 export type { GroupMember, JourneyData } from '../store/slices/journeySlice';
 
@@ -96,11 +97,56 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const [pendingJourneyData, setPendingJourneyData] = useState<Partial<JourneyData> | null>(null);
 
+  // Battery Optimization Modal
+  const [showBatteryModal, setShowBatteryModal] = useState(false);
+  const BATTERY_ASKED_KEY = 'battery_opt_asked_at';
+
+  // Show the battery optimization prompt if the OS is still throttling the app.
+  // We ask at most once every 7 days so it doesn't nag on every journey.
+  const checkAndShowBatteryOptimization = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      const askedAt = await AsyncStorage.getItem(BATTERY_ASKED_KEY);
+      if (askedAt) {
+        const daysSinceAsked = (Date.now() - parseInt(askedAt, 10)) / 86_400_000;
+        if (daysSinceAsked < 7) return; // asked recently
+      }
+      const notifee = (await import('@notifee/react-native')).default;
+      const isOptimized = await notifee.isBatteryOptimizationEnabled();
+      if (isOptimized) {
+        // Battery is still restricted — prompt the user
+        await AsyncStorage.setItem(BATTERY_ASKED_KEY, String(Date.now()));
+        // Small delay so the journey screen has time to settle before the sheet rises
+        setTimeout(() => setShowBatteryModal(true), 1200);
+      }
+    } catch {
+      // Non-critical — silently skip
+    }
+  }, []);
+
   // Local timer state for smooth updates
   const [localElapsedTime, setLocalElapsedTime] = useState(0);
   const timerIntervalRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const JOURNEY_START_TIME_KEY = 'journey_start_time'; // AsyncStorage key for persistence
+
+  // Accumulated distance/movingTime from all segments completed before the current pause.
+  // useSmartTracking resets to 0 every time isTracking goes false→true (new subscription).
+  // These refs carry the history forward so pause/resume doesn't wipe the journey totals.
+  const preResumeDistanceRef = useRef<number>(0);
+  const preResumeMovingTimeRef = useRef<number>(0);
+
+  // Routes accumulated before the current segment. On resume, useSmartTracking resets
+  // officialSnappedPath to [] which would dispatch setRoutePoints([]) and wipe the
+  // polyline from Redux. Captured at pause-time so the route-sync effect can prepend it.
+  const routePointsBaselineRef = useRef<RoutePoint[]>([]);
+
+  // Mirrors of fast-changing values so async handlers (pauseJourney) can read the
+  // latest post-await values instead of stale closure-captured ones. Updated every
+  // render via the effect below.
+  const officialDistanceRef = useRef<number>(0);
+  const movingTimeRef = useRef<number>(0);
+  const routePointsCurrentRef = useRef<RoutePoint[]>([]);
 
   // Persist startTime to AsyncStorage for recovery on app restart
   const persistStartTime = useCallback(async (time: number) => {
@@ -222,30 +268,51 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     }
   }, [journeyState.isTracking, journeyState.myInstance?.startTime, journeyState.currentJourney?.id, recoverStartTime, persistStartTime]);
 
-  const derivedStats: JourneyStats = useMemo(() => ({
-    totalDistance: officialDistance,
-    totalTime: journeyState.isTracking && (journeyState.myInstance?.startTime || startTimeRef.current)
-      ? localElapsedTime
-      : statsFromStore.totalTime,
-    movingTime: movingTime,
-    avgSpeed: avgSpeed,
-    topSpeed: maxSpeed,
-    currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
-  }), [statsFromStore, officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.myInstance, journeyState.isTracking, localElapsedTime]);
+  const derivedStats: JourneyStats = useMemo(() => {
+    // When tracking: add pre-pause accumulated values to the current segment from useSmartTracking.
+    // When paused:   use the last-dispatched Redux values (useSmartTracking resets to 0 on pause).
+    const totalDist = journeyState.isTracking
+      ? preResumeDistanceRef.current + officialDistance
+      : statsFromStore.totalDistance;
+    const totalMoving = journeyState.isTracking
+      ? preResumeMovingTimeRef.current + movingTime
+      : statsFromStore.movingTime;
+    return {
+      totalDistance: totalDist,
+      totalTime: journeyState.isTracking && (journeyState.myInstance?.startTime || startTimeRef.current)
+        ? localElapsedTime
+        : statsFromStore.totalTime,
+      movingTime: totalMoving,
+      // Recalculate avgSpeed from totals (not just current segment)
+      avgSpeed: totalMoving > 0 ? (totalDist / totalMoving) * 3600 : 0,
+      topSpeed: maxSpeed,
+      currentSpeed: liveRawLocation?.speed ? liveRawLocation.speed * 3.6 : 0,
+    };
+  }, [statsFromStore, officialDistance, movingTime, maxSpeed, liveRawLocation, journeyState.myInstance, journeyState.isTracking, localElapsedTime]);
+
+  // Keep async-readable refs in sync with current render values.
+  useEffect(() => {
+    officialDistanceRef.current = officialDistance;
+    movingTimeRef.current = movingTime;
+    routePointsCurrentRef.current = routePoints;
+  });
 
   // Sync Smart Tracking stats to Redux Store (runs at GPS rate ~1 Hz — stats are cheap)
   useEffect(() => {
     if (!journeyState.isTracking) return;
 
-    const newStats: JourneyStats = {
-      totalDistance: officialDistance,
+    // Include pre-pause accumulated values so Redux always has the journey totals,
+    // not just the current segment's output from useSmartTracking.
+    const totalDist = preResumeDistanceRef.current + officialDistance;
+    const totalMoving = preResumeMovingTimeRef.current + movingTime;
+    dispatch(setStats({
+      totalDistance: totalDist,
       totalTime: derivedStats.totalTime,
-      movingTime: movingTime,
-      avgSpeed: avgSpeed,
+      movingTime: totalMoving,
+      avgSpeed: totalMoving > 0 ? (totalDist / totalMoving) * 3600 : 0,
       topSpeed: maxSpeed,
       currentSpeed: derivedStats.currentSpeed,
-    };
-    dispatch(setStats(newStats));
+    }));
 
   }, [officialDistance, movingTime, avgSpeed, maxSpeed, liveRawLocation, journeyState.isTracking, dispatch, derivedStats.totalTime, derivedStats.currentSpeed]);
 
@@ -265,11 +332,25 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       altitude: 0
     }));
 
-    // Prepend background gap points (collected while app was suspended) before the new snap.
-    // After the first snap that includes them, the ref is cleared so they aren't re-prepended.
-    const combined = bgMergedRoutePointsRef.current.length > 0
-      ? [...bgMergedRoutePointsRef.current, ...newRoutePoints]
-      : newRoutePoints;
+    // Don't wipe Redux when useSmartTracking just reset (empty current segment + no bg gap +
+    // existing baseline from a prior segment). Wait for new GPS to populate before dispatching.
+    if (
+      newRoutePoints.length === 0 &&
+      bgMergedRoutePointsRef.current.length === 0 &&
+      routePointsBaselineRef.current.length === 0
+    ) {
+      return;
+    }
+
+    // Prepend the baseline (routes from completed segments before the current one) so
+    // resume-after-pause doesn't dispatch only the current segment's points and wipe history.
+    // Background gap points (collected while app was suspended) go between baseline and the
+    // new snap. After the first dispatch that includes them, the ref is cleared.
+    const combined = [
+      ...routePointsBaselineRef.current,
+      ...bgMergedRoutePointsRef.current,
+      ...newRoutePoints,
+    ];
     bgMergedRoutePointsRef.current = [];
     dispatch(setRoutePoints(combined));
 
@@ -344,7 +425,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     // on long rides and has been removed. The lease timestamp above is sufficient
     // to let the background task know the foreground is alive and to skip its own
     // (less accurate) notification update.
-  }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime]);
+  }, [liveRawLocation, officialDistance, derivedStats.currentSpeed, avgSpeed, maxSpeed, movingTime, journeyState.isTracking, journeyState.currentJourney, journeyState.myInstance?.startTime, distanceUnit]);
 
   // Backend & Socket Updates (throttled to every 5 seconds)
   // Skip for group journeys — group journey location updates are handled via socket in useGroupJourney
@@ -454,8 +535,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             }
           }
         } else {
-          // We have currentJourney but may not be tracking - resume tracking
-          if (!journeyState.isTracking) {
+          // We have currentJourney but may not be tracking — re-enable tracking ONLY if
+          // the journey is in 'active' status. A 'paused' journey should stay paused
+          // until the user explicitly hits Resume.
+          if (!journeyState.isTracking && journeyState.currentJourney.status !== 'paused') {
             dispatch(setTracking(true));
           }
         }
@@ -874,6 +957,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         avgSpeed: 0, topSpeed: 0, currentSpeed: 0,
       }));
       dispatch(clearRoutePoints());
+      // Reset pause-segment accumulators for the new journey
+      preResumeDistanceRef.current = 0;
+      preResumeMovingTimeRef.current = 0;
+      routePointsBaselineRef.current = [];
 
       // Standard foreground request first for all platforms
       let { status: fgStatus } = await Location.getForegroundPermissionsAsync();
@@ -893,12 +980,28 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
 
-        if (accepted !== '1' || bgStatus !== 'granted') {
-          // If not accepted OR background permission not granted (e.g. revoked),
-          // show the disclosure modal before requesting background access.
+        if (bgStatus === 'granted') {
+          // Background permission already granted — silently stamp acceptance if not yet
+          // recorded (user may have granted via Settings before ever opening this flow).
+          if (accepted !== '1') {
+            AsyncStorage.setItem(DISCLOSURE_ACCEPTED_KEY, '1').catch(() => {});
+          }
+          // Check battery optimisation on this path too (the disclosure modal path
+          // triggers its own check in onAccept; this covers the already-granted path).
+          checkAndShowBatteryOptimization();
+        } else if (accepted !== '1') {
+          // First time needing background permission — show Play-policy disclosure first.
           setPendingJourneyData(journeyData);
           setShowLocationDisclosure(true);
-          return false; // Modal will handle the background request and re-invoke startJourney
+          return false; // Modal handles permission request and re-invokes startJourney
+        } else {
+          // Disclosure previously accepted but bg permission now denied/revoked.
+          // Direct the user to Settings — don't show the disclosure again.
+          Alert.alert(
+            'Permission Required',
+            'Background location is required to track your journey accurately. Please enable it in Settings.',
+          );
+          return false;
         }
       }
 
@@ -1246,10 +1349,26 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       console.warn('[JourneyContext] No journey to pause');
       return;
     }
+
     try {
       await journeyAPI.pauseJourney(journeyState.currentJourney.id);
+
+      // Read the LATEST values via refs (closure-captured values are stale after
+      // the await — GPS fires during the API call and updates state in the background).
+      const segmentDist = officialDistanceRef.current;
+      const segmentMoving = movingTimeRef.current;
+      const baselineSnapshot = routePointsCurrentRef.current;
+
+      // Stop tracking FIRST so the stats effect short-circuits (isTracking=false)
+      // before we bump the refs — no risk of double-counting now.
       dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'paused' }));
       dispatch(setTracking(false));
+
+      // Commit the segment totals. useSmartTracking will reset its internal state
+      // on the next resume; these refs carry the journey totals forward.
+      preResumeDistanceRef.current += segmentDist;
+      preResumeMovingTimeRef.current += segmentMoving;
+      routePointsBaselineRef.current = baselineSnapshot;
     } catch (error) {
       console.error('[JourneyContext] Error pausing journey:', error);
       throw error;
@@ -1264,6 +1383,20 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
     try {
       await journeyAPI.resumeJourney(journeyState.currentJourney.id);
       dispatch(setCurrentJourney({ ...journeyState.currentJourney, status: 'active' }));
+
+      // Restart background task if it stopped (pause doesn't stop it, but it may have
+      // died due to device battery optimisation or a previous process kill).
+      BackgroundTaskService.isBackgroundTrackingActive()
+        .then(bgActive => {
+          if (!bgActive) {
+            BackgroundTaskService.startBackgroundTracking(journeyState.currentJourney!.id, {
+              vehicle: (journeyState.currentJourney!.vehicle as 'car' | 'bike' | 'scooter') || 'car',
+              startTime: startTimeRef.current || undefined,
+            }).catch(e => console.warn('[JourneyContext] BG tracking restart on resume failed:', e));
+          }
+        })
+        .catch(() => {});
+
       dispatch(setTracking(true));
     } catch (error) {
       console.error('[JourneyContext] Error resuming journey:', error);
@@ -1383,9 +1516,15 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // On Android, foreground state may not be fully synced when endJourney is called
       const backgroundState = await BackgroundTaskService.getPersistedJourneyState();
 
-      // Use the maximum of foreground and background stats to ensure accuracy
-      // This fixes the issue where Android shows 0 stats at journey end
-      const foregroundDistance = officialDistance;
+      // Use the maximum of foreground and background stats to ensure accuracy.
+      // When tracking: preResume(completed segments) + officialDistance(current segment).
+      // When paused:   officialDistance still holds the pre-pause value (useSmartTracking
+      //                only resets on false→true), so adding it would double-count.
+      //                Use the Redux store value instead, which was last dispatched with
+      //                the correct cumulative total at pause time.
+      const foregroundDistance = journeyState.isTracking
+        ? preResumeDistanceRef.current + officialDistance
+        : statsFromStore.totalDistance;
       const backgroundDistance = backgroundState?.totalDistance || 0;
       const finalDistance = Math.max(foregroundDistance, backgroundDistance);
 
@@ -1469,6 +1608,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // (previously set status='completed' first which could persist with old endLocation)
       dispatch(clearJourney());
       startTimeRef.current = null;
+      preResumeDistanceRef.current = 0;
+      preResumeMovingTimeRef.current = 0;
+      routePointsBaselineRef.current = [];
       setLocalElapsedTime(0);
 
       // Purge persisted journey state from AsyncStorage to prevent rehydration
@@ -1491,6 +1633,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       dispatch(clearRoutePoints());
       dispatch(clearJourney());
       startTimeRef.current = null;
+      preResumeDistanceRef.current = 0;
+      preResumeMovingTimeRef.current = 0;
+      routePointsBaselineRef.current = [];
       setLocalElapsedTime(0);
       await clearStartTime();
       await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
@@ -1578,7 +1723,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       // Force reset local state
       setLocalElapsedTime(0);
       startTimeRef.current = null;
-      
+      preResumeDistanceRef.current = 0;
+      preResumeMovingTimeRef.current = 0;
+      routePointsBaselineRef.current = [];
+
     } catch (error) {
       console.error('Error clearing stuck journey:', error);
       // Still clear local state even if API calls fail
@@ -1748,11 +1896,17 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       <BackgroundLocationDisclosureModal
         visible={showLocationDisclosure}
         onAccept={async () => {
+          // Capture pendingJourneyData synchronously before any await — state reads
+          // after awaits may return stale values from a re-render triggered by
+          // setShowLocationDisclosure(false) below.
+          const localPendingData = pendingJourneyData;
           setShowLocationDisclosure(false);
+          setPendingJourneyData(null);
+
           try {
             await AsyncStorage.setItem('bg_location_disclosure_accepted_v1', '1');
           } catch {}
-          
+
           let fgStatus = (await Location.getForegroundPermissionsAsync()).status;
           if (fgStatus !== 'granted') {
             const fgReq = await Location.requestForegroundPermissionsAsync();
@@ -1766,9 +1920,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
               const bgReq = await Location.requestBackgroundPermissionsAsync();
               bgStatus = bgReq.status;
             }
-            if (bgStatus === 'granted' && pendingJourneyData) {
-              startJourney(pendingJourneyData);
-            } else {
+            if (bgStatus === 'granted' && localPendingData) {
+              startJourney(localPendingData);
+              // After journey starts, gently prompt about battery optimisation
+              checkAndShowBatteryOptimization();
+            } else if (bgStatus !== 'granted') {
               console.warn('[JourneyContext] Background location permission denied after disclosure');
               Alert.alert(
                 'Permission Required',
@@ -1776,17 +1932,21 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
               );
             }
           } else {
-             Alert.alert(
-               'Permission Required',
-               'Foreground location permission is required to track your journey.'
-             );
+            Alert.alert(
+              'Permission Required',
+              'Foreground location permission is required to track your journey.'
+            );
           }
-          setPendingJourneyData(null);
         }}
         onDecline={() => {
           setShowLocationDisclosure(false);
           setPendingJourneyData(null);
         }}
+      />
+
+      <BatteryOptimizationModal
+        visible={showBatteryModal}
+        onDismiss={() => setShowBatteryModal(false)}
       />
     </>
   );

@@ -1,0 +1,12 @@
+ESLint: 0 errors, 22 warnings in 1 files
+═══════════════════════════════════════
+Top rules:
+  import/no-named-as-default-member (20x)
+  react-hooks/exhaustive-deps (1x)
+  @typescript-eslint/no-unused-vars (1x)
+
+Top files:
+  JourneyContext.tsx (22 issues)
+    import/no-named-as-default-member (20)
+    react-hooks/exhaustive-deps (1)
+    @typescript-eslint/no-unused-vars (1)
