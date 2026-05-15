@@ -1,3 +1,14 @@
+/**
+ * List-row card for a single riding group.
+ * Shows either the group's cover photo or a fallback icon on a dark chip.
+ *
+ * @prop name         - Display name of the group.
+ * @prop memberCount  - Total member count (handles singular/plural automatically).
+ * @prop icon         - MaterialIcons name used when no coverPhotoURL is provided.
+ * @prop coverPhotoURL - Optional remote cover image URL.
+ * @prop onPress      - Tap handler; navigates to the group detail screen.
+ */
+
 import React from 'react';
 import {
   View,
@@ -16,12 +27,12 @@ interface GroupCardProps {
   onPress?: () => void;
 }
 
-const GroupCard = ({name, memberCount, icon, coverPhotoURL, onPress}: GroupCardProps): React.JSX.Element => {
+const GroupCard = ({ name, memberCount, icon, coverPhotoURL, onPress }: GroupCardProps): React.JSX.Element => {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
       {coverPhotoURL ? (
-        <Image 
-          source={{ uri: coverPhotoURL }} 
+        <Image
+          source={{ uri: coverPhotoURL }}
           style={styles.coverImage}
           resizeMode="cover"
         />
@@ -30,7 +41,7 @@ const GroupCard = ({name, memberCount, icon, coverPhotoURL, onPress}: GroupCardP
           <Icon name={icon} size={24} color="#FFFFFF" />
         </View>
       )}
-      
+
       <View style={styles.content}>
         <Text style={styles.groupName}>{name}</Text>
         <Text style={styles.memberCount}>

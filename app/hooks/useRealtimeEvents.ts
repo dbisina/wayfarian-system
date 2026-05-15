@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { connectSocket, joinGroupJourneyRoom, leaveGroupJourneyRoom, on as socketOn, off as socketOff } from '../services/socket';
 import { apiRequest } from '../services/api';
 
+/** A single ride event as returned by the backend (chat message, photo, checkpoint, etc.). */
 export interface RideEvent {
   id: string;
   type: 'MESSAGE' | 'PHOTO' | 'CHECKPOINT' | 'STATUS' | 'EMERGENCY' | 'CUSTOM';
@@ -19,17 +20,29 @@ export interface RideEvent {
 }
 
 interface UseRealtimeEventsOptions {
+  /** ID of the group journey to subscribe to. No-op when undefined. */
   groupJourneyId?: string;
+  /** When true (default), fetches the event history via REST on mount. */
   autoLoad?: boolean;
 }
 
+/**
+ * Subscribes to live ride events for a group journey via WebSocket and
+ * optionally pre-populates the list from the REST history endpoint.
+ *
+ * New events arrive via the `group-journey:event` socket broadcast and are
+ * prepended to `events` without re-fetching history. Posting via `postEvent`
+ * is fire-and-forget; the socket broadcast is the source of truth for display.
+ *
+ * @returns `{ events, loading, error, loadEvents, postEvent }`
+ */
 export function useRealtimeEvents(options: UseRealtimeEventsOptions) {
   const { groupJourneyId, autoLoad = true } = options;
   const [events, setEvents] = useState<RideEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load initial events from REST API
+  /** Fetch the full event history from the REST API. */
   const loadEvents = useCallback(async () => {
     if (!groupJourneyId) return;
     try {
@@ -47,7 +60,10 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions) {
     }
   }, [groupJourneyId]);
 
-  // Post a new event via REST
+  /**
+   * Post a new event to the group journey.
+   * The socket broadcast will update `events`; no manual reload needed.
+   */
   const postEvent = useCallback(async (payload: {
     type: RideEvent['type'];
     message?: string;
@@ -59,13 +75,11 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions) {
     if (!groupJourneyId) return;
     try {
       await apiRequest(`/group-journey/${groupJourneyId}/events`, 'POST', payload);
-      // Event will arrive via socket broadcast; no need to reload
     } catch (err) {
       console.error('Post event error:', err);
     }
   }, [groupJourneyId]);
 
-  // Subscribe to live events
   useEffect(() => {
     if (!groupJourneyId) {
       return;

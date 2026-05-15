@@ -1,20 +1,30 @@
 // app/services/sentry.ts
-// Sentry error tracking and performance monitoring for React Native
 
 import * as Sentry from '@sentry/react-native';
 import { reactNativeTracingIntegration, reactNavigationIntegration } from '@sentry/react-native';
 import Constants from 'expo-constants';
 
-// SECURITY: Never hardcode DSN - must be provided via environment variable
+// DSN must come from the environment — never hardcode it in source.
 const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
-/**
- * Initialize Sentry for React Native
- */
 const navigationIntegration = reactNavigationIntegration();
 
+/**
+ * Initialises the Sentry SDK for React Native.
+ *
+ * No-ops silently when `EXPO_PUBLIC_SENTRY_DSN` is not set, so local and CI
+ * environments without the secret configured do not crash or log noise.
+ *
+ * Filtering rules applied via `beforeSend`:
+ * - Auth errors (invalid/expired token, unauthorised, cancelled) are user-facing
+ *   and not actionable by the engineering team, so they are dropped.
+ * - Validation errors originate from bad user input and add no signal.
+ * - Network errors in development are expected (local server down, proxies, etc.).
+ *
+ * `beforeBreadcrumb` strips Authorization headers and passwords from HTTP
+ * breadcrumbs, and drops AsyncStorage breadcrumbs which may contain PII.
+ */
 export function initSentry() {
-  // Only initialize if DSN is provided
   if (!SENTRY_DSN) {
     console.warn('[Sentry] DSN not configured - error tracking disabled');
     return;
@@ -29,25 +39,21 @@ export function initSentry() {
       environment,
       release,
 
-      // Performance monitoring
-      tracesSampleRate: environment === 'production' ? 0.1 : 1.0, // 10% in prod, 100% in dev
-      
-      // Enable for performance profiling in production
+      // 10% sample rate in prod keeps costs down while preserving signal.
+      tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
       profilesSampleRate: environment === 'production' ? 0.1 : 1.0,
 
-      // Configure which errors to capture
       beforeSend(event, hint) {
-        // Don't send errors in development unless explicitly enabled
+        // Skip sending to Sentry in development unless explicitly opted in.
         if (environment === 'development' && !process.env.EXPO_PUBLIC_SENTRY_ENABLE_IN_DEV) {
           return null;
         }
 
-        // Filter out known user errors
         const error = hint.originalException;
         if (error && typeof error === 'object' && 'message' in error) {
           const message = String(error.message);
-          
-          // Don't send auth errors (these are user errors, not system errors)
+
+          // Auth and cancellation errors are user-facing, not actionable.
           if (
             message.includes('Invalid token') ||
             message.includes('Token expired') ||
@@ -58,12 +64,12 @@ export function initSentry() {
             return null;
           }
 
-          // Don't send validation errors (user input errors)
+          // Validation errors originate from user input.
           if (message.includes('Validation Error') || message.includes('Invalid input')) {
             return null;
           }
 
-          // Don't send network errors that are expected
+          // Development network errors are expected (no local server, VPN, etc.).
           if (message.includes('Network request failed') && environment === 'development') {
             return null;
           }
@@ -72,9 +78,8 @@ export function initSentry() {
         return event;
       },
 
-      // Filter sensitive data from breadcrumbs
       beforeBreadcrumb(breadcrumb) {
-        // Remove sensitive headers from network breadcrumbs
+        // Strip auth headers from HTTP breadcrumbs to avoid leaking tokens.
         if (breadcrumb.category === 'http' && breadcrumb.data) {
           delete breadcrumb.data.Authorization;
           delete breadcrumb.data.authorization;
@@ -82,7 +87,7 @@ export function initSentry() {
           delete breadcrumb.data.token;
         }
 
-        // Filter out AsyncStorage breadcrumbs (may contain sensitive data)
+        // AsyncStorage breadcrumbs may contain user PII — drop them entirely.
         if (breadcrumb.category === 'storage') {
           return null;
         }
@@ -90,23 +95,13 @@ export function initSentry() {
         return breadcrumb;
       },
 
-      // Enable debug mode in development
       debug: environment === 'development',
-
-      // Automatically capture console errors
       attachStacktrace: true,
-
-      // Native crash handling
       enableNative: true,
       enableNativeCrashHandling: true,
-
-      // Auto session tracking
       enableAutoSessionTracking: true,
-
-      // Session timeout (30 minutes)
       sessionTrackingIntervalMillis: 30000,
 
-      // Integration configuration
       integrations: [
         reactNativeTracingIntegration({
           enableHTTPTimings: true,
@@ -115,17 +110,19 @@ export function initSentry() {
       ],
     });
 
-    console.log('[Sentry] Error tracking initialized', {
-      environment,
-      release,
-    });
+    console.log('[Sentry] Error tracking initialized', { environment, release });
   } catch (error) {
     console.error('[Sentry] Failed to initialize:', error);
   }
 }
 
 /**
- * Capture an exception in Sentry
+ * Captures an exception in Sentry with optional tags and extra context.
+ *
+ * @param error - The `Error` object to report.
+ * @param context.tags - Key/value pairs for Sentry issue grouping and filtering.
+ * @param context.extra - Arbitrary extra data attached to the event.
+ * @param context.level - Sentry severity level (default: `'error'`).
  */
 export function captureException(error: Error, context?: {
   tags?: Record<string, string>;
@@ -146,7 +143,12 @@ export function captureException(error: Error, context?: {
 }
 
 /**
- * Capture a message in Sentry
+ * Captures a free-form message in Sentry.
+ *
+ * @param message - The message string to record.
+ * @param level - Sentry severity level (default: `'info'`).
+ * @param context.tags - Key/value pairs for filtering.
+ * @param context.extra - Arbitrary extra data.
  */
 export function captureMessage(
   message: string,
@@ -170,7 +172,12 @@ export function captureMessage(
 }
 
 /**
- * Set user context in Sentry
+ * Sets the authenticated user context on all subsequent Sentry events.
+ * Call after successful login; clear with {@link clearUser} on logout.
+ *
+ * @param user.id - Unique user identifier (required).
+ * @param user.email - Optional email address.
+ * @param user.username - Optional display name.
  */
 export function setUser(user: {
   id: string;
@@ -191,7 +198,8 @@ export function setUser(user: {
 }
 
 /**
- * Clear user context in Sentry
+ * Clears the user context from Sentry. Call on logout to prevent subsequent
+ * events from being attributed to the previous session's user.
  */
 export function clearUser() {
   if (!SENTRY_DSN) return;
@@ -204,7 +212,12 @@ export function clearUser() {
 }
 
 /**
- * Add breadcrumb for debugging
+ * Adds a breadcrumb to the Sentry event trail for the current session.
+ *
+ * @param message - Human-readable description of the event.
+ * @param data - Optional structured data attached to the breadcrumb.
+ * @param category - Dot-namespaced category (default: `'custom'`).
+ * @param level - Severity level (default: `'info'`).
  */
 export function addBreadcrumb(
   message: string,
@@ -227,9 +240,9 @@ export function addBreadcrumb(
 }
 
 /**
- * Wrap a component with Sentry error boundary
+ * Higher-order component that wraps a React component with a Sentry error boundary.
+ * Uncaught render errors are reported and a fallback UI is shown.
  */
 export const ErrorBoundary = Sentry.wrap;
 
-// Export Sentry for advanced usage
 export { Sentry };

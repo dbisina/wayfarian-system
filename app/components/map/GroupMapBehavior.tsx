@@ -1,5 +1,15 @@
-// app/components/map/GroupMapBehavior.tsx
-// Logic to handle "Zoom Wars" - preventing the map from jumping while the user is interacting.
+/**
+ * Custom hook that prevents "Zoom Wars" on a group-journey map — the problem
+ * where auto-fit and user gestures fight each other for camera control.
+ *
+ * Strategy: track the timestamp of the last user interaction and suppress
+ * auto-fit for AUTO_FIT_DELAY_MS after any gesture. When the user explicitly
+ * calls recenterOnGroup the cooldown is reset so the fit fires immediately.
+ *
+ * @returns mapViewProps   - Spread onto <MapView> to wire up gesture detection.
+ * @returns isUserInteracting - True while the user is actively panning/zooming.
+ * @returns recenterOnGroup   - Imperatively re-fits the camera to all members.
+ */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import MapView, { Region } from 'react-native-maps';
@@ -26,9 +36,9 @@ export const useGroupMapBehavior = ({
   const [isUserInteracting, setIsUserInteracting] = useState(false);
   const lastInteractionTime = useRef<number>(0);
   const interactionTimeoutRef = useRef<number | null>(null);
-  const AUTO_FIT_DELAY_MS = 10000; // Reduced to 10 seconds for better manual control transition
+  // 10 s gives the user time to inspect the map before auto-fit reclaims control.
+  const AUTO_FIT_DELAY_MS = 10000;
 
-  // Function to fit all members and current user
   const fitToGroup = useCallback(() => {
     if (!mapRef.current || !isGroupJourney) return;
 
@@ -37,7 +47,7 @@ export const useGroupMapBehavior = ({
       points.push({ ...currentUserLocation, id: 'me' });
     }
 
-    if (points.length < 2) return; // Need at least 2 points to make a bound meaningful? Or just center on 1.
+    if (points.length < 2) return;
 
     mapRef.current.fitToCoordinates(points, {
       edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
@@ -45,22 +55,20 @@ export const useGroupMapBehavior = ({
     });
   }, [mapRef, members, currentUserLocation, isGroupJourney]);
 
-  // Effect: Auto-fit bounds if not interacting
+  // Auto-fit whenever member positions change, but only after the interaction cooldown.
   useEffect(() => {
     if (isUserInteracting || !isGroupJourney) return;
 
-    // If enough time has passed since last interaction, update the camera
     const now = Date.now();
     if (now - lastInteractionTime.current > AUTO_FIT_DELAY_MS) {
       fitToGroup();
     }
   }, [members, currentUserLocation, isUserInteracting, isGroupJourney, fitToGroup]);
 
-  // Handlers for MapView
   const onPanDrag = useCallback(() => {
     setIsUserInteracting(true);
     lastInteractionTime.current = Date.now();
-    
+
     if (interactionTimeoutRef.current) {
       clearTimeout(interactionTimeoutRef.current);
     }
@@ -70,7 +78,7 @@ export const useGroupMapBehavior = ({
     if (isGesture) {
       setIsUserInteracting(true);
       lastInteractionTime.current = Date.now();
-      
+
       if (interactionTimeoutRef.current) {
         clearTimeout(interactionTimeoutRef.current);
       }
@@ -81,10 +89,10 @@ export const useGroupMapBehavior = ({
     }
   }, []);
 
-  // Manual "Resume" function
   const recenterOnGroup = useCallback(() => {
     setIsUserInteracting(false);
-    lastInteractionTime.current = 0; // Force immediate update eligibility
+    // Reset to zero so the auto-fit effect fires on the very next member update.
+    lastInteractionTime.current = 0;
     fitToGroup();
   }, [fitToGroup]);
 
@@ -92,8 +100,7 @@ export const useGroupMapBehavior = ({
     mapViewProps: {
       onPanDrag,
       onRegionChangeComplete,
-      // onTouchStart could also be used to detect start of interaction
-      onTouchStart: onPanDrag, 
+      onTouchStart: onPanDrag,
     },
     isUserInteracting,
     recenterOnGroup,

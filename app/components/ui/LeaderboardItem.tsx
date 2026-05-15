@@ -1,3 +1,16 @@
+/**
+ * Single row in a leaderboard list.
+ * The current user's row gets a subtle tinted background and a blue name to
+ * make it easy to spot their position at a glance.
+ *
+ * @prop rank          - Numeric rank position.
+ * @prop name          - Rider display name.
+ * @prop country       - Country string; hidden for the current user's own row.
+ * @prop distance      - Pre-formatted distance string.
+ * @prop avatar        - Remote avatar URL.
+ * @prop isCurrentUser - When true, applies highlight styling.
+ */
+
 import React from 'react';
 import {
   View,
@@ -26,8 +39,8 @@ const LeaderboardItem = ({
   return (
     <View style={[styles.container, isCurrentUser && styles.currentUserContainer]}>
       <View style={styles.leftSection}>
-        <Image 
-          source={{ uri: avatar }} 
+        <Image
+          source={{ uri: avatar }}
           style={styles.avatar}
           onError={(error) => console.log('Avatar load error:', error)}
           defaultSource={require('../../assets/placeholder-avatar.jpg')}

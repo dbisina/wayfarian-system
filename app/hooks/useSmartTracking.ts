@@ -1,57 +1,52 @@
-// app/hooks/useSmartTracking.ts
-// Advanced tracking hook: Device speed as primary, Roads API for path/distance correction,
-// Haversine distance as real-time accumulator and offline fallback.
+// Device speed is the primary source; Roads API corrects the path and distance;
+// Haversine accumulates distance in real-time and serves as the offline fallback.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import { StatsCalculator } from '../utils/StatsCalculator';
 
-// Configuration
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
-const BUFFER_SIZE = 8; // Flush every 8 points (more frequent than 10 for faster updates)
-const FLUSH_INTERVAL_MS = 10000; // Faster flush for path refinement
+const BUFFER_SIZE = 8;
+const FLUSH_INTERVAL_MS = 10000;
 
-// Speed thresholds - much lower to avoid killing real movement
-const STATIONARY_SPEED_THRESHOLD_MPS = 0.3; // 0.3 m/s = 1.08 km/h — low enough to catch slow cycling uphill, high enough to reject GPS jitter at rest
-const DWELL_SPEED_THRESHOLD_MPS = 1.0; // 1.0 m/s = 3.6 km/h
-const DWELL_THRESHOLD_MS = 5000; // 5 seconds stationary = dwelling
+// 0.3 m/s catches slow uphill cycling without reacting to GPS jitter at rest.
+const STATIONARY_SPEED_THRESHOLD_MPS = 0.3;
+const DWELL_SPEED_THRESHOLD_MPS = 1.0;
+const DWELL_THRESHOLD_MS = 5000;
 
-// Speed calculation
-const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h absolute ceiling (cars on highways)
-const MAX_ACCELERATION_MPS2 = 8.0; // Max realistic acceleration
-const SPEED_SMOOTHING_FACTOR = 0.4; // Smooth speed display
-const SPEED_DECAY_FACTOR = 0.7; // How fast speed drops to 0 when stopped. 0.7 = ~3 samples to halve, smoother decay that doesn't visibly drop on a single missed GPS tick.
+const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h absolute ceiling
+const MAX_ACCELERATION_MPS2 = 8.0;
+const SPEED_SMOOTHING_FACTOR = 0.4;
+// 0.7 means ~3 missed samples to halve displayed speed, preventing visible drops on a single bad GPS tick.
+const SPEED_DECAY_FACTOR = 0.7;
 
-// Per-vehicle top-speed cap (km/h). Any max-speed sample exceeding this is rejected as a GPS glitch.
 type VehicleKind = 'car' | 'bike' | 'scooter';
+
+/** Per-vehicle top-speed cap in km/h. Samples above this are treated as GPS glitches. */
 const VEHICLE_MAX_SPEED_KMH: Record<VehicleKind, number> = {
   car: 180,
   bike: 50,
   scooter: 80,
 };
 
-// Distance
-const MIN_ACCURACY_FOR_TRACKING = 30; // Accept GPS readings up to 30m accuracy
-const MAX_DISTANCE_BETWEEN_POINTS_KM = 0.5; // 500m max (filter GPS jumps)
-const MIN_DISTANCE_FOR_ACCUMULATION_M = 3; // Minimum 3m between points to count as movement
-const JITTER_ACCURACY_MULTIPLIER = 0.5; // distance must be > accuracy * mutliplier to count as movement
-const MIN_MOVE_METERS_FOR_SPEED = 2; // meters needed between points to trust a new speed calc
+const MIN_ACCURACY_FOR_TRACKING = 30;
+const MAX_DISTANCE_BETWEEN_POINTS_KM = 0.5;
+const MIN_DISTANCE_FOR_ACCUMULATION_M = 3;
+const JITTER_ACCURACY_MULTIPLIER = 0.5;
+const MIN_MOVE_METERS_FOR_SPEED = 2;
 
-// Max speed validation
-const MAX_SPEED_SAMPLES_REQUIRED = 4; // Require 4 sustained samples for max speed (stricter)
+const MAX_SPEED_SAMPLES_REQUIRED = 4;
 
-// Cap polyline length to prevent memory bloat / render jank on very long rides.
-// 2000 points matches the Redux routePoints cap and the background-task cap so all
-// three pipelines stay consistent. The old 5000-point limit was never surfaced to the
-// map (Redux always truncated to 2000 before rendering), but it kept a 5 000-element
-// array alive in hook state, wasting ~80 KB of heap that GC had to chase on every flush.
+// Matches the Redux routePoints cap and the background-task cap so all three
+// pipelines stay consistent. The previous 5000-point limit was always truncated
+// to 2000 by Redux before rendering, keeping ~80 KB of heap alive unnecessarily.
 const MAX_SNAPPED_PATH_POINTS = 2000;
 
-// Calculate distance between two points (Haversine formula)
+/** Haversine great-circle distance between two WGS-84 coordinates. Returns kilometres. */
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -61,6 +56,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
+/** A single GPS fix after smoothing and heading stabilisation. Speed is in m/s. */
 export interface SmartLocation {
   latitude: number;
   longitude: number;
@@ -70,6 +66,7 @@ export interface SmartLocation {
   accuracy: number;
 }
 
+/** A coordinate snapped to the road network by the Google Roads API. */
 export interface SnappedPoint {
   location: {
     latitude: number;
@@ -79,64 +76,64 @@ export interface SnappedPoint {
   placeId: string;
 }
 
+/**
+ * Real-time journey tracking hook that combines device GPS, Google Roads API
+ * snapping, and Haversine fallback into a single stream of stats.
+ *
+ * @param isTracking - Start/stop the location subscription. Toggling from false→true resets all accumulators.
+ * @param vehicle - Determines the per-vehicle speed cap used for glitch rejection.
+ * @returns Live location, snapped path, distance (km), moving time (s), avg speed (km/h), max speed (km/h).
+ */
 export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'car') {
   const vehicleSpeedCapKmh = VEHICLE_MAX_SPEED_KMH[vehicle] ?? VEHICLE_MAX_SPEED_KMH.car;
   const [liveRawLocation, setLiveRawLocation] = useState<SmartLocation | null>(null);
   const [officialSnappedPath, setOfficialSnappedPath] = useState<{ latitude: number; longitude: number }[]>([]);
-  const [officialDistance, setOfficialDistance] = useState<number>(0); // in km
-  const [movingTime, setMovingTime] = useState<number>(0); // in seconds
+  const [officialDistance, setOfficialDistance] = useState<number>(0); // km
+  const [movingTime, setMovingTime] = useState<number>(0); // seconds
   const [maxSpeed, setMaxSpeed] = useState<number>(0); // km/h
-  const maxSpeedRef = useRef<number>(0); // Stable ref for use inside callbacks
+  const maxSpeedRef = useRef<number>(0);
 
-  // Refs for mutable state
   const bufferRef = useRef<SmartLocation[]>([]);
   const lastFlushTimeRef = useRef<number>(Date.now());
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const isMovingRef = useRef<boolean>(false);
   const lastMovementTimeRef = useRef<number>(0);
 
-  // Live Haversine distance accumulation
-  const haversineDistanceRef = useRef<number>(0); // km - accumulated from raw GPS
+  const haversineDistanceRef = useRef<number>(0); // km — accumulated from raw GPS
   const lastAccumulationPointRef = useRef<{ latitude: number; longitude: number; timestamp: number } | null>(null);
 
-  // Roads API corrected distance (replaces haversine when available)
-  const roadsApiDistanceRef = useRef<number>(0); // km - from snapped points
-  const roadsApiActiveRef = useRef<boolean>(false); // true once first successful Roads API call
+  const roadsApiDistanceRef = useRef<number>(0); // km — from snapped points
+  const roadsApiActiveRef = useRef<boolean>(false); // true after first successful Roads API call
 
-  // Dwell detection
   const stationaryStartTimeRef = useRef<number | null>(null);
   const isDwellingRef = useRef<boolean>(false);
 
-  // Speed tracking
   const previousSpeedRef = useRef<number>(0);
   const previousSpeedTimeRef = useRef<number>(0);
   const smoothedSpeedRef = useRef<number>(0);
   const highSpeedSamplesRef = useRef<number[]>([]);
 
-  // Position smoothing: lightweight EWMA that reduces stationary GPS drift.
-  // When moving fast we trust the raw GPS fix; when stopped we pin position to the
-  // smoothed value so the marker doesn't dance around on a parked bike.
+  // Alpha scales with speed and accuracy: fast + accurate → trust new point;
+  // slow + noisy → hold steady. Cuts "dancing marker" drift at rest without visible lag while riding.
   const smoothedPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const lastGoodHeadingRef = useRef<number>(0);
   const lastPositionTimestampRef = useRef<number>(0);
 
-  // Flush buffer to Google Roads API
+  /** Send the buffered GPS points to the Roads API and update the snapped path + distance. */
   const flushBufferToRoadsAPI = useCallback(async () => {
     if (bufferRef.current.length < 2) return;
 
     const pointsToSnap = [...bufferRef.current];
-    // Keep last point for continuity
+    // Retain last point so the next segment connects without a gap.
     const lastPoint = pointsToSnap[pointsToSnap.length - 1];
     bufferRef.current = [lastPoint];
     lastFlushTimeRef.current = Date.now();
 
     if (!GOOGLE_MAPS_API_KEY) {
-      // No API key - just use raw points for the path display
       setOfficialSnappedPath(prev => {
         const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
         return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
       });
-      // Distance stays as Haversine (already accumulated in real-time)
       return;
     }
 
@@ -158,7 +155,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
           return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
         });
 
-        // Calculate snapped segment distance
         let segmentDist = 0;
         for (let i = 1; i < newSnappedPoints.length; i++) {
           segmentDist += haversineDistance(
@@ -169,54 +165,45 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         roadsApiDistanceRef.current += segmentDist;
         roadsApiActiveRef.current = true;
 
-        // Use whichever is GREATER between Roads API and live Haversine.
-        // Pure Roads-API replacement can VISIBLY SHRINK the on-screen distance
-        // (e.g. 1.05 km haversine → 0.95 km snapped) which users notice. Taking
-        // the max keeps the display monotonic while still benefiting from Roads
-        // API correction on subsequent flushes that exceed haversine.
+        // Taking max(Roads API, Haversine) keeps the display monotonic: a mid-journey
+        // Roads API correction (e.g. 1.05 km → 0.95 km snapped) would otherwise visibly
+        // shrink the odometer, which users notice immediately.
         setOfficialDistance(Math.max(roadsApiDistanceRef.current, haversineDistanceRef.current));
       } else {
-        // Roads API returned no points - fall back, append raw points for path
         setOfficialSnappedPath(prev => {
           const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
           return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
         });
-        // Keep using Haversine distance
         setOfficialDistance(haversineDistanceRef.current);
       }
     } catch (error) {
-      // Roads API failed - append raw points for path display
       setOfficialSnappedPath(prev => {
         const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
         return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
       });
-      // Keep using Haversine distance
       setOfficialDistance(haversineDistanceRef.current);
     }
   }, []);
 
-  // Handle new location update
+  /** Process a raw Expo location event, updating speed, position, distance, and time accumulators. */
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     const { latitude, longitude, speed: deviceSpeed, heading, accuracy } = location.coords;
     const timestamp = location.timestamp;
     const now = Date.now();
 
-    // Filter out very low-accuracy GPS readings
     if (accuracy && accuracy > MIN_ACCURACY_FOR_TRACKING) {
       return;
     }
 
     // === SPEED CALCULATION ===
-    // PRIMARY: Use device-reported speed (GPS chips calculate via Doppler shift - very accurate)
-    // Device speed is in m/s, can be null or negative (invalid)
+    // GPS chips derive speed via Doppler shift — more accurate than position-delta at low sample rates.
     let rawSpeedMps = 0;
 
     if (deviceSpeed !== null && deviceSpeed !== undefined && deviceSpeed >= 0) {
       rawSpeedMps = deviceSpeed;
     }
 
-    // === GPS-BASED SPEED FALLBACK ===
-    // If device speed is 0 or null, calculate from GPS distance/time
+    // When the device reports 0 or null, fall back to position-delta speed.
     if (rawSpeedMps <= 0.1 && lastAccumulationPointRef.current) {
       const distM = haversineDistance(
         lastAccumulationPointRef.current.latitude,
@@ -229,26 +216,23 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
 
       if (timeSec > 0.5 && distM >= MIN_MOVE_METERS_FOR_SPEED) {
         const calculatedSpeed = distM / timeSec;
-        // Only trust if it's a reasonable walking/driving speed
         if (calculatedSpeed > 0.3 && calculatedSpeed < MAX_REASONABLE_SPEED_MPS) {
           rawSpeedMps = calculatedSpeed;
         }
       }
     }
 
-    // Cap unreasonable speeds
     if (rawSpeedMps > MAX_REASONABLE_SPEED_MPS) {
       rawSpeedMps = 0;
     }
 
-    // Acceleration-based filtering: reject unrealistic speed jumps
+    // Reject unrealistic speed jumps (cap acceleration, but never cap braking).
     if (previousSpeedTimeRef.current > 0 && rawSpeedMps > 0) {
       const timeSinceLastSpeed = (now - previousSpeedTimeRef.current) / 1000;
       if (timeSinceLastSpeed > 0.5) {
         const speedChange = Math.abs(rawSpeedMps - previousSpeedRef.current);
         const acceleration = speedChange / timeSinceLastSpeed;
         if (acceleration > MAX_ACCELERATION_MPS2 && rawSpeedMps > previousSpeedRef.current) {
-          // Cap the increase (don't cap braking)
           const maxAllowedChange = MAX_ACCELERATION_MPS2 * timeSinceLastSpeed;
           rawSpeedMps = Math.min(rawSpeedMps, previousSpeedRef.current + maxAllowedChange);
         }
@@ -280,35 +264,31 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     const filteredSpeed = rawSpeedMps < STATIONARY_SPEED_THRESHOLD_MPS ? 0 : rawSpeedMps;
     const preSmoothedSpeed = isDwellingRef.current ? 0 : filteredSpeed;
 
-    // Smooth speed for display
     let displaySpeedMps: number;
     if (preSmoothedSpeed === 0) {
       displaySpeedMps = smoothedSpeedRef.current * SPEED_DECAY_FACTOR;
       if (displaySpeedMps < 0.3) displaySpeedMps = 0;
     } else {
+      // Brake faster than accelerate to avoid speed-up lag feeling.
       const factor = preSmoothedSpeed < smoothedSpeedRef.current ? 0.5 : SPEED_SMOOTHING_FACTOR;
       displaySpeedMps = smoothedSpeedRef.current + factor * (preSmoothedSpeed - smoothedSpeedRef.current);
     }
     smoothedSpeedRef.current = displaySpeedMps;
 
     // === POSITION SMOOTHING ===
-    // Blend the new fix with the previous smoothed position. Alpha scales with speed
-    // and accuracy: fast + accurate → trust the new point; slow + noisy → hold steady.
-    // This cuts "dancing marker" drift at rest without adding visible lag while riding.
     let displayLat = latitude;
     let displayLng = longitude;
     if (smoothedPositionRef.current) {
       const accuracyPenalty = Math.min(1, (accuracy || 10) / 30); // 0 = perfect, 1 = borderline
-      const speedBoost = Math.min(1, rawSpeedMps / 5); // moving ≥5 m/s → full trust in new point
-      // Base alpha 0.25 when stationary, up to ~0.85 at speed.
+      const speedBoost = Math.min(1, rawSpeedMps / 5); // ≥5 m/s → full trust in new point
       const alpha = Math.max(0.2, Math.min(0.85, 0.25 + speedBoost * 0.6 - accuracyPenalty * 0.15));
       displayLat = smoothedPositionRef.current.latitude + alpha * (latitude - smoothedPositionRef.current.latitude);
       displayLng = smoothedPositionRef.current.longitude + alpha * (longitude - smoothedPositionRef.current.longitude);
     }
     smoothedPositionRef.current = { latitude: displayLat, longitude: displayLng };
 
-    // Heading fallback: GPS heading is unreliable when stationary. Trust it once moving.
-    // 0.8 m/s ≈ 3 km/h — just above a slow walk; low enough to catch slow-speed turns.
+    // GPS heading is unreliable when stationary; only update once above a slow-walk threshold.
+    // 0.8 m/s ≈ 3 km/h — low enough to track slow-speed turns.
     let displayHeading = lastGoodHeadingRef.current;
     if (heading !== null && heading !== undefined && heading >= 0 && rawSpeedMps > 0.8) {
       lastGoodHeadingRef.current = heading;
@@ -328,9 +308,9 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     setLiveRawLocation(smartLoc);
 
     // === MAX SPEED ===
-    // Vehicle-aware cap + stricter sample validation. We reject any sample above the cap
-    // outright (so a GPS glitch to 250 km/h on a bike never becomes the top speed), and we
-    // require MAX_SPEED_SAMPLES_REQUIRED sustained samples before promoting a new max.
+    // Vehicle-aware cap + sustained-sample validation. Samples above the cap are
+    // rejected outright (GPS glitch), and MAX_SPEED_SAMPLES_REQUIRED consecutive
+    // readings must stay elevated before a new peak is promoted.
     if (filteredSpeed > 0) {
       const speedKmh = filteredSpeed * 3.6;
       if (speedKmh <= vehicleSpeedCapKmh) {
@@ -344,7 +324,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
           if (recentHighSamples.length >= MAX_SPEED_SAMPLES_REQUIRED && speedKmh > currentMax) {
             const sorted = [...recentHighSamples].sort((a, b) => a - b);
             const medianSpeed = sorted[Math.floor(sorted.length / 2)];
-            // Clamp the promoted max to the vehicle cap as a final safety.
             const newMax = Math.min(vehicleSpeedCapKmh, Math.max(currentMax, medianSpeed));
             maxSpeedRef.current = newMax;
             setMaxSpeed(newMax);
@@ -353,7 +332,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
           highSpeedSamplesRef.current = [];
         }
       } else {
-        // Sample exceeded the vehicle cap — treat as a glitch and reset sustainment buffer.
+        // Sample exceeded the vehicle cap — GPS glitch, reset sustainment buffer.
         highSpeedSamplesRef.current = [];
       }
     }
@@ -365,7 +344,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         lastMovementTimeRef.current = now;
       } else {
         const delta = (now - lastMovementTimeRef.current) / 1000;
-        if (delta > 0 && delta < 30) { // Cap at 30s to avoid huge jumps
+        if (delta > 0 && delta < 30) { // cap at 30 s to swallow large gaps from app suspension
           setMovingTime(prev => prev + delta);
         }
         lastMovementTimeRef.current = now;
@@ -374,12 +353,10 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
       isMovingRef.current = false;
     }
 
-    // === DISTANCE ACCUMULATION (Haversine - real-time) ===
-    // Accumulate distance from raw GPS positions regardless of Roads API.
-    // Gate on rawSpeedMps > 0.2 (not filteredSpeed > 0) so we capture slow movement
-    // BELOW the stationary threshold — e.g. the first few seconds of a slow cycling
-    // pull-off, or low-speed maneuvering. Jitter filter on distMeters below still
-    // protects against accumulating GPS noise while truly stopped.
+    // === DISTANCE ACCUMULATION (Haversine — real-time) ===
+    // Gate on rawSpeedMps > 0.2, not filteredSpeed > 0, so slow pull-offs and
+    // low-speed manoeuvring below the stationary threshold still accumulate.
+    // The jitter filter on distMeters guards against GPS noise while truly stopped.
     if (lastAccumulationPointRef.current && rawSpeedMps > 0.2) {
       const distKm = haversineDistance(
         lastAccumulationPointRef.current.latitude,
@@ -389,36 +366,29 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
       );
       const distMeters = distKm * 1000;
 
-      // Jitter Filtering: Only count if moved enough relative to accuracy
-      // This prevents "walking 20m and getting 0.1km" due to GPS noise
       const minMoveMeters = Math.max(MIN_DISTANCE_FOR_ACCUMULATION_M, (accuracy || 10) * JITTER_ACCURACY_MULTIPLIER);
 
       if (distMeters >= minMoveMeters && distKm <= MAX_DISTANCE_BETWEEN_POINTS_KM) {
         haversineDistanceRef.current += distKm;
 
-        // If Roads API hasn't been active yet, use Haversine as official distance
         if (!roadsApiActiveRef.current) {
           setOfficialDistance(haversineDistanceRef.current);
         }
       }
     }
 
-    // Update last accumulation point when moving OR when we don't have one yet
     if (filteredSpeed > 0 || !lastAccumulationPointRef.current) {
       lastAccumulationPointRef.current = { latitude, longitude, timestamp: now };
     }
 
     // === BUFFERING FOR ROADS API ===
-    // Buffer ALL points with good accuracy for Roads API snapping
-    // Don't require speed > 0 - the Roads API handles stationary filtering
     const accuracyOk = !accuracy || accuracy <= MIN_ACCURACY_FOR_TRACKING;
     if (accuracyOk) {
-      // Only buffer if we've moved at least a tiny bit (prevents duplicate stationary points)
       const lastBuffered = bufferRef.current[bufferRef.current.length - 1];
       let shouldBuffer = true;
       if (lastBuffered) {
         const distFromLast = haversineDistance(lastBuffered.latitude, lastBuffered.longitude, latitude, longitude) * 1000;
-        shouldBuffer = distFromLast >= 2; // At least 2m from last buffered point
+        shouldBuffer = distFromLast >= 2; // suppress duplicate stationary points
       }
 
       if (shouldBuffer) {
@@ -426,7 +396,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
       }
     }
 
-    // === CHECK FLUSH CONDITIONS ===
     if (
       bufferRef.current.length >= BUFFER_SIZE ||
       (Date.now() - lastFlushTimeRef.current > FLUSH_INTERVAL_MS && bufferRef.current.length > 1)
@@ -436,13 +405,10 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
 
   }, [flushBufferToRoadsAPI]);
 
-  // Track previous isTracking state
   const prevIsTrackingRef = useRef<boolean>(false);
 
-  // Start/Stop Tracking
   useEffect(() => {
     if (isTracking) {
-      // Reset all state on new journey start
       if (!prevIsTrackingRef.current) {
         setOfficialDistance(0);
         setMovingTime(0);
@@ -462,13 +428,11 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         previousSpeedRef.current = 0;
         previousSpeedTimeRef.current = 0;
 
-        // Reset distance tracking
         haversineDistanceRef.current = 0;
         roadsApiDistanceRef.current = 0;
         roadsApiActiveRef.current = false;
         lastAccumulationPointRef.current = null;
 
-        // Reset position smoothing on new journey
         smoothedPositionRef.current = null;
         lastGoodHeadingRef.current = 0;
         lastPositionTimestampRef.current = 0;
@@ -485,14 +449,14 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
           return;
         }
 
-        // Use Location.watchPositionAsync on ALL platforms for foreground tracking.
-        // Previously Android used locationService.subscribe(), but that never fired
-        // because JourneyContext manages journey state (isTracking) — not locationService.
+        // watchPositionAsync is used on all platforms. Previously Android used
+        // locationService.subscribe(), but that path never fired because JourneyContext
+        // owns isTracking — not locationService.
         subscriptionRef.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 500, // 2Hz — at 60 km/h ~8m between samples for fluid marker movement. Battery cost is small with BestForNavigation already on.
-            distanceInterval: 3, // 3 meters
+            timeInterval: 500, // 2 Hz — at 60 km/h gives ~8 m between samples for fluid marker movement
+            distanceInterval: 3,
           },
           handleLocationUpdate
         );
@@ -504,7 +468,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         subscriptionRef.current.remove();
         subscriptionRef.current = null;
       }
-      // Flush remaining buffer
       if (bufferRef.current.length > 1) {
         flushBufferToRoadsAPI();
       }
@@ -522,7 +485,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     officialSnappedPath,
     officialDistance,
     movingTime,
-    avgSpeed: StatsCalculator.calculateAverageSpeed(officialDistance, movingTime), // km/h, matches JourneyStats interface
-    maxSpeed: maxSpeed, // km/h, matches JourneyStats interface
+    avgSpeed: StatsCalculator.calculateAverageSpeed(officialDistance, movingTime), // km/h
+    maxSpeed: maxSpeed, // km/h
   };
 }

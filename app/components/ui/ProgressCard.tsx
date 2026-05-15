@@ -1,3 +1,9 @@
+/**
+ * Orange XP-progress card shown on the profile/home screen.
+ * Currently hardcoded to the "Explorer" rank at 75% progress toward "Trailblazer".
+ * Wire up to real user data once the gamification API is integrated.
+ */
+
 import React from 'react';
 import {
   View,

@@ -1,3 +1,11 @@
+/**
+ * Bottom-sheet modal that lets the user switch the app language.
+ * Persists the selection via saveLanguagePreference so the choice survives restarts.
+ *
+ * @prop visible - Controls modal visibility.
+ * @prop onClose - Called after the selection is saved or the sheet is dismissed.
+ */
+
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +40,6 @@ export default function LanguageSelector({ visible, onClose }: LanguageSelectorP
     >
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>{t('settings.selectLanguage')}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -40,14 +47,13 @@ export default function LanguageSelector({ visible, onClose }: LanguageSelectorP
             </TouchableOpacity>
           </View>
 
-          {/* Language List */}
-          <ScrollView 
+          <ScrollView
             style={styles.languageList}
             showsVerticalScrollIndicator={false}
           >
             {LANGUAGES.map((language) => {
               const isSelected = currentLanguage === language.code;
-              
+
               return (
                 <TouchableOpacity
                   key={language.code}
@@ -62,7 +68,7 @@ export default function LanguageSelector({ visible, onClose }: LanguageSelectorP
                       <Text style={styles.languageEnglishName}>{language.name}</Text>
                     </View>
                   </View>
-                  
+
                   {isSelected && (
                     <MaterialIcons name="check-circle" size={24} color="#10b981" />
                   )}
@@ -71,7 +77,6 @@ export default function LanguageSelector({ visible, onClose }: LanguageSelectorP
             })}
           </ScrollView>
 
-          {/* Done Button */}
           <TouchableOpacity style={styles.doneButton} onPress={onClose}>
             <Text style={styles.doneButtonText}>{t('common.done')}</Text>
           </TouchableOpacity>

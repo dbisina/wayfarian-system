@@ -1,10 +1,18 @@
 /**
- * Color constants used throughout the Wayfarian app
+ * Design-system tokens for the Wayfarian app.
+ *
+ * - PRIMARY_COLORS  — brand palette used across components.
+ * - TAB_BAR_COLORS  — bottom tab bar surface and text.
+ * - SHADOW_COLORS   — reusable shadow colour values.
+ * - STATUS_COLORS   — semantic state colours (success, warning, error, info).
+ * - Colors          — legacy light/dark theme tokens kept for compatibility
+ *                     with Expo's auto-generated templates.
+ * - Fonts           — platform-correct font-family stacks via Platform.select
+ *                     so iOS uses system fonts and Android/web fall back cleanly.
  */
 
 import { Platform } from 'react-native';
 
-// Primary Colors
 export const PRIMARY_COLORS = {
   orange: '#F9A825',
   darkGray: '#3E4751',
@@ -16,7 +24,6 @@ export const PRIMARY_COLORS = {
   transparent: 'transparent',
 } as const;
 
-// Tab Bar Colors
 export const TAB_BAR_COLORS = {
   background: 'rgba(250, 250, 250, 0.6)',
   activeBackground: 'rgba(250, 250, 250, 0.6)',
@@ -25,14 +32,12 @@ export const TAB_BAR_COLORS = {
   shadow: '#000000',
 } as const;
 
-// Shadow Colors
 export const SHADOW_COLORS = {
   primary: '#000000',
   light: 'rgba(0, 0, 0, 0.1)',
   medium: 'rgba(0, 0, 0, 0.25)',
 } as const;
 
-// Status Colors
 export const STATUS_COLORS = {
   success: '#4CAF50',
   warning: '#FF9800',
@@ -40,7 +45,7 @@ export const STATUS_COLORS = {
   info: '#2196F3',
 } as const;
 
-// Legacy colors for compatibility
+// Legacy tokens — kept for compatibility with Expo template code.
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 

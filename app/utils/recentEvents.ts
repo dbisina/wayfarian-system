@@ -1,5 +1,10 @@
-// app/utils/recentEvents.ts
-// Lightweight local cache for recent group events with a tiny pub/sub
+/**
+ * Lightweight local cache for recent group events with a pub/sub notification layer.
+ *
+ * Events are stored per group in AsyncStorage and pruned to `MAX_EVENTS` entries
+ * no older than `RETAIN_MS`. Pruning is lazy — it runs on read rather than write
+ * to keep the write path fast.
+ */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -15,29 +20,34 @@ export type RecentEventType =
   | 'message';
 
 export interface RecentEvent {
-  id: string; // unique id (timestamp + random)
+  id: string;
   type: RecentEventType;
-  ts: number; // epoch ms
-  groupId: string; // for quick filtering
+  ts: number;
+  groupId: string;
   groupJourneyId?: string | null;
   userId?: string;
   userName?: string | null;
   userPhotoURL?: string | null;
-  message?: string; // optional human-readable text (prebuilt for offline)
-  meta?: any; // minimal extra payload
+  /** Pre-built human-readable summary, preferred over the `formatEvent` fallback. */
+  message?: string;
+  meta?: any;
 }
 
-const MAX_EVENTS = 50; // per group
-const RETAIN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_EVENTS = 50;
+const RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
 
 function key(groupId: string) {
   return `recent_events_${groupId}`;
 }
 
-// Simple pub/sub so UI can update immediately when events are added
 type Listener = (groupId: string) => void;
 const listeners = new Set<Listener>();
 
+/**
+ * Registers a listener that is called whenever events are added for any group.
+ * @param listener - Callback receiving the affected `groupId`.
+ * @returns An unsubscribe function.
+ */
 export function subscribe(listener: Listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -49,12 +59,16 @@ function notify(groupId: string) {
   });
 }
 
+/**
+ * Returns stored events for a group, sorted newest-first.
+ * Lazily prunes entries older than `RETAIN_MS` and beyond `MAX_EVENTS`.
+ * @param groupId - The group whose events to retrieve.
+ */
 export async function getEvents(groupId: string): Promise<RecentEvent[]> {
   try {
     const raw = await AsyncStorage.getItem(key(groupId));
     if (!raw) return [];
     const arr: RecentEvent[] = JSON.parse(raw);
-    // prune old here too (lazy pruning)
     const cutoff = Date.now() - RETAIN_MS;
     const pruned = arr.filter((e) => e.ts >= cutoff).slice(-MAX_EVENTS);
     if (pruned.length !== arr.length) {
@@ -66,6 +80,12 @@ export async function getEvents(groupId: string): Promise<RecentEvent[]> {
   }
 }
 
+/**
+ * Appends an event to the group's stored list and notifies subscribers.
+ * The list is re-pruned on every write so storage never grows unbounded.
+ * @param groupId - The group to add the event to.
+ * @param event - Event payload (without `id`, `groupId`, or `ts`, which are auto-assigned).
+ */
 export async function addEvent(groupId: string, event: Omit<RecentEvent, 'id' | 'groupId' | 'ts'> & { ts?: number }) {
   const full: RecentEvent = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -92,8 +112,12 @@ export async function addEvent(groupId: string, event: Omit<RecentEvent, 'id' | 
   }
 }
 
+/**
+ * Returns a human-readable summary for an event.
+ * Uses `event.message` when present; falls back to type-specific templates.
+ * @param e - The event to format.
+ */
 export function formatEvent(e: RecentEvent): string {
-  // If a prebuilt message exists, use it.
   if (e.message) return e.message;
   const when = relativeTime(e.ts);
   switch (e.type) {
@@ -119,6 +143,10 @@ export function formatEvent(e: RecentEvent): string {
   }
 }
 
+/**
+ * Formats a Unix timestamp as a human-readable relative time string (e.g. "5m ago").
+ * @param ts - Epoch milliseconds.
+ */
 export function relativeTime(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 60) return `${s}s ago`;

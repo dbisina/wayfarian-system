@@ -1,7 +1,17 @@
-// Diagnostic utility to test API connectivity
 import { getCurrentApiUrl } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/**
+ * Runs a suite of connectivity probes against the current API base URL.
+ *
+ * Probes:
+ * 1. `GET /health` — confirms the server is reachable.
+ * 2. `POST /user/profile-picture` (no auth) — expects a 401; any other status
+ *    indicates a routing or auth-middleware misconfiguration.
+ * 3. AsyncStorage auth token presence check.
+ *
+ * @returns An object containing the resolved API URL and an array of test results.
+ */
 export async function testApiConnection() {
   const apiUrl = getCurrentApiUrl();
   const results = {
@@ -11,7 +21,6 @@ export async function testApiConnection() {
 
   console.log('[Diagnostics] Testing API connection to:', apiUrl);
 
-  // Test 1: Health check
   try {
     const start = Date.now();
     const baseUrl = apiUrl.replace('/api', '');
@@ -20,7 +29,7 @@ export async function testApiConnection() {
     });
     const duration = Date.now() - start;
     const data = await response.json();
-    
+
     results.tests.push({
       name: 'Health Check',
       status: response.ok ? 'pass' : 'fail',
@@ -36,14 +45,14 @@ export async function testApiConnection() {
     });
   }
 
-  // Test 2: Auth endpoint (should return 401)
+  // A 401 here confirms the auth middleware is active; any other code signals misconfiguration.
   try {
     const start = Date.now();
     const response = await fetch(`${apiUrl}/user/profile-picture`, {
       method: 'POST',
     });
     const duration = Date.now() - start;
-    
+
     results.tests.push({
       name: 'Profile Upload Endpoint',
       status: response.status === 401 ? 'pass' : 'fail',
@@ -59,7 +68,6 @@ export async function testApiConnection() {
     });
   }
 
-  // Test 3: Check auth token exists
   try {
     const token = await AsyncStorage.getItem('authToken');
     results.tests.push({
@@ -80,20 +88,25 @@ export async function testApiConnection() {
   return results;
 }
 
+/**
+ * Prints the results from `testApiConnection` to the console in a human-readable format.
+ * @param results - The object returned by `testApiConnection`.
+ * @returns True if every probe passed, false otherwise.
+ */
 export function printDiagnostics(results: any) {
   console.log('\n========================================');
   console.log('API Connection Diagnostics');
   console.log('========================================');
   console.log('API URL:', results.apiUrl);
   console.log('----------------------------------------');
-  
+
   results.tests.forEach((test: any) => {
     const icon = test.status === 'pass' ? '✅' : '❌';
     console.log(`${icon} ${test.name}: ${test.message}`);
   });
-  
+
   console.log('========================================\n');
-  
+
   const allPassed = results.tests.every((t: any) => t.status === 'pass');
   return allPassed;
 }

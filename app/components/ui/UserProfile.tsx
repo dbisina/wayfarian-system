@@ -1,3 +1,9 @@
+/**
+ * Profile header row showing the user's avatar, display name, rank, and a
+ * summary stats line. Currently uses placeholder data; replace with real user
+ * state once the profile API is integrated.
+ */
+
 import React from 'react';
 import {
   View,

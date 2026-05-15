@@ -1,3 +1,14 @@
+/**
+ * Card representing an active or completed challenge with a cover image,
+ * metadata, and a hardcoded 60% progress bar.
+ *
+ * @prop title     - Challenge name.
+ * @prop duration  - Human-readable time limit (e.g. "30 days").
+ * @prop distance  - Target distance string (e.g. "500 km").
+ * @prop status    - Textual progress summary shown next to the bar.
+ * @prop imageUrl  - Remote URL for the challenge cover image.
+ */
+
 import React from 'react';
 import {
   View,
@@ -14,10 +25,10 @@ interface ChallengeCardProps {
   imageUrl: string;
 }
 
-const ChallengeCard = ({title, duration, distance, status, imageUrl}: ChallengeCardProps): React.JSX.Element => {
+const ChallengeCard = ({ title, duration, distance, status, imageUrl }: ChallengeCardProps): React.JSX.Element => {
   return (
     <View style={styles.container}>
-      <Image source={{uri: imageUrl}} style={styles.image} />
+      <Image source={{ uri: imageUrl }} style={styles.image} />
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.duration}>{duration}</Text>

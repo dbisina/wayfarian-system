@@ -1,3 +1,20 @@
+/**
+ * Main map tab — the app's home screen during rides.
+ *
+ * Responsibilities:
+ * - Full-screen MapView with auto-follow while tracking (1 s throttle, 3 s
+ *   gesture cooldown to prevent camera fighting).
+ * - Place search with 250 ms debounced autocomplete and geocode fallback.
+ * - Nearby-place filter chips (gas, hotel, restaurant, attraction, shopping).
+ * - Completed-journey card markers pinned to each ride's endpoint.
+ * - Floating play/stop button that starts a formless journey or opens the
+ *   end-journey modal when already tracking.
+ * - Mini-stats sheet (time / speed / distance + LIVE badge) overlaid during
+ *   an active journey.
+ * - Destination bottom sheet with a "Start Journey" CTA when a search result
+ *   is selected.
+ */
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -21,8 +38,6 @@ import {
   selectSelectedVehicle,
 } from '../../store/slices/vehicleSlice';
 import type { Vehicle } from '../../contexts/SettingsContext';
-
-// const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 interface Place {
   id: string;
@@ -49,8 +64,8 @@ export default function MapScreen(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
   const { mapType, vehicle: settingsVehicle } = useSettings();
   const dispatch = useAppDispatch();
-  // VehiclePicker writes only to the Redux garage slice — not SettingsContext —
-  // so the play-button must consult Redux first or it always falls back to "car".
+  // VehiclePicker writes only to the Redux garage slice (not SettingsContext), so
+  // the play button must consult Redux first or it always falls back to "car".
   const garageSelectedVehicle = useAppSelector(selectSelectedVehicle);
   const garageDefaultVehicle = useAppSelector(selectDefaultVehicle);
   const activeGarageVehicle = garageSelectedVehicle ?? garageDefaultVehicle;
@@ -76,12 +91,14 @@ export default function MapScreen(): React.JSX.Element {
   const [showEndModal, setShowEndModal] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Navigation / Follow Mode State
+  // ─── Navigation / follow mode ─────────────────────────────────────────────
+
   const [isNavigationMode, setIsNavigationMode] = useState(true);
   const isManuallyPanningRef = useRef(false);
   const lastUserGestureAtRef = useRef(0);
   const lastCameraUpdateRef = useRef(0);
 
+  // Pulse the stop button ring while tracking so it's clearly "live".
   useEffect(() => {
     if (isTracking) {
       const pulse = Animated.loop(
@@ -97,18 +114,16 @@ export default function MapScreen(): React.JSX.Element {
     return undefined;
   }, [isTracking, pulseAnim]);
 
-  // Auto-follow Logic for Main Map Tab
+  // Auto-follow: 1 s throttle matches 2 Hz GPS; 3 s cooldown after any touch.
   useEffect(() => {
     if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
 
     const now = Date.now();
-    // 1s throttle matches 2Hz GPS — keeps camera snug to marker without churning.
     if (now - lastCameraUpdateRef.current < 1000) return;
-    // Cooldown after user interaction (3 seconds)
     if (now - lastUserGestureAtRef.current < 3000) return;
 
     lastCameraUpdateRef.current = now;
-    
+
     if (mapRef.current) {
       mapRef.current.animateToRegion({
         latitude: currentLocation.latitude,
@@ -127,6 +142,7 @@ export default function MapScreen(): React.JSX.Element {
     { key: 'shopping_mall', serverType: 'shopping_mall', label: t('map.filters.shopping') },
   ], [t]);
 
+  /** Returns static sample places when the Places API returns empty or fails. */
   const getMockPlaces = useCallback((filter?: string): Place[] => {
     if (!location) return [];
     const samples: Place[] = [
@@ -170,9 +186,8 @@ export default function MapScreen(): React.JSX.Element {
     getCurrentLocation(false);
     fetchMapJourneys();
     // Hydrate the garage so the play button knows which vehicle to use.
-    // Without this, the effective vehicle stays "car" until the user opens
-    // new-journey or settings, which is the source of the "vehicle reverts"
-    // complaint from formless rides.
+    // Without this, effectiveVehicleType stays "car" until the user opens
+    // new-journey or settings — the source of the "vehicle reverts" bug.
     dispatch(fetchVehicles());
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -181,7 +196,6 @@ export default function MapScreen(): React.JSX.Element {
 
   const fetchMapJourneys = async () => {
     try {
-      // Fetch completed journeys for the map history
       const response = await userAPI.getJourneyHistory({ status: 'COMPLETED', limit: 20 });
       if (response && response.journeys) {
         setMapJourneys(response.journeys);
@@ -191,6 +205,11 @@ export default function MapScreen(): React.JSX.Element {
     }
   };
 
+  /**
+   * Resolves the device's current location.
+   * @param promptIfMissing - When true, requests foreground permission if not
+   *   granted and animates the camera to the fresh location on success.
+   */
   const getCurrentLocation = async (promptIfMissing = true) => {
     try {
       let { status } = await Location.getForegroundPermissionsAsync();
@@ -201,7 +220,7 @@ export default function MapScreen(): React.JSX.Element {
 
       if (status !== 'granted') {
         setError(t('map.locationPermDenied'));
-        // Set a default region if permission denied, so map still renders
+        // Show the map at a default region so the UI isn't a blank screen.
         setInitialRegion({
           latitude: 37.78825,
           longitude: -122.4324,
@@ -211,7 +230,7 @@ export default function MapScreen(): React.JSX.Element {
         return;
       }
 
-      // Try to get cached location first for speed
+      // Show cached position immediately, then refine with a fresh fix.
       const lastKnown = await Location.getLastKnownPositionAsync();
       if (lastKnown) {
         setLocation(lastKnown);
@@ -225,11 +244,10 @@ export default function MapScreen(): React.JSX.Element {
         if (promptIfMissing) animateToRegion(region);
       }
 
-      // Then fetch fresh high-accuracy location
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
+
       setLocation(currentLocation);
       const freshRegion = {
         latitude: currentLocation.coords.latitude,
@@ -237,19 +255,17 @@ export default function MapScreen(): React.JSX.Element {
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       };
-      
+
       if (!lastKnown) {
-         setInitialRegion(freshRegion);
+        setInitialRegion(freshRegion);
       }
-      
-      // If user manually pressed the button (promptIfMissing=true), animate to fresh location
+
       if (promptIfMissing) {
         animateToRegion(freshRegion);
       }
     } catch (error: any) {
       console.error('Location error:', error);
-      // Fallback region if location fails
-       if (!initialRegion) {
+      if (!initialRegion) {
         setInitialRegion({
           latitude: 37.78825,
           longitude: -122.4324,
@@ -284,6 +300,8 @@ export default function MapScreen(): React.JSX.Element {
 
       const formattedPlaces = response.places
         .map((place: any) => {
+          // The Places API has changed its response shape across versions;
+          // try all known paths before discarding the result.
           const latitudeCandidate =
             typeof place.latitude === 'number'
               ? place.latitude
@@ -331,7 +349,7 @@ export default function MapScreen(): React.JSX.Element {
     }
   }, [location, destination, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
 
-
+  // ─── Journey actions ──────────────────────────────────────────────────────
 
   const handleStartJourney = async () => {
     if (!isAuthenticated) {
@@ -347,8 +365,7 @@ export default function MapScreen(): React.JSX.Element {
     try {
       const success = await startJourney({
         // Leave title undefined so the backend default ("My Journey") only
-        // appears when the user actually skips JourneyEndModal's name field.
-        // If the user types a name later, customTitle becomes the source of truth.
+        // appears when the user skips JourneyEndModal's name field.
         vehicle: effectiveVehicleType,
         vehicleId: activeGarageVehicle?.id,
         vehicleName: activeGarageVehicle
@@ -409,6 +426,8 @@ export default function MapScreen(): React.JSX.Element {
     mapRef.current?.animateToRegion(region, 600);
   };
 
+  // ─── Search ───────────────────────────────────────────────────────────────
+
   const handleSearchSubmit = async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -450,7 +469,7 @@ export default function MapScreen(): React.JSX.Element {
       const items = (res?.predictions || []).map((p: any) => ({ id: p.placeId, placeId: p.placeId, description: p.description }));
       setSuggestions(items);
     } catch {
-      // Non-fatal - just clear suggestions on error
+      // Non-fatal — just clear suggestions on network error.
       setSuggestions([]);
     }
   };
@@ -486,6 +505,8 @@ export default function MapScreen(): React.JSX.Element {
     }
   };
 
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   if (!isAuthenticated) {
     return (
       <View style={styles.container}>
@@ -496,13 +517,8 @@ export default function MapScreen(): React.JSX.Element {
     );
   }
 
-  // Removed error check that blocks map rendering. We now fallback to default region.
-
-
-
   return (
     <View style={styles.container}>
-      {/* Map */}
       {initialRegion ? (
         <MapView
           provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
@@ -546,17 +562,14 @@ export default function MapScreen(): React.JSX.Element {
               pinColor="#F9A825"
             />
           )}
-          
-          {/* Active journey route breadcrumb */}
+
           {isTracking && routePoints.length > 1 && (
             <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#F9A825" />
           )}
 
-          {/* Completed Journeys Cards */}
           {mapJourneys.map((journey) => {
             if (!journey.endLatitude || !journey.endLongitude) return null;
-            
-            // Check if we have photos to show a stack effect
+
             const hasPhotos = journey.photos && journey.photos.length > 0;
             const coverPhoto = hasPhotos ? journey.photos![0].imageUrl : null;
 
@@ -568,43 +581,37 @@ export default function MapScreen(): React.JSX.Element {
                   longitude: journey.endLongitude,
                 }}
                 onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
-                tracksViewChanges={false} // Optimization for static markers
+                tracksViewChanges={false}
               >
-                 <View style={styles.cardMarkerContainer}>
-                    {/* Stack effect layers if photos exist (simplified visual) */}
-                    {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '3deg' }] }]} />}
-                    {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '-3deg' }] }]} />}
-                    
-                    {/* Main Card */}
-                    <View style={styles.cardMarker}>
-                      {coverPhoto && (
-                        <Image source={{ uri: coverPhoto }} style={styles.cardImage} contentFit="cover" transition={200} />
-                      )}
-                      <View style={styles.cardContent}>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
-                          {journey.customTitle || journey.title || t('journey.defaultTitle')}
-                        </Text>
-                        {/* Use a TouchableOpacity here so the inner arrow has its own
-                            hit target. The parent Marker.onPress still fires when the
-                            user taps elsewhere on the card, but Android frequently
-                            swallows taps on icons sitting flush against a marker edge
-                            — explicit touchable + hitSlop fixes the "arrow not clickable"
-                            complaint. */}
-                        <TouchableOpacity
-                          style={styles.cardFooter}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          activeOpacity={0.7}
-                          onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
-                        >
-                           <Text style={styles.cardSubtitle}>{t('common.view')}</Text>
-                           <Ionicons name="arrow-forward" size={12} color="#000" />
-                        </TouchableOpacity>
-                      </View>
+                <View style={styles.cardMarkerContainer}>
+                  {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '3deg' }] }]} />}
+                  {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '-3deg' }] }]} />}
+
+                  <View style={styles.cardMarker}>
+                    {coverPhoto && (
+                      <Image source={{ uri: coverPhoto }} style={styles.cardImage} contentFit="cover" transition={200} />
+                    )}
+                    <View style={styles.cardContent}>
+                      <Text style={styles.cardTitle} numberOfLines={1}>
+                        {journey.customTitle || journey.title || t('journey.defaultTitle')}
+                      </Text>
+                      {/* Explicit TouchableOpacity with hitSlop — Android swallows taps on
+                          icons sitting flush against a marker edge without it, making the
+                          "view" arrow not clickable while the card background still fires. */}
+                      <TouchableOpacity
+                        style={styles.cardFooter}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.7}
+                        onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
+                      >
+                        <Text style={styles.cardSubtitle}>{t('common.view')}</Text>
+                        <Ionicons name="arrow-forward" size={12} color="#000" />
+                      </TouchableOpacity>
                     </View>
-                    
-                    {/* Anchor Point */}
-                    <View style={styles.cardAnchor} />
-                 </View>
+                  </View>
+
+                  <View style={styles.cardAnchor} />
+                </View>
               </Marker>
             );
           })}
@@ -620,7 +627,6 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      {/* Lightweight loading badge instead of full overlay */}
       {loading && (
         <View style={styles.loadingBadge}>
           <SkeletonCircle size={14} />
@@ -629,8 +635,7 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      {/* Search Bar */}
-  <View style={styles.searchBar}>
+      <View style={styles.searchBar}>
         <TextInput
           value={query}
           onChangeText={onChangeQuery}
@@ -641,8 +646,8 @@ export default function MapScreen(): React.JSX.Element {
           placeholderTextColor="#666"
         />
         {query.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => { setQuery(''); setSuggestions([]); }} 
+          <TouchableOpacity
+            onPress={() => { setQuery(''); setSuggestions([]); }}
             style={styles.clearBtn}
             accessibilityRole="button"
           >
@@ -650,10 +655,10 @@ export default function MapScreen(): React.JSX.Element {
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={handleSearchSubmit} accessibilityRole="button">
-          <Feather name="search" size={16} color="#fff" />  
+          <Feather name="search" size={16} color="#fff" />
         </TouchableOpacity>
-    
       </View>
+
       {suggestions.length > 0 && (
         <View style={styles.suggestionsBox}>
           <FlatList
@@ -669,7 +674,6 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      {/* Filter Buttons */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -677,17 +681,17 @@ export default function MapScreen(): React.JSX.Element {
         contentContainerStyle={styles.filterContent}
       >
         {filterTypes.map((filter) => (
-          <TouchableOpacity 
+          <TouchableOpacity
             key={filter.key}
             style={[
               styles.filterButton,
-              selectedFilter === filter.key && styles.filterButtonActive
+              selectedFilter === filter.key && styles.filterButtonActive,
             ]}
             onPress={() => handleFilterPress(filter.key)}
           >
             <Text style={[
               styles.filterText,
-              selectedFilter === filter.key && styles.filterTextActive
+              selectedFilter === filter.key && styles.filterTextActive,
             ]}>
               {filter.label}
             </Text>
@@ -695,7 +699,6 @@ export default function MapScreen(): React.JSX.Element {
         ))}
       </ScrollView>
 
-      {/* Destination bottom sheet — shown when user has searched a location */}
       {destination && !isTracking && (
         <View style={[styles.destinationSheet, { bottom: insets.bottom + 100 }]}>
           <View style={styles.destinationInfo}>
@@ -722,7 +725,6 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      {/* Active journey mini-stats sheet on map tab */}
       {isTracking && (
         <View style={[styles.miniStatsSheet, { bottom: insets.bottom + 80 }]}>
           <View style={styles.miniStatsRow}>
@@ -744,7 +746,6 @@ export default function MapScreen(): React.JSX.Element {
               <MaterialIcons name="open-in-full" size={18} color="#F9A825" />
             </TouchableOpacity>
           </View>
-          {/* Red live indicator strip */}
           <View style={styles.liveStrip}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
@@ -752,7 +753,6 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      {/* Floating Action Buttons */}
       <TouchableOpacity
         style={[styles.floatingButton, { bottom: insets.bottom + (isTracking ? 230 : 150) }]}
         onPress={handleStartJourney}
@@ -792,7 +792,6 @@ export default function MapScreen(): React.JSX.Element {
         />
       </TouchableOpacity>
 
-      {/* Recenter Button (Main Map) */}
       {!isNavigationMode && isTracking && (
         <TouchableOpacity
           onPress={() => {
@@ -800,12 +799,12 @@ export default function MapScreen(): React.JSX.Element {
             lastUserGestureAtRef.current = 0;
             setIsNavigationMode(true);
             if (mapRef.current && currentLocation) {
-               mapRef.current.animateToRegion({
-                 latitude: currentLocation.latitude,
-                 longitude: currentLocation.longitude,
-                 latitudeDelta: 0.01,
-                 longitudeDelta: 0.01,
-               }, 1000);
+              mapRef.current.animateToRegion({
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }, 1000);
             }
             lastCameraUpdateRef.current = Date.now();
           }}
@@ -1170,7 +1169,7 @@ const styles = StyleSheet.create({
   cardMarkerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 140, // Fixed width for consistency
+    width: 140,
   },
   cardStackLayer: {
     position: 'absolute',
@@ -1236,8 +1235,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 8,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: '#FFFFFF', // Matches card background
-    marginTop: -1, // Overlap slightly
+    borderTopColor: '#FFFFFF', // Matches card background so anchor blends seamlessly.
+    marginTop: -1, // Slight overlap removes the visible seam between card and anchor.
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1268,4 +1267,3 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
-

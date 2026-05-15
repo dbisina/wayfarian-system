@@ -1,3 +1,20 @@
+/**
+ * Full-screen active-journey view.
+ *
+ * Responsibilities:
+ * - Full-screen map with an immersive navigation camera that follows the rider
+ *   at a pitch/zoom appropriate to current speed.
+ * - Smooth marker animation (400 ms, matches 2 Hz GPS) with shortest-angle
+ *   heading interpolation and a raw-position bearing fallback when GPS heading
+ *   is unavailable.
+ * - Live stats overlay (time, speed, distance) wired to useJourneyStats.
+ * - Distance-milestone celebrations via RideCelebration.
+ * - Directions polyline: MapViewDirections on Android when an API key is
+ *   available; manual fetch on iOS (MapViewDirections has layout bugs on iOS).
+ * - Screen-wake-lock while tracking so the device never sleeps mid-ride.
+ * - JourneyEndModal for post-ride title/photo entry.
+ */
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
@@ -36,6 +53,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 type MeasurementParts = { value: string; unit: string };
 
+/** Splits a formatted measurement string (e.g. "12.3 km") into value and unit parts. */
 const splitMeasurement = (formatted: string): MeasurementParts => {
   if (!formatted) {
     return { value: '0', unit: '' };
@@ -49,7 +67,6 @@ const splitMeasurement = (formatted: string): MeasurementParts => {
     unit: (match[2] || '').toUpperCase().trim(),
   };
 };
-
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -90,7 +107,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const [isStartBusy, setIsStartBusy] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
   const [celebrationEvent, setCelebrationEvent] = useState<CelebrationEvent | null>(null);
-  const [isNavigationMode, setIsNavigationMode] = useState(true); // Default to following user
+  const [isNavigationMode, setIsNavigationMode] = useState(true);
   const [snappedLocation, setSnappedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const markerPosition = useRef(new AnimatedRegion({
     latitude: region?.latitude || 0,
@@ -99,31 +116,28 @@ export default function JourneyScreen(): React.JSX.Element {
     longitudeDelta: 0.01,
   })).current;
   const markerRotation = useRef(new Animated.Value(currentLocation?.heading || 0)).current;
-  // Mirror the animated heading into React state so Marker.rotation (which the
-  // native Android Google Maps view actually reads when tracksViewChanges=false)
-  // gets a real number. Animated.View+transform alone does NOT rotate the
-  // rendered Android marker bitmap once tracksViewChanges is off — that's why
-  // the arrow used to stay stuck pointing up.
+  // Android's Google Maps marker does not rotate when tracksViewChanges=false unless
+  // the native Marker.rotation prop receives a real number. Animated.View+transform
+  // alone is ignored once tracksViewChanges is off, so we mirror the animated value
+  // into React state and pass it via rotation={renderedHeadingDeg}.
   const [renderedHeadingDeg, setRenderedHeadingDeg] = useState<number>(0);
   const lastHeadingRef = useRef<number>(0);
-  // Rolling buffer of the last few raw GPS positions for bearing fallback.
-  // routePoints come from snapped path (batched, up to 10s stale) — raw positions are fresher.
+  // Rolling buffer of raw GPS positions for bearing fallback. Fresher than
+  // routePoints which come from the snapped path (up to 10 s stale).
   const recentRawPositionsRef = useRef<{ latitude: number; longitude: number }[]>([]);
   const lastCameraUpdateRef = useRef<number>(0);
   const lastCameraSpeedRef = useRef<number>(0);
   const isManuallyPanningRef = useRef<boolean>(false);
-  // Timestamp of the last user map gesture. Used to keep auto-follow suppressed for a few
-  // seconds AFTER the gesture ends — otherwise the user pinches to zoom out, lifts their
-  // finger, and the 2s camera-follow immediately animates back to nav zoom (looks like the
-  // map "fights" them). onTouchStart flips the ref synchronously so the next GPS tick
-  // can't interrupt an in-progress gesture.
+  // Records the timestamp of the last user map gesture. Suppresses auto-follow
+  // for 3 s after any touch so the camera doesn't fight an in-progress pinch/pan.
+  // onTouchStart flips the ref synchronously — onRegionChangeComplete arrives too
+  // late to block the next GPS-triggered animateCamera.
   const lastUserGestureAtRef = useRef<number>(0);
   const lastMilestoneRef = useRef(0);
   const startIconAnimation = useRef(new Animated.Value(0)).current;
 
   const { user } = useAuth();
 
-  // Resolve Google Maps API key (single source of truth)
   const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
 
   useEffect(() => {
@@ -147,8 +161,8 @@ export default function JourneyScreen(): React.JSX.Element {
     };
   }, [startIconAnimation]);
 
-  // Keep the screen awake while a journey is being tracked or paused.
-  // Release it as soon as tracking ends so the device can sleep normally.
+  // Keep the screen awake while a journey is active or paused; release on end
+  // so the device can sleep normally between rides.
   useEffect(() => {
     const shouldKeepAwake = isTracking || currentJourney?.status === 'paused';
     const tag = 'wayfarian-journey';
@@ -161,29 +175,30 @@ export default function JourneyScreen(): React.JSX.Element {
     return undefined;
   }, [isTracking, currentJourney?.status]);
 
-  // Reset raw position buffer on new journey so stale positions don't produce wrong bearing.
+  // Clear stale raw positions when a new journey starts to prevent wrong bearing.
   useEffect(() => {
     if (isTracking) {
       recentRawPositionsRef.current = [];
     }
   }, [isTracking]);
 
-  // Handle Marker Animation & Smoothing
+  // ─── Marker animation & heading ──────────────────────────────────────────────
+
   useEffect(() => {
     if (!currentLocation) return;
 
     const targetLat = snappedLocation?.latitude ?? currentLocation.latitude;
     const targetLng = snappedLocation?.longitude ?? currentLocation.longitude;
 
-    // Maintain a rolling 5-point buffer of raw GPS positions for bearing fallback.
-    // These are much fresher than routePoints (which come from snapped path, up to 10s stale).
+    // Maintain a rolling 5-point raw-GPS buffer for bearing fallback. These
+    // positions are fresher than routePoints (snapped, up to 10 s stale).
     const rawPos = { latitude: currentLocation.latitude, longitude: currentLocation.longitude };
     recentRawPositionsRef.current.push(rawPos);
     if (recentRawPositionsRef.current.length > 5) recentRawPositionsRef.current.shift();
 
     // useSmartTracking already gates heading updates by rawSpeedMps > 0.8.
-    // Don't re-check smoothed display speed here — it decays to 0 within 2-3 frames
-    // of stopping, which would suppress a valid heading and fall back to stale positions.
+    // Re-checking smoothed display speed here would suppress a valid heading
+    // because display speed decays to 0 within 2–3 frames of stopping.
     const gpsHeading = currentLocation.heading;
     const gpsHasValidHeading =
       typeof gpsHeading === 'number' && gpsHeading >= 0;
@@ -192,7 +207,6 @@ export default function JourneyScreen(): React.JSX.Element {
     if (gpsHasValidHeading) {
       targetHeading = gpsHeading as number;
     } else if (recentRawPositionsRef.current.length >= 2) {
-      // Bearing fallback from recent raw GPS positions (fresher than snapped routePoints).
       const recent = recentRawPositionsRef.current;
       const prev = recent[recent.length - 2];
       const curr = recent[recent.length - 1];
@@ -209,7 +223,7 @@ export default function JourneyScreen(): React.JSX.Element {
       }
     }
 
-    // Shortest-angle interpolation: avoid 359°→1° going the long way.
+    // Shortest-angle interpolation: prevents 359°→1° animating the long way around.
     const prevHeading = lastHeadingRef.current;
     let delta = targetHeading - prevHeading;
     if (delta > 180) delta -= 360;
@@ -218,10 +232,8 @@ export default function JourneyScreen(): React.JSX.Element {
     const normalizedTarget = ((targetHeading % 360) + 360) % 360;
     lastHeadingRef.current = normalizedTarget;
 
-    // Smoothly animate the marker to the new position.
-    // 400ms duration matches the 500ms GPS interval (2Hz) so each animation
-    // completes before the next sample arrives — eliminates the "stepping"
-    // feel from animations stacking on top of each other.
+    // 400 ms duration matches the 500 ms GPS interval (2 Hz) so each animation
+    // completes before the next sample arrives — eliminates the "stepping" feel.
     markerPosition.timing({
       latitude: targetLat,
       longitude: targetLng,
@@ -237,27 +249,26 @@ export default function JourneyScreen(): React.JSX.Element {
       useNativeDriver: Platform.OS !== 'web',
     }).start();
 
-    // Only push to React state when the change exceeds 1° — avoids re-rendering
-    // the marker every GPS tick when the user is heading in a straight line.
+    // Only push to React state when change exceeds 1° — avoids re-rendering the
+    // marker on every GPS tick during straight-line riding.
     setRenderedHeadingDeg(prev => {
       const diff = Math.abs(((normalizedTarget - prev + 540) % 360) - 180);
       return diff > 1 ? normalizedTarget : prev;
     });
   }, [currentLocation, snappedLocation, markerPosition, markerRotation]);
 
-  // Handle scheduled journey start via activeJourneyId param
-  // This is triggered when user starts a scheduled journey from future-rides screen
-  // The journey has already been started (status changed to ACTIVE) via /journey/{id}/start
-  // We just need to set up client-side tracking for it
+  // ─── Scheduled journey resume ─────────────────────────────────────────────
+
+  // Handles the case where the user taps a scheduled journey from future-rides
+  // screen. The backend has already set the journey status to ACTIVE via
+  // /journey/{id}/start — we just need to wire up client-side tracking.
   const scheduledJourneyInitRef = useRef<boolean>(false);
   useEffect(() => {
     const initScheduledJourney = async () => {
-      // Only process if we have an activeJourneyId and haven't already initialized
       if (!activeJourneyId || typeof activeJourneyId !== 'string' || scheduledJourneyInitRef.current) {
         return;
       }
 
-      // Skip if we already have an active journey that matches
       if (currentJourney?.id === activeJourneyId && isTracking) {
         console.log('[Journey] Already tracking this journey:', activeJourneyId);
         return;
@@ -268,8 +279,6 @@ export default function JourneyScreen(): React.JSX.Element {
       setIsStartBusy(true);
 
       try {
-        // Use resumeActiveJourney to set up tracking for the existing ACTIVE journey
-        // This properly fetches the journey and starts client-side tracking
         const success = await resumeActiveJourney(activeJourneyId);
 
         if (!success) {
@@ -289,17 +298,17 @@ export default function JourneyScreen(): React.JSX.Element {
     initScheduledJourney();
   }, [activeJourneyId, currentJourney?.id, isTracking, resumeActiveJourney, t]);
 
-  // Handle Immersive Camera Following & Road Snapping.
-  // Throttled to every 2 seconds to stop fighting user gestures and reduce camera churn.
+  // ─── Immersive camera follow ──────────────────────────────────────────────
+
+  // 1 s throttle keeps the camera in sync with 2 Hz GPS without animation pile-up.
+  // Previously 2 s caused visible drift to screen edge at highway speed.
+  // 3 s cooldown after any user gesture prevents a lingering follow animation
+  // from yanking zoom/heading back while the user is still interacting.
   useEffect(() => {
     if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
 
     const now = Date.now();
-    // 1s throttle keeps camera in sync with 2Hz GPS without animation pile-up.
-    // Previously 2s caused visible drift to screen edge at highway speed.
     if (now - lastCameraUpdateRef.current < 1000) return;
-    // Cooldown after any user touch — prevents a lingering follow animation from
-    // yanking zoom/heading back while the user is still interacting (pinch, pan, rotate).
     if (now - lastUserGestureAtRef.current < 3000) return;
 
     const updateCamera = async () => {
@@ -314,7 +323,7 @@ export default function JourneyScreen(): React.JSX.Element {
         });
         if (snapped) setSnappedLocation(snapped);
       } catch (e) {
-        // Silent
+        // Silent — snapping is best-effort; raw coordinates are the fallback.
       }
 
       const rawSpeedKmh = (currentLocation.speed || 0) * 3.6;
@@ -331,8 +340,6 @@ export default function JourneyScreen(): React.JSX.Element {
         targetPitch = 50;
       }
 
-      // Use last computed heading (GPS when valid, bearing fallback otherwise).
-      // Falls back to 0 only on very first frame before any heading is computed.
       const cameraHeading = lastHeadingRef.current;
 
       mapRef.current.animateCamera({
@@ -350,20 +357,19 @@ export default function JourneyScreen(): React.JSX.Element {
     updateCamera();
   }, [currentLocation, isTracking, isNavigationMode]);
 
-  // Initialize map with current location if no region set
+  // ─── Initial map position ─────────────────────────────────────────────────
+
   useEffect(() => {
     if (!region && !currentJourney?.startLocation) {
       (async () => {
         try {
           let { status } = await Location.getForegroundPermissionsAsync();
-          // Do NOT automatically request foreground permissions here 
-          // (Google Play prominent disclosure policy compliance).
-          // Permissions will be requested when user taps "Start Ride".
+          // Do NOT automatically request foreground permissions here — Google Play's
+          // prominent disclosure policy requires the disclosure modal to appear first.
           if (status === 'granted') {
-            // Try cache first for speed
             const lastKnown = await Location.getLastKnownPositionAsync();
             if (lastKnown) {
-               const cachedRegion = {
+              const cachedRegion = {
                 latitude: lastKnown.coords.latitude,
                 longitude: lastKnown.coords.longitude,
                 latitudeDelta: 0.01,
@@ -382,21 +388,21 @@ export default function JourneyScreen(): React.JSX.Element {
     }
   }, [currentJourney?.startLocation]);
 
+  // ─── Stats formatting ─────────────────────────────────────────────────────
 
   const speedMeasurement = useMemo(() => {
-    // currentLocation.speed is raw m/s from native GPS
     const rawSpeed = currentLocation?.speed || 0;
-    // Standard: stats.currentSpeed is now reliable km/h from our consolidated hooks
+    // stats.currentSpeed is consolidated km/h from useSmartTracking hooks.
     const speedKmh = stats?.currentSpeed || rawSpeed * 3.6;
     return splitMeasurement(convertSpeed(speedKmh));
   }, [currentLocation?.speed, stats?.currentSpeed, convertSpeed]);
 
   const distanceMeasurement = useMemo(() => {
-    // stats.totalDistance is in km
     return splitMeasurement(convertDistance(stats?.totalDistance || 0));
   }, [stats?.totalDistance, convertDistance]);
 
-  // Distance milestone celebrations
+  // ─── Distance milestone celebrations ─────────────────────────────────────
+
   useEffect(() => {
     if (!isTracking || !stats?.totalDistance) return;
     const distKm = stats.totalDistance;
@@ -421,8 +427,8 @@ export default function JourneyScreen(): React.JSX.Element {
     outputRange: [-6, 6],
   });
 
+  // ─── Map region sync ──────────────────────────────────────────────────────
 
-  // Update map region when journey starts or route changes
   useEffect(() => {
     if (currentJourney?.startLocation && mapRef.current) {
       const newRegion = {
@@ -436,13 +442,10 @@ export default function JourneyScreen(): React.JSX.Element {
     }
   }, [currentJourney?.startLocation]);
 
-  // Fit breadcrumb only when the user is NOT actively following / panning the map.
-  // Previously this fired on every routePoints update, yanking the camera back
-  // to fit the entire breadcrumb each tick. That's the "map fights the user"
-  // complaint: pinch to zoom out → next GPS tick → camera snaps to fit-all.
-  // Now we only fit when nav-mode is off (i.e. user manually exited follow)
-  // AND there has been no touch for a few seconds, so the breadcrumb is a
-  // passive snapshot of the route, not an attacker on the camera.
+  // Breadcrumb fit — only active when the user has manually exited nav-mode.
+  // Previously fired on every routePoints update, yanking the camera back to
+  // fit the full breadcrumb each GPS tick (the "map fights the user" problem).
+  // Now throttled to once per 8 s and suppressed for 5 s after any touch.
   const lastFitRef = useRef<number>(0);
   useEffect(() => {
     if (currentJourney?.endLocation) return; // route mode handles its own framing
@@ -450,8 +453,8 @@ export default function JourneyScreen(): React.JSX.Element {
     if (routePoints.length < 2 || !mapRef.current) return;
 
     const now = Date.now();
-    if (now - lastUserGestureAtRef.current < 5000) return; // user just touched, leave them alone
-    if (now - lastFitRef.current < 8000) return; // throttle to once per 8s
+    if (now - lastUserGestureAtRef.current < 5000) return;
+    if (now - lastFitRef.current < 8000) return;
     lastFitRef.current = now;
 
     mapRef.current.fitToCoordinates(routePoints, {
@@ -460,8 +463,10 @@ export default function JourneyScreen(): React.JSX.Element {
     });
   }, [routePoints, currentJourney?.endLocation, isNavigationMode]);
 
+  // ─── Directions polyline ──────────────────────────────────────────────────
+
   const haversine = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
-    const R = 6371000; // meters
+    const R = 6371000; // metres
     const toRad = (d: number) => (d * Math.PI) / 180;
     const dLat = toRad(b.latitude - a.latitude);
     const dLon = toRad(b.longitude - a.longitude);
@@ -473,7 +478,9 @@ export default function JourneyScreen(): React.JSX.Element {
     return 2 * R * Math.asin(Math.sqrt(h));
   };
 
-  // Live recalc of directions polyline for iOS or fallback rendering
+  // Recalculate directions when the rider moves > 30 m from the last origin.
+  // On iOS (or without an API key) we fetch manually because MapViewDirections
+  // has layout issues on iOS; on Android we let MapViewDirections handle updates.
   useEffect(() => {
     const dest = currentJourney?.endLocation;
     if (!dest) return;
@@ -483,14 +490,14 @@ export default function JourneyScreen(): React.JSX.Element {
     const currentLL = { latitude: current.latitude, longitude: current.longitude };
     const lastOrigin = lastOriginRef.current;
 
-    const shouldRecalc = !lastOrigin || haversine(lastOrigin, currentLL) > 30; // recalc if moved > 30m
+    const shouldRecalc = !lastOrigin || haversine(lastOrigin, currentLL) > 30;
     if (!shouldRecalc) return;
 
-    // Only fetch manually on iOS or when we want manual control; Android prefers MapViewDirections
+    // iOS prefers manual fetch; Android uses MapViewDirections when key is available.
     const doManual = Platform.OS === 'ios' || !GOOGLE_MAPS_API_KEY;
     if (!doManual) {
       lastOriginRef.current = currentLL;
-      return; // MapViewDirections will handle updates
+      return;
     }
 
     (async () => {
@@ -510,6 +517,8 @@ export default function JourneyScreen(): React.JSX.Element {
       }
     })();
   }, [routePoints, currentJourney?.endLocation, GOOGLE_MAPS_API_KEY]);
+
+  // ─── Action handlers ──────────────────────────────────────────────────────
 
   const handleStartJourney = async () => {
     if (isStartBusy) {
@@ -534,7 +543,6 @@ export default function JourneyScreen(): React.JSX.Element {
     setIsStartBusy(true);
     try {
       const success = await startJourney({
-        // Don't override title here — JourneyEndModal will set customTitle.
         vehicle: settingsVehicle,
       });
       if (!success) {
@@ -556,14 +564,14 @@ export default function JourneyScreen(): React.JSX.Element {
 
   const handleTakePhoto = async () => {
     try {
-      // Request permissions first
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(t('alerts.photoPermission'), t('alerts.cameraNeeded'));
         return;
       }
 
-      // Small delay to ensure ActivityResultLauncher is registered (Android fix)
+      // Small delay ensures ActivityResultLauncher is registered on Android
+      // before launchCameraAsync — prevents the "unregistered launcher" crash.
       await new Promise(resolve => setTimeout(resolve, 100));
 
       const result = await ImagePicker.launchCameraAsync({
@@ -577,14 +585,14 @@ export default function JourneyScreen(): React.JSX.Element {
       if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0].uri) {
         await addPhoto(result.assets[0].uri);
       } else if (result.canceled) {
-        // User canceled, no error needed
         return;
       } else {
         throw new Error(t('alerts.noPhotoCaptured'));
       }
     } catch (err: any) {
       console.error('Error taking photo:', err);
-      // Handle ActivityResultLauncher error specifically
+      // ActivityResultLauncher errors surface when the camera intent is
+      // launched before the launcher is fully registered on some Android OEMs.
       if (err?.message?.includes('ActivityResultLauncher') || err?.message?.includes('unregistered')) {
         Alert.alert(t('alerts.cameraError'), t('alerts.takePhotoAgain'));
       } else {
@@ -632,6 +640,8 @@ export default function JourneyScreen(): React.JSX.Element {
     }
     Alert.alert(t('alerts.stopJourneyConfirm'), t('alerts.noActiveStop'));
   };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <View style={styles.container}>
@@ -708,22 +718,21 @@ export default function JourneyScreen(): React.JSX.Element {
             provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
             style={styles.backgroundMap}
             region={region || undefined}
-            showsUserLocation={!snappedLocation} // Only show native blue dot if not snapped
+            showsUserLocation={!snappedLocation}
             showsMyLocationButton={false}
             showsTraffic={false}
             showsBuildings
             showsIndoors={false}
             mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
             onTouchStart={() => {
-              // Flip synchronously so the next camera-follow tick can't interrupt the
-              // in-progress gesture. onRegionChangeComplete only fires AFTER release —
-              // by then animateCamera may have already yanked zoom back mid-pinch.
+              // Flip synchronously — onRegionChangeComplete fires after release,
+              // by which time animateCamera may have already yanked zoom mid-pinch.
               isManuallyPanningRef.current = true;
               lastUserGestureAtRef.current = Date.now();
               setIsNavigationMode(false);
             }}
             onPanDrag={() => {
-              // Android pan coverage — keeps the cooldown sliding during active drag.
+              // Keeps the cooldown sliding during an active drag on Android.
               lastUserGestureAtRef.current = Date.now();
             }}
             onRegionChangeComplete={(r, { isGesture }) => {
@@ -731,7 +740,7 @@ export default function JourneyScreen(): React.JSX.Element {
                 isManuallyPanningRef.current = true;
                 lastUserGestureAtRef.current = Date.now();
                 setIsNavigationMode(false);
-                setRegion(r); // Trigger re-render only on manual interaction
+                setRegion(r);
               }
               regionRef.current = r;
             }}
@@ -741,10 +750,9 @@ export default function JourneyScreen(): React.JSX.Element {
                 coordinate={markerPosition as any}
                 anchor={{ x: 0.5, y: 0.5 }}
                 flat
-                // Use the native Marker rotation prop — on Android this is the
-                // ONLY way to actually rotate the rendered marker bitmap once
-                // tracksViewChanges is off. The Animated.View wrapper kept here
-                // for iOS where it animates smoothly between snapshots.
+                // Android requires the native Marker.rotation prop to rotate the
+                // rendered bitmap when tracksViewChanges=false. Animated.View
+                // transform is used on iOS where it animates smoothly between snapshots.
                 rotation={renderedHeadingDeg}
                 tracksViewChanges={Platform.OS === 'android' ? false : undefined}
               >
@@ -841,18 +849,15 @@ export default function JourneyScreen(): React.JSX.Element {
             )}
           </MapView>
 
-          {/* Speed Limit Sign */}
           {currentLocation && (
             <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} />
           )}
 
-          {/* Ride Celebration Toast */}
           <RideCelebration
             event={celebrationEvent}
             onDismiss={() => setCelebrationEvent(null)}
           />
 
-          {/* Header - with SafeArea top padding */}
           <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
             <View style={styles.headerLeft}>
               <TouchableOpacity onPress={handleMinimize}>
@@ -875,24 +880,21 @@ export default function JourneyScreen(): React.JSX.Element {
             <View style={styles.headerRight} />
           </View>
 
-          {/* Floating Camera Button */}
-          <TouchableOpacity 
-            onPress={handleTakePhoto} 
+          <TouchableOpacity
+            onPress={handleTakePhoto}
             style={[styles.floatingCameraButton, { bottom: insets.bottom + 230 }]}
           >
             <MaterialIcons name="camera-alt" size={24} color="#fff" />
           </TouchableOpacity>
 
-          {/* Recenter Button (Navigation Mode) */}
           {!isNavigationMode && isTracking && (
             <TouchableOpacity
               onPress={() => {
                 isManuallyPanningRef.current = false;
-                // Reset gesture cooldown so the follow effect isn't held off after the
-                // user explicitly asks to re-enter navigation mode.
+                // Reset gesture cooldown so the follow effect isn't suppressed
+                // after the user explicitly requests re-entry into nav mode.
                 lastUserGestureAtRef.current = 0;
                 setIsNavigationMode(true);
-                // Instant sync animation when recentering
                 if (mapRef.current && currentLocation) {
                   const speedKmh = (currentLocation.speed || 0) * 3.6;
                   let targetZoom = 18;
@@ -916,7 +918,7 @@ export default function JourneyScreen(): React.JSX.Element {
                     zoom: targetZoom,
                   }, { duration: 600 });
                 }
-                // Prime the throttle so the periodic effect doesn't snap again immediately
+                // Prime the throttle so the periodic effect doesn't snap again immediately.
                 lastCameraUpdateRef.current = Date.now();
               }}
               style={[styles.recenterButton, { bottom: insets.bottom + 295 }]}
@@ -926,9 +928,7 @@ export default function JourneyScreen(): React.JSX.Element {
             </TouchableOpacity>
           )}
 
-          {/* Bottom Panel */}
           <View style={styles.bottomPanel}>
-            {/* Friends Row */}
             <View style={styles.friendsRow}>
               <View style={styles.friendsContainer}>
                 {user?.photoURL ? (
@@ -940,7 +940,6 @@ export default function JourneyScreen(): React.JSX.Element {
               </View>
             </View>
 
-            {/* Stats Row */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
                 <Text style={styles.statValue}>
@@ -970,7 +969,6 @@ export default function JourneyScreen(): React.JSX.Element {
               </View>
             </View>
 
-            {/* Action Buttons */}
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity
                 style={[styles.startButton, isStartBusy && styles.startButtonDisabled]}
@@ -1003,17 +1001,16 @@ export default function JourneyScreen(): React.JSX.Element {
           </View>
 
           {!isMinimized && (isTracking || currentJourney?.status === 'paused') && (
-             <TrackingOverlay 
-                onStop={handleStopJourney}
-                onPause={handlePauseJourney}
-                onResume={async () => {
-                   await handleResumeIfPaused();
-                }}
-                isPaused={currentJourney?.status === 'paused'}
-             />
+            <TrackingOverlay
+              onStop={handleStopJourney}
+              onPause={handlePauseJourney}
+              onResume={async () => {
+                await handleResumeIfPaused();
+              }}
+              isPaused={currentJourney?.status === 'paused'}
+            />
           )}
 
-          {/* Start Journey Button (Only if NOT tracking and NOT paused) */}
           {!isTracking && currentJourney?.status !== 'paused' && (
             <View style={styles.startJourneyContainer}>
               <TouchableOpacity
@@ -1071,7 +1068,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 12,
-    // paddingTop is now set dynamically with SafeArea insets
     paddingBottom: 8,
   },
   headerLeft: {
@@ -1150,6 +1146,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    // Android ignores backdrop-filter so a solid colour is needed for readability.
     backgroundColor: Platform.OS === 'android' ? '#FFFFFF' : 'rgba(255, 251, 251, 0.9)',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,

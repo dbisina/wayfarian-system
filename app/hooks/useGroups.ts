@@ -1,10 +1,8 @@
-// app/hooks/useGroups.ts
-// Custom hook for fetching groups data from backend
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { groupAPI } from '../services/api';
 
+/** Full group record as returned by the backend. */
 interface Group {
   id: string;
   name: string;
@@ -32,12 +30,25 @@ interface Group {
   }[];
 }
 
+/**
+ * Provides CRUD operations for the authenticated user's groups.
+ *
+ * All mutating operations (`createGroup`, `joinGroup`, `leaveGroup`) automatically
+ * refresh the `userGroups` list on success so callers never need to trigger a
+ * manual reload.
+ *
+ * @returns `{ userGroups, loading, error, fetchUserGroups, createGroup, joinGroup, leaveGroup, getGroupDetails, refreshGroups }`
+ */
 export const useGroups = () => {
   const { isAuthenticated } = useAuth();
   const [userGroups, setUserGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Fetch the authenticated user's groups from the backend.
+   * @param status - Filter by `'active'` (default) or `'all'`.
+   */
   const fetchUserGroups = useCallback(async (status: 'active' | 'all' = 'active') => {
     if (!isAuthenticated) return;
 
@@ -56,6 +67,10 @@ export const useGroups = () => {
     }
   }, [isAuthenticated]);
 
+  /**
+   * Create a new group and refresh the groups list.
+   * @returns The created group, or null on failure.
+   */
   const createGroup = async (groupData: {
     name: string;
     description?: string;
@@ -69,7 +84,6 @@ export const useGroups = () => {
       setError(null);
       const response = await groupAPI.createGroup(groupData);
       if (response?.group) {
-        // Refresh groups list
         await fetchUserGroups();
         return response.group;
       }
@@ -81,6 +95,11 @@ export const useGroups = () => {
     }
   };
 
+  /**
+   * Join a group by its invite code and refresh the groups list.
+   * @param code - The group's invite code.
+   * @returns The joined group, or null on failure.
+   */
   const joinGroup = async (code: string) => {
     if (!isAuthenticated) return null;
 
@@ -88,7 +107,6 @@ export const useGroups = () => {
       setError(null);
       const response = await groupAPI.joinGroup(code);
       if (response?.group) {
-        // Refresh groups list
         await fetchUserGroups();
         return response.group;
       }
@@ -100,6 +118,11 @@ export const useGroups = () => {
     }
   };
 
+  /**
+   * Leave a group and refresh the groups list.
+   * @param groupId - The ID of the group to leave.
+   * @returns True on success, false on failure.
+   */
   const leaveGroup = async (groupId: string) => {
     if (!isAuthenticated) return false;
 
@@ -107,7 +130,6 @@ export const useGroups = () => {
       setError(null);
       const response = await groupAPI.leaveGroup(groupId);
       if (response?.success) {
-        // Refresh groups list
         await fetchUserGroups();
         return true;
       }
@@ -119,6 +141,11 @@ export const useGroups = () => {
     }
   };
 
+  /**
+   * Fetch a single group's full details.
+   * @param groupId - The group's ID.
+   * @returns The group record, or null on failure.
+   */
   const getGroupDetails = async (groupId: string) => {
     if (!isAuthenticated) return null;
 
@@ -133,6 +160,7 @@ export const useGroups = () => {
     }
   };
 
+  /** Alias for `fetchUserGroups()` exposed for explicit pull-to-refresh gestures. */
   const refreshGroups = async () => {
     await fetchUserGroups();
   };

@@ -1,3 +1,13 @@
+/**
+ * Pre-permission disclosure modal required by Google Play's background location
+ * policy. Must be shown and acknowledged BEFORE calling requestBackgroundPermissions
+ * so the app is not rejected for requesting permissions without prominent disclosure.
+ *
+ * @prop visible  - Whether the modal is presented.
+ * @prop onAccept - Called when the user accepts and triggers the permission flow.
+ * @prop onDecline - Called when the user declines; caller should not request permissions.
+ */
+
 import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -12,10 +22,10 @@ interface BackgroundLocationDisclosureModalProps {
   onDecline: () => void;
 }
 
-const BackgroundLocationDisclosureModal: React.FC<BackgroundLocationDisclosureModalProps> = ({ 
-  visible, 
-  onAccept, 
-  onDecline 
+const BackgroundLocationDisclosureModal: React.FC<BackgroundLocationDisclosureModalProps> = ({
+  visible,
+  onAccept,
+  onDecline,
 }) => {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -36,15 +46,15 @@ const BackgroundLocationDisclosureModal: React.FC<BackgroundLocationDisclosureMo
           </View>
 
           <Text style={styles.title}>{t('alerts.location.backgroundTitle')}</Text>
-          
-          <ScrollView 
+
+          <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
             <Text style={styles.message}>
               {t('alerts.location.backgroundMessage')}
             </Text>
-            
+
             <Text style={styles.purpose}>
               {t('alerts.location.backgroundPurpose')}
             </Text>
@@ -66,16 +76,16 @@ const BackgroundLocationDisclosureModal: React.FC<BackgroundLocationDisclosureMo
           </ScrollView>
 
           <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={styles.acceptButton} 
+            <TouchableOpacity
+              style={styles.acceptButton}
               onPress={onAccept}
               activeOpacity={0.8}
             >
               <Text style={styles.acceptButtonText}>{t('alerts.location.accept')}</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.declineButton} 
+
+            <TouchableOpacity
+              style={styles.declineButton}
               onPress={onDecline}
               activeOpacity={0.7}
             >
@@ -126,6 +136,7 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     textAlign: 'center',
     marginBottom: 16,
+    // iOS uses the system font; Android falls back to Roboto.
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   scrollContent: {

@@ -1,3 +1,9 @@
+/**
+ * Horizontally scrollable row of AchievementCards.
+ * Currently renders a static placeholder set; replace with server-fetched data
+ * once the achievements API is wired up.
+ */
+
 import React from 'react';
 import {
   View,

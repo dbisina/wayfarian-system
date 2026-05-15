@@ -3,8 +3,13 @@ import { DeviceEventEmitter } from 'react-native';
 
 const ONBOARDING_KEY = 'hasCompletedOnboarding';
 
+/** Event name emitted when the onboarding completion flag changes. */
 export const ONBOARDING_COMPLETE_EVENT = 'wayfarian.onboardingComplete';
 
+/**
+ * Persists the onboarding completion flag and notifies all listeners.
+ * Emits `ONBOARDING_COMPLETE_EVENT` with `true` on success.
+ */
 export const markOnboardingComplete = async () => {
   try {
     await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
@@ -14,6 +19,11 @@ export const markOnboardingComplete = async () => {
   }
 };
 
+/**
+ * Clears the onboarding completion flag and notifies all listeners.
+ * Emits `ONBOARDING_COMPLETE_EVENT` with `false` on success.
+ * Intended for dev/testing use to reset the onboarding flow.
+ */
 export const clearOnboardingComplete = async () => {
   try {
     await AsyncStorage.removeItem(ONBOARDING_KEY);

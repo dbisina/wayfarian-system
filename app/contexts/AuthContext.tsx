@@ -1,12 +1,9 @@
-// app/context/AuthContext.tsx
-// Global authentication state management
-
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { Buffer } from 'buffer';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import Constants from 'expo-constants';
 import { makeRedirectUri, fetchDiscoveryAsync, AuthRequest, ResponseType, type AuthSessionResult } from 'expo-auth-session';
-import { 
+import {
   initializeAuth,
   getAuth,
   signInWithEmailAndPassword,
@@ -37,15 +34,12 @@ if (typeof globalThis.Buffer === 'undefined') {
   (globalThis as any).Buffer = Buffer;
 }
 
-// Workaround for RN persistence: access symbol from namespace and cast to any to avoid TS type gaps
+// RN persistence requires accessing the symbol from the namespace; the type gap requires a cast.
 const getReactNativePersistence: ((storage: any) => any) | undefined = (FirebaseAuthNS as any).getReactNativePersistence;
 
-// Complete the auth session
 WebBrowser.maybeCompleteAuthSession();
 
-
-// Firebase configuration - all values must be provided via environment variables
-// SECURITY: Never hardcode API keys or sensitive credentials
+// All values come from environment variables — never hardcode credentials here.
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -55,7 +49,6 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Validate required Firebase configuration
 const requiredFirebaseKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
 const missingKeys = requiredFirebaseKeys.filter(key => !firebaseConfig[key as keyof typeof firebaseConfig]);
 
@@ -67,11 +60,11 @@ if (missingKeys.length > 0) {
   );
 }
 
-// Initialize Firebase app once (avoid HMR duplicate init)
+// Guard against duplicate initialisation during HMR.
 const app = (getApps().length ? getApp() : initializeApp(firebaseConfig));
 
-// Initialize Firebase Auth explicitly with React Native persistence when available.
-// We attempt initializeAuth first so the persistence layer is applied on the initial run.
+// Attempt initializeAuth with RN persistence on first load; fall back to getAuth on subsequent
+// HMR cycles where the auth instance already exists.
 let auth: FirebaseAuthNS.Auth;
 try {
   if (Platform.OS === 'web') {
@@ -83,15 +76,14 @@ try {
     auth = initializeAuth(app, persistenceOptions ?? {});
   }
 } catch {
-  // If an auth instance already exists (e.g., during Fast Refresh), re-use it.
   auth = getAuth(app);
 }
 
-// Configure Google Sign-In
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
+/** Wayfarian backend user profile. */
 interface User {
   id: string;
   firebaseUid: string;
@@ -109,14 +101,17 @@ interface User {
   updatedAt: string;
 }
 
+/** Shape of the auth context value exposed to consumers. */
 interface AuthContextType {
   user: User | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
+  /** True while the initial Firebase session restore and AsyncStorage reads are in-flight. */
   isInitializing: boolean;
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
   hasCompletedProfileSetup: boolean;
+  /** True only for the session immediately after a new account is created. */
   isNewSignUp: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
@@ -124,6 +119,7 @@ interface AuthContextType {
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  /** Re-syncs user data from the backend, or merges a partial update locally to avoid a round-trip. */
   refreshUser: (updatedUser?: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   completeProfileSetup: () => Promise<void>;
@@ -132,6 +128,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Returns the auth context.
+ * Must be called inside an `AuthProvider`.
+ */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -140,6 +140,10 @@ export const useAuth = () => {
   return context;
 };
 
+/**
+ * Thin bridge that keeps Sentry's user context in sync with auth state.
+ * Deduplicates updates by tracking the last-set user ID via a ref.
+ */
 const useSentryContextBridge = () => {
   const lastUserIdRef = useRef<string | null>(null);
 
@@ -176,13 +180,14 @@ interface AuthProviderProps {
 const ONBOARDING_KEY = '@wayfarian:onboarding_completed';
 const PROFILE_SETUP_KEY = '@wayfarian:profile_setup_completed';
 const USER_DATA_KEY = '@wayfarian:user_data';
-// MMKV keys for synchronous cold-start reads (eliminates onboarding flash)
+// MMKV keys allow synchronous reads on cold start, eliminating the onboarding-flash problem.
 const MMKV_AUTH_KEY = 'wayfarian:is_authenticated';
 const MMKV_ONBOARDING_KEY = 'wayfarian:onboarding_completed';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setRawUser] = useState<User | null>(null);
 
+  /** Wrapper that keeps AsyncStorage in sync whenever the in-memory user changes. */
   const setUser = useCallback(async (newUser: User | null) => {
     setRawUser(newUser);
     try {
@@ -195,13 +200,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('[AuthContext] Failed to persist user:', error);
     }
   }, []);
+
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-  // Initialize from MMKV (synchronous) so first render already has correct auth state
-  // This prevents the onboarding page from flashing on cold start for authenticated users
+  // Synchronous MMKV read on first render prevents the onboarding page from flashing
+  // for already-authenticated users before the async Firebase restore completes.
   const [isAuthenticated, setIsAuthenticated] = useState(() => getBoolSync(MMKV_AUTH_KEY, false));
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(() => getBoolSync(MMKV_ONBOARDING_KEY, false));
-  const [hasCompletedProfileSetup, setHasCompletedProfileSetup] = useState(true); // Default true - only false for new signups
+  // Default true — only new sign-ups need the profile-setup screen.
+  const [hasCompletedProfileSetup, setHasCompletedProfileSetup] = useState(true);
   const [isNewSignUp, setIsNewSignUp] = useState(false);
   const [onboardingStatusChecked, setOnboardingStatusChecked] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -209,15 +216,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const tokenRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const currentUserRef = useRef<User | null>(null);
-  // CRITICAL: Track whether the user was previously authenticated (from MMKV sync read)
-  // This prevents onAuthStateChanged's initial null callback from wiping isAuthenticated
-  // before the async cached-user restore from AsyncStorage completes.
+  // Synchronously seeded from MMKV so the onAuthStateChanged null callback can't wipe
+  // isAuthenticated before the async cached-user restore from AsyncStorage completes.
   const wasAuthenticatedRef = useRef<boolean>(getBoolSync(MMKV_AUTH_KEY, false));
-  // Track whether the first real Firebase auth state has been resolved
+  // Only skip the very first null callback from onAuthStateChanged, not real sign-outs.
   const firstAuthResolvedRef = useRef(false);
 
-  // Sync auth/onboarding state to MMKV for instant cold-start reads
-  // This eliminates the onboarding page flash for already-authenticated users
+  // Mirror auth/onboarding flags to MMKV so the next cold start reads them synchronously.
   useEffect(() => { setBoolSync(MMKV_AUTH_KEY, isAuthenticated); }, [isAuthenticated]);
   useEffect(() => { setBoolSync(MMKV_ONBOARDING_KEY, hasCompletedOnboarding); }, [hasCompletedOnboarding]);
 
@@ -228,6 +233,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
+  /**
+   * Fetches the current Firebase ID token, stores it, then schedules a proactive refresh
+   * 2 minutes before expiry so API calls never hit an expired token.
+   */
   const scheduleTokenRefresh = useCallback(async (fbUser: FirebaseUser) => {
     try {
       const token = await fbUser.getIdToken();
@@ -252,6 +261,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
+      // Refresh 2 minutes early; floor at 30 s to avoid tight loops on near-expired tokens.
       const refreshInMs = Math.max(expiresAtMs - Date.now() - 2 * 60 * 1000, 30_000);
 
       clearTokenRefreshTimer();
@@ -276,13 +286,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         webClientId: GOOGLE_WEB_CLIENT_ID,
         offlineAccess: true,
         ...(GOOGLE_ANDROID_CLIENT_ID ? { androidClientId: GOOGLE_ANDROID_CLIENT_ID } : {}),
-        // iosClientId is NOT set here - we rely on GoogleService-Info.plist for iOS configuration
-        // to avoid mismatch crashes.
+        // iosClientId intentionally omitted — GoogleService-Info.plist takes precedence to
+        // prevent client ID mismatch crashes on iOS.
       });
     }
   }, []);
 
-  // Warm up the browser for better UX on Android
+  // Warm up Chrome Custom Tabs on Android so the OAuth sheet opens instantly.
   useEffect(() => {
     if (Platform.OS === 'android') {
       WebBrowser.warmUpAsync().catch(() => {});
@@ -292,18 +302,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Sync backend user data
+  /**
+   * Exchanges a Firebase ID token for a Wayfarian backend session and hydrates the user state.
+   *
+   * Uses a serialisation ref (`syncInFlightRef`) to prevent concurrent calls from racing —
+   * the second caller awaits the first's promise instead of issuing a duplicate request.
+   * Sets `isAuthenticated` optimistically before the backend responds so navigation is instant.
+   */
   const syncUserData = useCallback(async (firebaseUser: FirebaseUser) => {
-    // FIX: Check and set synchronously to prevent race condition
-    // If another sync is in progress, wait for it
     if (syncInFlightRef.current) {
       console.log('[AuthContext] syncUserData: waiting for in-flight sync');
       await syncInFlightRef.current;
       return;
     }
 
-    // Create a deferred promise that we set synchronously BEFORE any async work
-    // This prevents the race condition where two calls both see null
+    // Create and register the promise synchronously before any await to close the race window.
     let resolveSync: () => void;
     const syncPromise = new Promise<void>((resolve) => {
       resolveSync = resolve;
@@ -318,7 +331,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         console.log('[AuthContext] normalizeUser: payload:', JSON.stringify(payload).substring(0, 200));
         const candidate = payload.user ?? payload.data?.user ?? payload.data ?? (payload.success ? payload.user ?? payload.data : payload);
-        
+
         if (candidate && typeof candidate === 'object') {
           if ('id' in candidate) {
                console.log('[AuthContext] normalizeUser: found valid user', candidate.id);
@@ -341,18 +354,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       };
 
-      // Get token and store it
       const idToken = await firebaseUser.getIdToken();
-      
-      // OPTIMIZATION: Store token in background (non-blocking)
-      // Thanks to in-memory caching in api.ts, the token is available immediately
-      // for subsequent requests even before Async/SecureStore finishes writing.
-      setAuthToken(idToken).catch((err) => 
+
+      // Store the token in the background — api.ts caches it in memory so subsequent
+      // requests can use it immediately before the async write finishes.
+      setAuthToken(idToken).catch((err) =>
         console.warn('[AuthContext] Background token storage failed:', err)
       );
 
-      // OPTIMIZATION: Set authenticated optimistically before backend sync
-      // This makes the app feel faster as navigation happens immediately
+      // Optimistic auth so the app navigates to the home screen while the backend syncs.
       setIsAuthenticated(true);
       console.log('[AuthContext] Optimistic auth set - syncing with backend...');
 
@@ -368,31 +378,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch (error: any) {
         const message = String(error?.message || '');
         const status = error?.status;
-        const isRecoverable = 
-          status === 429 || 
+        const isRecoverable =
+          status === 429 ||
           /Too many requests|Network request failed|Failed to fetch|timed out/i.test(message);
-        
+
         console.error('[AuthContext] syncUserData error:', message, 'Status:', status);
 
         if (isRecoverable) {
-          // Try direct fetch as fallback
           backendUser = await attemptFetchCurrentUser();
-          
-          // CRITICAL: Use cached user if available, even on cold start
+
           if (!backendUser && currentUserRef.current) {
             backendUser = currentUserRef.current;
           }
-          
-          // If we still have no backend user but Firebase session is valid,
-          // keep authenticated state (already set optimistically) and schedule refresh
+
           if (!backendUser) {
             console.warn('[AuthContext] Backend unreachable, preserving Firebase session');
-            // Schedule token refresh to attempt backend sync later
             scheduleTokenRefresh(firebaseUser).catch(() => {});
             return;
           }
         } else {
-          // Non-recoverable error - revert optimistic auth
           setIsAuthenticated(false);
           throw error;
         }
@@ -403,13 +407,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (!backendUser) {
-        // Revert optimistic auth on failure
         setIsAuthenticated(false);
         throw new Error('Unable to load Wayfarian account details.');
       }
 
       let srvUser = backendUser;
 
+      // Auto-correct the generic "Wayfarian User" placeholder that the backend assigns to
+      // OAuth sign-ins when Firebase hasn't yet propagated the display name.
       if ((srvUser.displayName === 'Wayfarian User' || !srvUser.displayName) && (firebaseUser.displayName || firebaseUser.email)) {
         try {
           const inferred = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : undefined);
@@ -429,11 +434,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       console.log('[AuthContext] Setting user state:', srvUser.id);
       setUser(srvUser);
-      // Auth already set optimistically, just confirm
       console.log('[AuthContext] Backend sync complete');
       setUserContext(srvUser);
-      
-      // Schedule token refresh in background (non-blocking)
+
       scheduleTokenRefresh(firebaseUser).catch((err) => {
         console.warn('[AuthContext] Token refresh scheduling failed:', err);
       });
@@ -445,11 +448,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const existingUser = currentUserRef.current;
       const message = String(error?.message || '');
       const status = error?.status;
-      const isRecoverable = 
-        status === 429 || 
+      const isRecoverable =
+        status === 429 ||
         /Network request failed|Failed to fetch|timed out/i.test(message);
 
-      // CRITICAL: On cold start with network issues, preserve Firebase session
       if (isRecoverable) {
         console.warn('[AuthContext] Backend sync failed, preserving Firebase session');
         setIsAuthenticated(true);
@@ -459,7 +461,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // Only clear auth on non-recoverable errors (invalid token, account disabled, etc.)
       console.error('[AuthContext] Critical auth error, signing out:', error);
       clearTokenRefreshTimer();
       await removeAuthToken();
@@ -473,37 +474,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           : (message || 'Failed to sync user data')
       );
     } finally {
-      // Resolve the deferred promise and clear the ref
       resolveSync!();
       syncInFlightRef.current = null;
     }
   }, [setUserContext, scheduleTokenRefresh, clearTokenRefreshTimer]);
+
   useEffect(() => {
     currentUserRef.current = user;
   }, [user]);
 
-  // CRITICAL: Load onboarding state FIRST before Firebase restores session
+  // Load onboarding and profile-setup flags before Firebase restores its session so the
+  // router has correct state from the very first render.
   useEffect(() => {
     let mounted = true;
-    
+
     const initializeAuthState = async () => {
       try {
-        // 1. Load onboarding flag from AsyncStorage
         if (__DEV__) console.log('[AuthContext] Loading onboarding state from AsyncStorage...');
         const completed = await ReactNativeAsyncStorage.getItem(ONBOARDING_KEY);
         if (__DEV__) console.log('[AuthContext] Onboarding flag retrieved:', completed);
-        
-        // 2. Load profile setup flag
+
         const profileSetupCompleted = await ReactNativeAsyncStorage.getItem(PROFILE_SETUP_KEY);
         if (__DEV__) console.log('[AuthContext] Profile setup flag retrieved:', profileSetupCompleted);
-        
-        // 3. Load cached user data
+
         const cachedUserJson = await ReactNativeAsyncStorage.getItem(USER_DATA_KEY);
 
         if (mounted) {
           setHasCompletedOnboarding(completed === 'true');
-          // If profile setup is explicitly 'false', user needs to complete it
-          // Otherwise default to true (existing users)
+          // Treat anything other than the explicit 'false' string as complete (existing users).
           setHasCompletedProfileSetup(profileSetupCompleted !== 'false');
           if (__DEV__) console.log('[AuthContext] hasCompletedOnboarding set to:', completed === 'true');
           if (__DEV__) console.log('[AuthContext] hasCompletedProfileSetup set to:', profileSetupCompleted !== 'false');
@@ -516,7 +514,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               currentUserRef.current = cachedUser;
               setIsAuthenticated(true);
               setUserContext(cachedUser);
-              // Only auto-complete onboarding if we have a valid cached user AND onboarding wasn't explicitly false
               if (completed !== 'false') {
                 setHasCompletedOnboarding(true);
               }
@@ -535,12 +532,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     initializeAuthState();
-    
+
     return () => {
       mounted = false;
     };
   }, []);
 
+  // Auto-complete onboarding for users who are already authenticated but have no flag stored
+  // (covers accounts created before the flag was introduced).
   useEffect(() => {
     if (!isAuthenticated || hasCompletedOnboarding) {
       return;
@@ -566,19 +565,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [isAuthenticated, hasCompletedOnboarding]);
 
-  // Monitor Firebase auth state - this triggers AFTER Firebase persistence restores the session
+  // Primary auth state listener — fires after Firebase restores its persisted session.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
           setFirebaseUser(firebaseUser);
-          // Firebase confirmed a real user — mark as resolved and update MMKV guard
           firstAuthResolvedRef.current = true;
           wasAuthenticatedRef.current = true;
           try {
             await syncUserData(firebaseUser);
           } catch (syncError: any) {
-            // If sync fails due to rate-limiting or network but we have cached user, preserve auth
             const isRecoverable = syncError?.status === 429 || /Too many requests|Network request failed|Failed to fetch/i.test(syncError?.message);
             if (isRecoverable && currentUserRef.current) {
               setIsAuthenticated(true);
@@ -587,20 +584,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
           }
         } else {
-          // CRITICAL FIX: Don't clear cached user session if we restored it from AsyncStorage
-          // Firebase may fire null initially before session restoration on some devices
-          //
-          // Race condition prevention: On cold start, Firebase's onAuthStateChanged fires null
-          // BEFORE the async initializeAuthState effect loads the cached user from AsyncStorage.
-          // Without this guard, isAuthenticated flips false → true, causing a flash of the
-          // onboarding/auth screen for already-authenticated users.
-          //
-          // We check three things:
-          // 1. currentUserRef.current — set by initializeAuthState once cached user is loaded
-          // 2. wasAuthenticatedRef.current — synchronously read from MMKV at init time
-          // 3. firstAuthResolvedRef — only skip the very first null callback, not real signouts
+          // Race condition: Firebase fires null on cold start BEFORE the async
+          // initializeAuthState effect has loaded the cached user from AsyncStorage.
+          // The three-way guard below prevents wiping a valid session prematurely:
+          //   1. currentUserRef — populated by initializeAuthState once cached user loads
+          //   2. wasAuthenticatedRef — synchronously seeded from MMKV at module init
+          //   3. firstAuthResolvedRef — skips only the very first null, not real sign-outs
           if (!currentUserRef.current && !wasAuthenticatedRef.current) {
-            // User was genuinely not authenticated — safe to clear
             setFirebaseUser(null);
             setUser(null);
             setIsAuthenticated(false);
@@ -608,17 +598,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             clearTokenRefreshTimer();
             await removeAuthToken();
           } else if (!currentUserRef.current && wasAuthenticatedRef.current && !firstAuthResolvedRef.current) {
-            // User was previously authenticated (MMKV says so), but Firebase fired null
-            // before the async cached user loaded. Don't clear — wait for Firebase session
-            // restoration or the cached user to load.
             if (__DEV__) console.log('[AuthContext] Firebase null before cached user loaded, preserving MMKV auth state');
             setFirebaseUser(null);
-            // Don't clear isAuthenticated or user — MMKV says they were authenticated
           } else {
-            // We have a cached user from AsyncStorage - preserve the session
-            // This handles cold starts where Firebase doesn't immediately restore the session
             if (__DEV__) console.log('[AuthContext] Firebase returned null but cached user exists, preserving session');
-            setFirebaseUser(null); // Firebase user is null, but our app user is still valid
+            setFirebaseUser(null);
           }
           firstAuthResolvedRef.current = true;
         }
@@ -643,6 +627,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [setUserContext, syncUserData, clearTokenRefreshTimer]);
 
+  // Secondary listener for token rotation — schedules a proactive refresh whenever Firebase
+  // issues a new ID token (e.g. after a force-refresh or sign-in).
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, (latestUser) => {
       if (latestUser) {
@@ -666,23 +652,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [clearTokenRefreshTimer]);
 
-  // Login with email and password
+  /** Sign in with email and password via Firebase, then sync backend session. */
   const login = async (email: string, password: string) => {
     try {
       setLoading(true);
       console.log('Starting login process...');
-      
+
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log('Firebase login successful');
-      
+
       await syncUserData(userCredential.user);
       console.log('Login completed successfully');
-      
+
     } catch (error: any) {
       console.error('Login error:', error);
-      
+
       let errorMessage = error.message || 'Failed to login';
-      
+
       if (error.code === 'auth/user-not-found') {
         errorMessage = 'No account found with this email. Please check your email or register.';
       } else if (error.code === 'auth/wrong-password') {
@@ -706,43 +692,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      
+
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // Register with email and password
+  /**
+   * Create a new Firebase account, set the display name, flag the session as a new sign-up
+   * so the profile-setup screen is shown, then sync the backend.
+   */
   const register = async (email: string, password: string, displayName: string) => {
     try {
       setLoading(true);
       console.log('Starting registration process...');
-      
+
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log('Firebase user created');
-      
-      // Update Firebase profile
+
       await updateProfile(userCredential.user, {
         displayName,
       });
       console.log('Firebase profile updated');
-      
-      // Mark as new signup - needs to complete profile setup
+
       setIsNewSignUp(true);
       setHasCompletedProfileSetup(false);
       await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
-      
-      // Sync with backend
+
       await syncUserData(userCredential.user);
       console.log('Registration completed successfully');
-      
+
     } catch (error: any) {
       console.error('Registration error:', error);
-      
-      // Provide more user-friendly error messages
+
       let errorMessage = error.message || 'Failed to register';
-      
+
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please try logging in instead.';
       } else if (error.code === 'auth/invalid-email') {
@@ -764,35 +749,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      
+
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // Login with Google
+  /**
+   * Sign in with Google.
+   *
+   * Uses three different strategies depending on the runtime:
+   * - Web: Firebase `signInWithPopup`.
+   * - Expo Go: `expo-auth-session` (web proxy flow).
+   * - Native build: `@react-native-google-signin/google-signin`.
+   */
   const loginWithGoogle = async () => {
     try {
       setLoading(true);
-      
-      // Check if Google Sign-In is configured
+
       if (!GOOGLE_WEB_CLIENT_ID) {
         throw new Error('Google Sign-In is not configured. Please add EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to your .env file.');
       }
-      
-      // For web platform, use Firebase's built-in Google provider
+
       if (Platform.OS === 'web') {
         const provider = new GoogleAuthProvider();
         provider.addScope('profile');
         provider.addScope('email');
-        
+
         const result = await signInWithPopup(auth, provider);
         await syncUserData(result.user);
         return;
       }
 
-      // If running inside Expo Go, fall back to AuthSession-based flow
       if (Constants.appOwnership === 'expo') {
         const redirectUri = makeRedirectUri({
           scheme: 'app',
@@ -827,26 +816,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         const googleCredential = GoogleAuthProvider.credential(idToken);
         const firebaseResult = await signInWithCredential(auth, googleCredential);
-        
-        // Check if this is a new user (first-time signup with Google)
-        const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser || 
+
+        const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser ||
           (firebaseResult.user.metadata.creationTime === firebaseResult.user.metadata.lastSignInTime);
         if (isNewUser) {
           setIsNewSignUp(true);
           setHasCompletedProfileSetup(false);
           await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
         }
-        
+
         await syncUserData(firebaseResult.user);
         return;
       }
 
-      // For native builds, use @react-native-google-signin
-      // hasPlayServices is Android-only, don't call on iOS
+      // hasPlayServices is Android-only — skip on iOS to avoid a crash.
       if (Platform.OS === 'android') {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       }
-      
+
       const signInResult = await GoogleSignin.signIn();
       const idToken = (signInResult as unknown as { idToken?: string })?.idToken ?? (signInResult as any)?.data?.idToken;
 
@@ -856,29 +843,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const googleCredential = GoogleAuthProvider.credential(idToken);
       const firebaseResult = await signInWithCredential(auth, googleCredential);
-      
-      // Check if this is a new user (first-time signup with Google)
-      const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser || 
+
+      const isNewUser = (firebaseResult as any)._tokenResponse?.isNewUser ||
         (firebaseResult.user.metadata.creationTime === firebaseResult.user.metadata.lastSignInTime);
       if (isNewUser) {
         setIsNewSignUp(true);
         setHasCompletedProfileSetup(false);
         await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
       }
-      
+
       await syncUserData(firebaseResult.user);
-        
+
     } catch (error: any) {
       console.error('Google login error:', error);
 
-      // Handle user cancellation - don't show error
+      // User cancelled the sheet — not an error worth surfacing.
       if (error.code === 12501 || error.code === '-5' || error.message?.includes('SIGN_IN_CANCELLED')) {
-        return; // User cancelled, so we just return without an error
+        return;
       }
 
       let errorMessage = error?.message || 'Google sign-in failed. Please try again.';
-      
-      // Handle Google Play Services unavailable (Huawei/HMS devices)
+
+      // Huawei / HMS devices don't ship Google Play Services.
       if (
         error.code === 'PLAY_SERVICES_NOT_AVAILABLE' ||
         error.code === 1 ||
@@ -911,22 +897,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Login with Apple
+  /**
+   * Sign in with Apple (iOS only).
+   *
+   * Generates a cryptographically random nonce, SHA-256 hashes it as HEX (not base64),
+   * and passes the raw nonce to Firebase so it can verify the Apple identity token.
+   */
   const loginWithApple = async () => {
     try {
       setLoading(true);
-      
-      // Check if Apple Authentication is available (iOS only)
+
       if (Platform.OS !== 'ios') {
         throw new Error('Apple Sign-In is only available on iOS devices.');
       }
-      
+
       const isAvailable = await AppleAuthentication.isAvailableAsync();
       if (!isAvailable) {
         throw new Error('Apple Sign-In is not available on this device.');
       }
-      
-      // Generate a nonce for additional security using cryptographically secure randomness
+
       const randomBytes = await Crypto.getRandomBytesAsync(32);
       const nonce = Buffer.from(randomBytes)
         .toString('base64')
@@ -934,15 +923,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         .replace(/\//g, '_')
         .replace(/=+$/, '')
         .substring(0, 32);
-      
-      // Hash the nonce with SHA256 and encode as HEX (not base64)
+
+      // Firebase requires HEX encoding for the hashed nonce when verifying Apple tokens.
       const hashedNonce = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         nonce,
         { encoding: Crypto.CryptoEncoding.HEX }
       );
-      
-      // Request Apple authentication
+
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -950,42 +938,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         ],
         nonce: hashedNonce,
       });
-      
-      // Create Apple credential for Firebase
+
       const { identityToken } = credential;
-      
+
       if (!identityToken) {
         throw new Error('Apple Sign-In failed: No identity token received.');
       }
-      
-      // Create Firebase credential
+
       const provider = new OAuthProvider('apple.com');
       const appleCredential = provider.credential({
         idToken: identityToken,
         rawNonce: nonce,
       });
-      
-      // Sign in with Firebase
+
       const userCredential = await signInWithCredential(auth, appleCredential);
-      
-      // Check if this is a new user (first-time signup with Apple)
-      const isNewUser = (userCredential as any)._tokenResponse?.isNewUser || 
+
+      const isNewUser = (userCredential as any)._tokenResponse?.isNewUser ||
         (userCredential.user.metadata.creationTime === userCredential.user.metadata.lastSignInTime);
       if (isNewUser) {
         setIsNewSignUp(true);
         setHasCompletedProfileSetup(false);
         await ReactNativeAsyncStorage.setItem(PROFILE_SETUP_KEY, 'false');
       }
-      
-      // Sync with backend
+
       await syncUserData(userCredential.user);
     } catch (error: any) {
       console.error('Apple login error:', error);
-      // Detailed error logging for debugging malformed credentials
+      // Log codes explicitly — Apple error objects are frequently opaque.
       if (error.code) console.error('Apple Error Code:', error.code);
       if (error.message) console.error('Apple Error Message:', error.message);
-      
-      // Handle specific Apple Sign-In errors
+
       if (error.code === 'ERR_CANCELED') {
         throw new Error('Apple Sign-In was canceled.');
       } else if (error.code === 'ERR_INVALID_RESPONSE') {
@@ -1010,11 +992,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Logout
+  /**
+   * Sign out from Firebase, Google (if applicable), and the Wayfarian backend.
+   * Local state is always cleared even when server-side logout fails.
+   */
   const logout = async () => {
     setLoading(true);
     try {
-      // Attempt server-side logout, but don't block local cleanup on failure
+      // Best-effort server logout — local cleanup must not be blocked on a failing request.
       try {
         await authAPI.logout();
       } catch {
@@ -1033,11 +1018,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch {
         console.warn('Firebase signOut failed (possibly already signed out)');
       }
-      // Clear local auth state regardless
       clearTokenRefreshTimer();
-      // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
+      // Clear currentUserRef BEFORE setUser so the onAuthStateChanged null callback doesn't
+      // mistake the stale ref for a cached user and skip the sign-out path.
       currentUserRef.current = null;
-      // Clear MMKV auth guard so onAuthStateChanged null callback properly clears state on next launch
+      // Reset the MMKV guard so the next cold start correctly starts unauthenticated.
       wasAuthenticatedRef.current = false;
       setUser(null);
       setFirebaseUser(null);
@@ -1048,7 +1033,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Refresh user data
+  /**
+   * Update the in-memory user without a full backend round-trip when a partial update is
+   * provided. Falls back to a full `syncUserData` when called with no arguments.
+   */
   const refreshUser = async (updatedUser?: Partial<User>) => {
     try {
       if (updatedUser && user) {
@@ -1088,7 +1076,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Complete onboarding
+  /** Persist the onboarding completion flag and update component state. */
   const completeOnboarding = async () => {
     try {
       console.log('[AuthContext] Marking onboarding complete, writing to AsyncStorage...');
@@ -1103,7 +1091,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Complete profile setup (called after new user finishes profile-setup screen)
+  /** Mark profile setup as complete after a new user finishes the profile-setup screen. */
   const completeProfileSetup = async () => {
     try {
       console.log('[AuthContext] Marking profile setup complete...');
@@ -1117,7 +1105,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Send password reset email
+  /**
+   * Send a Firebase password-reset email.
+   * Silently succeeds when the email doesn't match any account to prevent user enumeration.
+   */
   const resetPassword = async (email: string) => {
     if (!email) {
       throw new Error('Please provide an email address.');
@@ -1130,7 +1121,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Password reset error:', error);
 
       if (error?.code === 'auth/user-not-found') {
-        // Silently succeed to avoid account enumeration
+        // Silently succeed to prevent account enumeration via the reset flow.
         return;
       }
 
@@ -1148,42 +1139,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Delete user account
+  /**
+   * Delete the account from both the Wayfarian backend and Firebase Auth,
+   * then clear all local session state.
+   *
+   * Backend deletion happens first so that if Firebase deletion requires re-authentication,
+   * the backend data is already gone and the user can retry without a partial-delete state.
+   */
   const deleteAccount = async () => {
     try {
       setLoading(true);
-      
-      // 1. Delete from backend first
+
       try {
         await authAPI.deleteAccount();
       } catch (backendError: any) {
-        // If backend returns that user owns groups with members, surface this to user
         if (backendError?.body?.groupsWithMembers) {
           throw new Error(backendError.message || 'You must transfer ownership or delete groups before deleting your account.');
         }
         throw backendError;
       }
-      
-      // 2. Delete Firebase user - this will trigger auth state change
+
       if (firebaseUser) {
         try {
-          // For Firebase, we need to delete the user
-          // Note: This requires recent authentication
           await firebaseUser.delete();
         } catch (firebaseError: any) {
-          // If requires-recent-login, we need to inform the user
           if (firebaseError.code === 'auth/requires-recent-login') {
-            // Backend data is already deleted, but Firebase auth remains
-            // Sign out locally and inform user they need to re-authenticate
+            // Backend data is already gone; the user must re-authenticate to remove the Firebase
+            // account, but we can't block them here. Inform them and let it surface naturally.
             console.warn('Firebase user deletion requires recent login - backend data deleted but Firebase auth remains');
             throw new Error('Please sign in again and retry to complete account deletion.');
           }
-          // For other Firebase errors, log but proceed (backend data is already deleted)
           console.warn('Firebase user deletion failed (backend already deleted):', firebaseError);
         }
       }
-      
-      // 3. Clean up local state (similar to logout)
+
       if (Platform.OS !== 'web') {
         try {
           await GoogleSignin.signOut();
@@ -1196,18 +1185,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch {
         console.warn('Firebase signOut failed during account deletion');
       }
-      
-      // Clear local auth state
+
       clearTokenRefreshTimer();
-      // CRITICAL: Clear currentUserRef BEFORE setUser so onAuthStateChanged doesn't preserve stale session
+      // Clear currentUserRef BEFORE setUser so the onAuthStateChanged null callback correctly
+      // treats this as a genuine sign-out rather than a stale-session preservation case.
       currentUserRef.current = null;
       wasAuthenticatedRef.current = false;
       setUser(null);
       setFirebaseUser(null);
       setIsAuthenticated(false);
       setUserContext(null);
-      
-      // CRITICAL: Clear ALL cached data from AsyncStorage to prevent stale session restoration
+
+      // Wipe all cached session data so no stale session can be restored on next launch.
       try {
         await Promise.all([
           removeAuthToken(),
@@ -1218,7 +1207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch (e) {
         console.warn('Failed to clear cached data during account deletion:', e);
       }
-      
+
     } catch (error: any) {
       console.error('Delete account error:', error);
       throw new Error(error.message || 'Failed to delete account. Please try again.');

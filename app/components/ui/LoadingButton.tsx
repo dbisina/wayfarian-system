@@ -1,3 +1,21 @@
+/**
+ * Button with integrated loading state. While loading, the background animates
+ * from a lightened (pale) version of the button colour to the full colour,
+ * giving a subtle "filling" effect that communicates progress without a spinner
+ * jumping in width.
+ *
+ * @prop onPress          - Tap handler.
+ * @prop title            - Button label.
+ * @prop loading          - Shows spinner and animates fill when true.
+ * @prop disabled         - Disables interaction and dims the button.
+ * @prop style            - Override container styles.
+ * @prop textStyle        - Override label styles.
+ * @prop backgroundColor  - Custom background colour (overrides variant default).
+ * @prop textColor        - Custom label colour (overrides variant default).
+ * @prop icon             - Optional leading icon node.
+ * @prop variant          - 'primary' (orange) or 'secondary' (light grey).
+ */
+
 import React, { useEffect, useRef } from 'react';
 import {
   TouchableOpacity,
@@ -39,22 +57,20 @@ export default function LoadingButton({
   const fillAnimation = useRef(new Animated.Value(0)).current;
   const isDisabled = disabled || loading;
 
-  // Default colors based on variant
   const defaultBgColor = variant === 'primary' ? PRIMARY_COLORS.orange : '#E0E0E0';
   const defaultTextColor = variant === 'primary' ? PRIMARY_COLORS.white : PRIMARY_COLORS.black;
-  
+
   const bgColor = backgroundColor || defaultBgColor;
   const txtColor = textColor || defaultTextColor;
-  
-  // Create a paler version of the background color
+
+  // Derive a lightened version of the background colour for the "empty" state
+  // of the fill animation without adding a colour-manipulation dependency.
   const paleColor = React.useMemo(() => {
     if (bgColor.startsWith('#')) {
-      // Convert hex to RGB
       const hex = bgColor.replace('#', '');
       const r = parseInt(hex.substring(0, 2), 16);
       const g = parseInt(hex.substring(2, 4), 16);
       const b = parseInt(hex.substring(4, 6), 16);
-      // Lighten by 40%
       return `rgb(${Math.round(r + (255 - r) * 0.4)}, ${Math.round(g + (255 - g) * 0.4)}, ${Math.round(b + (255 - b) * 0.4)})`;
     }
     return bgColor;
@@ -62,14 +78,12 @@ export default function LoadingButton({
 
   useEffect(() => {
     if (loading) {
-      // Animate from 0 to 1 (pale to full color)
       Animated.timing(fillAnimation, {
         toValue: 1,
         duration: 1000,
         useNativeDriver: false,
       }).start();
     } else {
-      // Reset animation
       fillAnimation.setValue(0);
     }
   }, [loading, fillAnimation]);
@@ -128,4 +142,3 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
-

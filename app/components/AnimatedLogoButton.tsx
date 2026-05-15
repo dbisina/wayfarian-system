@@ -1,3 +1,14 @@
+/**
+ * Tappable Wayfarian logo that plays a three-phase wobble animation on press.
+ * The sequence (lean left → swing right → settle) gives the icon personality
+ * without looping, so it feels responsive rather than decorative.
+ *
+ * @prop size           - Image dimensions in dp (default 34).
+ * @prop padding        - Inner padding around the image (default 5).
+ * @prop containerStyle - Additional styles applied to the outer TouchableOpacity.
+ * @prop imageStyle     - Additional styles applied to the Animated.Image.
+ */
+
 import React, { useCallback, useRef } from 'react';
 import {
   Animated,
@@ -27,6 +38,7 @@ const AnimatedLogoButton: React.FC<AnimatedLogoButtonProps> = ({
   const rotation = useRef(new Animated.Value(0)).current;
 
   const startAnimation = useCallback(() => {
+    // Stop any in-progress animation before restarting — prevents stacking when tapped rapidly.
     rotation.stopAnimation(() => {
       rotation.setValue(0);
       Animated.sequence([
@@ -91,6 +103,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
+    // Prevents the back face from flashing through during rotation on iOS.
     backfaceVisibility: 'hidden',
   },
 });

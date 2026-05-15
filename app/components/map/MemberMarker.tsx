@@ -1,3 +1,15 @@
+/**
+ * Animated map marker representing a single group-journey participant.
+ *
+ * Position is smoothly interpolated over 1 s to match the 1 Hz Firebase update
+ * interval, eliminating the "teleporting dot" look. Heading animation uses
+ * Animated.Value (not useNativeDriver on web) because react-native-maps'
+ * AnimatedRegion does not support the native driver.
+ *
+ * @prop member          - Participant data including latest lat/lng and heading.
+ * @prop convertDistance - Formatter from the parent's unit-conversion context.
+ */
+
 import React, { useEffect, useRef } from 'react';
 import { View, Image, StyleSheet, Platform, Animated } from 'react-native';
 import { Marker, AnimatedRegion } from 'react-native-maps';
@@ -28,7 +40,8 @@ const MemberMarker = ({ member, convertDistance }: MemberMarkerProps) => {
   const markerRotation = useRef(new Animated.Value(member.heading || 0)).current;
 
   useEffect(() => {
-    // Animate to new position over 1 second (matches 1Hz interval)
+    // 1000 ms matches the 1 Hz Firebase update interval so each animation
+    // completes before the next location arrives.
     markerPosition.timing({
       latitude: member.latitude,
       longitude: member.longitude,
@@ -38,11 +51,11 @@ const MemberMarker = ({ member, convertDistance }: MemberMarkerProps) => {
       useNativeDriver: false,
     } as any).start();
 
-    // Animate rotation if heading is provided
     if (member.heading !== undefined) {
       Animated.timing(markerRotation, {
         toValue: member.heading,
         duration: 600,
+        // Web does not support the native driver for transform animations.
         useNativeDriver: Platform.OS !== 'web',
       }).start();
     }
@@ -63,10 +76,10 @@ const MemberMarker = ({ member, convertDistance }: MemberMarkerProps) => {
           transform: [{
             rotate: markerRotation.interpolate({
               inputRange: [0, 360],
-              outputRange: ['0deg', '360deg']
-            })
-          }]
-        }
+              outputRange: ['0deg', '360deg'],
+            }),
+          }],
+        },
       ]}>
         <Image
           source={

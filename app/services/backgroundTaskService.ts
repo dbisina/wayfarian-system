@@ -1,5 +1,4 @@
 // app/services/backgroundTaskService.ts
-// Background location tracking with persistent notifications for journey continuation.
 //
 // STORAGE ARCHITECTURE — why two AsyncStorage keys:
 //
@@ -45,7 +44,6 @@ const MAX_SPEED_FOR_RECORDING_MPS = 0.5;
 const MAX_ROUTE_POINTS = 2000;
 const MAX_RAW_BUFFER_POINTS = 500;
 
-// Flush pending route points from hot state to cold state every N task invocations.
 // At 5 s per invocation → flush every 60 s.
 const COLD_FLUSH_EVERY_N = 12;
 // Slightly more than one flush cycle as a safety margin.
@@ -93,7 +91,9 @@ interface JourneyColdState {
     rawPointsBuffer: { latitude: number; longitude: number; timestamp: number; speed?: number }[];
 }
 
-// ─── Public type (backwards-compatible merged view) ───────────────────────────
+// ─── Public types ─────────────────────────────────────────────────────────────
+
+/** Backwards-compatible merged view of HOT + COLD state for callers. */
 export interface PersistedJourneyState {
     journeyId: string;
     startTime: number;
@@ -113,6 +113,18 @@ export interface PersistedJourneyState {
     destinationLatitude?: number;
     destinationLongitude?: number;
     estimatedTotalDistance?: number;
+}
+
+/** Options passed to {@link startBackgroundTracking}. */
+export interface BackgroundTrackingOptions {
+    startLocationName?: string;
+    destinationName?: string;
+    destinationLatitude?: number;
+    destinationLongitude?: number;
+    estimatedTotalDistance?: number;
+    startTime?: number;
+    initialLocation?: { latitude: number; longitude: number; timestamp: number };
+    vehicle?: 'car' | 'bike' | 'scooter';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -146,10 +158,13 @@ async function getUnitsPreference(): Promise<'km' | 'mi'> {
     }
 }
 
-/** Build notification from hot state (all required stats live there). */
+/**
+ * Posts or refreshes the journey progress notification from the background task.
+ * Yields to the foreground tracker when it holds a fresh FG_NOTIFICATION_LEASE_KEY —
+ * avoids two writers racing on the same notifee notification slot.
+ */
 async function updateTrackingNotification(hot: JourneyHotState): Promise<void> {
     try {
-        // Yield to foreground when it's actively updating the notification.
         try {
             const leaseStr = await AsyncStorage.getItem(FG_NOTIFICATION_LEASE_KEY);
             if (leaseStr) {
@@ -197,6 +212,10 @@ async function updateTrackingNotification(hot: JourneyHotState): Promise<void> {
     }
 }
 
+/**
+ * Last-resort notification when LiveNotificationService fails (e.g. notifee channel not ready).
+ * Uses the simpler expo-notifications API which has no foreground-service dependency.
+ */
 async function fallbackToSimpleNotification(hot: JourneyHotState): Promise<void> {
     try {
         const elapsed = Math.floor((Date.now() - hot.startTime) / 1000);
@@ -231,13 +250,11 @@ TaskManager.defineTask(
         const location = locations[locations.length - 1];
 
         try {
-            // ── Read HOT state only (~200 bytes) ──────────────────────────────
             const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
             if (!hotJson) return; // Journey ended — state was cleared before stop
 
             const hot: JourneyHotState = JSON.parse(hotJson);
 
-            // ── Process location ──────────────────────────────────────────────
             if (hot.lastLatitude && hot.lastLongitude) {
                 const distanceKm = calculateHaversineDistance(
                     hot.lastLatitude, hot.lastLongitude,
@@ -256,14 +273,14 @@ TaskManager.defineTask(
                 if (hasSignificantMovement && isReasonableSpeed && isActuallyMoving) {
                     hot.totalDistance += distanceKm;
 
-                    // Validate speed
                     const validatedSpeedMps = Math.min(
                         Math.max(reportedSpeed, 0),
                         impliedSpeedMps > 0 ? impliedSpeedMps : reportedSpeed,
                     );
                     const speedKmh = Math.abs(validatedSpeedMps) * 3.6;
 
-                    // Top speed — vehicle-aware cap + sustainment
+                    // Require sustained high-speed samples within a vehicle-aware cap before
+                    // promoting a candidate to topSpeed — prevents GPS spikes from inflating the max.
                     if (!hot.recentHighSpeeds) hot.recentHighSpeeds = [];
                     const vehicleCapKmh = VEHICLE_MAX_SPEED_KMH[hot.vehicle || 'car'] ?? VEHICLE_MAX_SPEED_KMH.car;
                     if (speedKmh > vehicleCapKmh) {
@@ -289,7 +306,6 @@ TaskManager.defineTask(
                     }
                     hot.lastSpeed = validatedSpeedMps;
 
-                    // Accumulate pending route point (bounded buffer between cold flushes)
                     if (!hot.pendingRoutePoints) hot.pendingRoutePoints = [];
                     hot.pendingRoutePoints.push({
                         latitude: location.coords.latitude,
@@ -316,15 +332,13 @@ TaskManager.defineTask(
                 }
             }
 
-            // Update last known position
             hot.lastLatitude = location.coords.latitude;
             hot.lastLongitude = location.coords.longitude;
             hot.lastTimestamp = location.timestamp;
             hot.invocationCount = (hot.invocationCount || 0) + 1;
 
-            // ── Cold flush every COLD_FLUSH_EVERY_N invocations (~60 s) ────────
-            // Moves pending route points to the large cold-state JSON so the hot
-            // state stays tiny on every GPS-fix write.
+            // Move pending route points to cold storage every COLD_FLUSH_EVERY_N invocations
+            // so the hot-state JSON written on every fix stays tiny (~200 bytes).
             const shouldFlushCold =
                 hot.invocationCount % COLD_FLUSH_EVERY_N === 0 &&
                 ((hot.pendingRoutePoints?.length ?? 0) > 0 || (hot.pendingRawPoints?.length ?? 0) > 0);
@@ -336,7 +350,6 @@ TaskManager.defineTask(
                         ? JSON.parse(coldJson)
                         : { journeyId: hot.journeyId, routePoints: [], rawPointsBuffer: [] };
 
-                    // Append pending points and enforce caps
                     cold.routePoints = [...cold.routePoints, ...(hot.pendingRoutePoints ?? [])];
                     if (cold.routePoints.length > MAX_ROUTE_POINTS) {
                         const first = cold.routePoints[0];
@@ -350,19 +363,16 @@ TaskManager.defineTask(
 
                     await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(cold));
 
-                    // Clear pending buffers now that they're safely in cold storage
+                    // Clear pending buffers only after confirmed write to cold storage.
                     hot.pendingRoutePoints = [];
                     hot.pendingRawPoints = [];
                 } catch (coldErr) {
-                    // Cold flush failed — leave pending points in hot state for next attempt
+                    // Leave pending points in hot state so they are retried next flush cycle.
                     console.warn('[BackgroundTask] Cold flush failed, will retry:', coldErr);
                 }
             }
 
-            // ── Write HOT state (~200 bytes, fast) ───────────────────────────
             await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hot));
-
-            // ── Update notification (reads hot state only) ────────────────────
             await updateTrackingNotification(hot);
 
         } catch (e) {
@@ -373,17 +383,18 @@ TaskManager.defineTask(
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export interface BackgroundTrackingOptions {
-    startLocationName?: string;
-    destinationName?: string;
-    destinationLatitude?: number;
-    destinationLongitude?: number;
-    estimatedTotalDistance?: number;
-    startTime?: number;
-    initialLocation?: { latitude: number; longitude: number; timestamp: number };
-    vehicle?: 'car' | 'bike' | 'scooter';
-}
-
+/**
+ * Starts the Expo background location task and initialises both HOT and COLD
+ * AsyncStorage state for the given journey.
+ *
+ * The channel must exist before Android can attach the foreground-service
+ * notification, so {@link LiveNotificationService.initializeChannel} is called
+ * synchronously before {@link Location.startLocationUpdatesAsync}.
+ *
+ * @param journeyId - Server-assigned journey ID.
+ * @param options - Optional start metadata (vehicle, destination, initial coords, etc.).
+ * @returns `true` on success, `false` if background permission is not granted or setup throws.
+ */
 export async function startBackgroundTracking(
     journeyId: string,
     options?: BackgroundTrackingOptions,
@@ -405,7 +416,6 @@ export async function startBackgroundTracking(
 
         const syncedStartTime = options?.startTime || Date.now();
 
-        // ── Write initial HOT state (small) ────────────────────────────────────
         const hotState: JourneyHotState = {
             journeyId,
             startTime: syncedStartTime,
@@ -427,7 +437,6 @@ export async function startBackgroundTracking(
         };
         await AsyncStorage.setItem(JOURNEY_STATE_KEY, JSON.stringify(hotState));
 
-        // ── Write initial COLD state (route arrays) ────────────────────────────
         const coldState: JourneyColdState = {
             journeyId,
             routePoints: [{ latitude: initialCoords.latitude, longitude: initialCoords.longitude, timestamp: initialCoords.timestamp, speed: 0 }],
@@ -435,11 +444,10 @@ export async function startBackgroundTracking(
         };
         await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(coldState));
 
-        // ── Ensure notification channel exists BEFORE starting the foreground service ──
-        // Channel must exist so Android can attach the service notification immediately.
+        // Channel must exist so Android can attach the service notification immediately
+        // on API 26+; creating it after startLocationUpdatesAsync risks a race.
         await LiveNotificationService.initializeChannel();
 
-        // ── Start background location task ─────────────────────────────────────
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
             accuracy: Location.Accuracy.BestForNavigation,
             timeInterval: 5000,
@@ -453,7 +461,6 @@ export async function startBackgroundTracking(
             activityType: Location.ActivityType.AutomotiveNavigation,
         });
 
-        // Initial rich notification (non-blocking)
         const units = await getUnitsPreference();
         LiveNotificationService.updateNotification({
             journeyId,
@@ -480,24 +487,30 @@ export async function startBackgroundTracking(
     }
 }
 
+/**
+ * Stops background location tracking and clears persisted state.
+ *
+ * HOT state is cleared FIRST so any background task invocation that races with
+ * this call will find null state and exit without re-posting the notification —
+ * the root cause of the "notification persists after journey ends" bug.
+ *
+ * @returns The final merged journey state captured before storage is cleared,
+ *          or `null` if nothing was persisted.
+ */
 export async function stopBackgroundTracking(): Promise<PersistedJourneyState | null> {
     let savedState: PersistedJourneyState | null = null;
     try {
-        // 1. Read & merge both states BEFORE clearing — callers may need the final stats.
         savedState = await getPersistedJourneyState();
 
-        // 2. Clear HOT state FIRST so a racing background task invocation sees null and exits
-        //    without re-posting the notification (the race that caused the notification to persist).
+        // Clear HOT first — a racing background invocation checks this key and exits on null.
         await AsyncStorage.removeItem(JOURNEY_STATE_KEY);
         await AsyncStorage.removeItem(JOURNEY_ROUTES_KEY);
 
-        // 3. Stop the location task (now safe — background task exits on null hot state)
         const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         if (isRunning) {
             await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         }
 
-        // 4. Dismiss notification
         await LiveNotificationService.dismissNotification();
         await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID).catch(() => {});
 
@@ -510,6 +523,9 @@ export async function stopBackgroundTracking(): Promise<PersistedJourneyState | 
     }
 }
 
+/**
+ * Returns whether the background location task is currently registered and running.
+ */
 export async function isBackgroundTrackingActive(): Promise<boolean> {
     try {
         return await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
@@ -518,7 +534,13 @@ export async function isBackgroundTrackingActive(): Promise<boolean> {
     }
 }
 
-/** Reads both HOT and COLD state and returns a merged PersistedJourneyState. */
+/**
+ * Reads both HOT and COLD state and returns a merged {@link PersistedJourneyState}.
+ * Pending route points from HOT state are appended after the flushed COLD history
+ * so callers always see the complete, up-to-date route.
+ *
+ * @returns Merged state, or `null` if no journey is persisted.
+ */
 export async function getPersistedJourneyState(): Promise<PersistedJourneyState | null> {
     try {
         const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
@@ -560,15 +582,22 @@ export async function getPersistedJourneyState(): Promise<PersistedJourneyState 
     }
 }
 
+/**
+ * Returns persisted state without side effects.
+ *
+ * Previously wiped storage when the background task was not running, which destroyed
+ * accumulated stats during pause/resume cycles — the background task stops during pause
+ * but the stored state must survive so resume can restore distance/time. Callers are
+ * responsible for deciding what to do when the task is not active.
+ */
 export async function recoverJourneyState(): Promise<PersistedJourneyState | null> {
-    // Return persisted state without side effects.
-    // Previously wiped storage when the background task wasn't running, which destroyed
-    // accumulated stats during pause/resume cycles (pausing stops JS tracking but the
-    // stored state must survive so resume can restore distance/time). Callers decide
-    // what to do when the task is not active.
     return getPersistedJourneyState();
 }
 
+/**
+ * Returns the raw GPS points buffered since the last Roads-API snap,
+ * used by the foreground tracker to correct the displayed distance.
+ */
 export async function getBufferedBackgroundPoints(): Promise<{ latitude: number; longitude: number; timestamp: number; speed?: number }[]> {
     try {
         const state = await getPersistedJourneyState();
@@ -578,16 +607,18 @@ export async function getBufferedBackgroundPoints(): Promise<{ latitude: number;
     }
 }
 
+/**
+ * Clears the raw-points buffer in both HOT and COLD state after the foreground
+ * tracker has consumed and snapped those points to roads.
+ */
 export async function clearBackgroundBuffer(): Promise<void> {
     try {
-        // Clear from cold state
         const coldJson = await AsyncStorage.getItem(JOURNEY_ROUTES_KEY);
         if (coldJson) {
             const cold: JourneyColdState = JSON.parse(coldJson);
             cold.rawPointsBuffer = [];
             await AsyncStorage.setItem(JOURNEY_ROUTES_KEY, JSON.stringify(cold));
         }
-        // Clear pending raw points from hot state
         const hotJson = await AsyncStorage.getItem(JOURNEY_STATE_KEY);
         if (hotJson) {
             const hot: JourneyHotState = JSON.parse(hotJson);
@@ -599,6 +630,10 @@ export async function clearBackgroundBuffer(): Promise<void> {
     }
 }
 
+/**
+ * Returns the accumulated distance from HOT state only, avoiding the cost of
+ * parsing the large COLD route array.
+ */
 export async function getBackgroundDistance(): Promise<number> {
     try {
         // Distance lives in hot state — no need to read cold
@@ -611,7 +646,16 @@ export async function getBackgroundDistance(): Promise<number> {
     }
 }
 
-/** Sync foreground stats into hot state only — fast, no route-array I/O. */
+/**
+ * Merges foreground tracking stats into HOT state so the background notification
+ * stays accurate when the app is in the foreground.
+ *
+ * Only writes to HOT state (~200 bytes) — no route-array I/O — to keep the sync
+ * path fast enough for the 2 Hz foreground update rate.
+ *
+ * @param foregroundState - Current stats from the foreground smart-tracking hook.
+ *   `currentSpeed` is expected in km/h and is converted to m/s before storage.
+ */
 export async function syncForegroundToBackground(foregroundState: {
     totalDistance: number;
     movingTime: number;
@@ -643,6 +687,12 @@ export async function syncForegroundToBackground(foregroundState: {
     }
 }
 
+/**
+ * Returns a subset of the persisted journey state used by the foreground tracker
+ * to resume from background-accumulated stats after the app returns to foreground.
+ *
+ * @returns Distance, moving time, top speed, and route points, or `null` if no state exists.
+ */
 export async function getBackgroundAccumulatedState(): Promise<{
     totalDistance: number;
     movingTime: number;

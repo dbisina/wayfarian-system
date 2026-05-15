@@ -1,7 +1,11 @@
-// app/components/BatteryOptimizationModal.tsx
-// Bottom-sheet prompt guiding the user to unrestrict battery so the background
-// tracking service survives screen-lock on aggressive Android ROMs.
-// Uses notifee's battery / power-manager APIs — no extra dependencies needed.
+/**
+ * Bottom-sheet prompt guiding the user to unrestrict battery so the background
+ * tracking service survives screen-lock on aggressive Android ROMs (Samsung, Xiaomi,
+ * Huawei, etc.). Uses notifee's power-manager APIs — no extra dependencies needed.
+ *
+ * Automatically dismisses itself when the user returns from Settings having
+ * already unrestricted the app.
+ */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -21,6 +25,7 @@ import notifee from '@notifee/react-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** Subset of notifee's PowerManagerInfo we actually render. */
 interface PowerManagerInfo {
   manufacturer?: string;
   model?: string;
@@ -28,6 +33,7 @@ interface PowerManagerInfo {
   activity?: string | null;
 }
 
+/** @prop visible - Controls sheet visibility from the parent. */
 interface BatteryOptimizationModalProps {
   visible: boolean;
   onDismiss: () => void;
@@ -45,8 +51,6 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
 
   const [powerInfo, setPowerInfo] = useState<PowerManagerInfo | null>(null);
   const [internalVisible, setInternalVisible] = useState(false);
-
-  // ── Animation helpers ─────────────────────────────────────────────────────
 
   const animateIn = useCallback(() => {
     setInternalVisible(true);
@@ -91,18 +95,15 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
     [backdropAnim, slideAnim],
   );
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (visible) {
-      // Fetch device power-manager info (vendor-specific: Samsung, Xiaomi, Huawei…)
+      // Power-manager details are vendor-specific — fetch lazily on show.
       if (Platform.OS === 'android') {
         notifee.getPowerManagerInfo().then(setPowerInfo).catch(() => {});
       }
       animateIn();
     } else {
       if (internalVisible) {
-        // Only animate out if actually mounted; otherwise skip
         slideAnim.setValue(600);
         backdropAnim.setValue(0);
         setInternalVisible(false);
@@ -111,14 +112,13 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Auto-dismiss when user returns from Settings having unrestricted battery
+  // Auto-dismiss when user returns from Settings having unrestricted battery.
   useEffect(() => {
     if (!visible || Platform.OS !== 'android') return;
     const sub = AppState.addEventListener('change', async nextState => {
       if (nextState === 'active') {
         const stillOptimized = await notifee.isBatteryOptimizationEnabled().catch(() => true);
         if (!stillOptimized) {
-          // Battery now unrestricted — celebrate the win silently and close
           animateOut(onDismiss);
         }
       }
@@ -130,8 +130,6 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
     animateOut(onDismiss);
   }, [animateOut, onDismiss]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-
   const openBatterySettings = async () => {
     await notifee.openBatteryOptimizationSettings();
   };
@@ -140,12 +138,8 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
     await notifee.openPowerManagerSettings();
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-
   const hasPowerManager = !!powerInfo?.activity;
   const brand = powerInfo?.manufacturer ?? '';
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   if (!internalVisible && !visible) return null;
 
@@ -157,12 +151,10 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
       statusBarTranslucent
       onRequestClose={handleDismiss}
     >
-      {/* Animated backdrop — taps dismiss */}
       <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleDismiss} />
       </Animated.View>
 
-      {/* Sheet — sits at the bottom, eats its own touches */}
       <View style={styles.sheetAnchor} pointerEvents="box-none">
         <Animated.View
           style={[
@@ -173,10 +165,8 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
             },
           ]}
         >
-          {/* Drag handle */}
           <View style={styles.handle} />
 
-          {/* Icon cluster */}
           <View style={styles.iconCluster}>
             <View style={styles.iconGlow} />
             <View style={styles.iconRing}>
@@ -184,13 +174,11 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
             </View>
           </View>
 
-          {/* Copy */}
           <Text style={styles.title}>Keep tracking all ride long</Text>
           <Text style={styles.body}>
             Android can stop background apps to save battery. Unrestricting Wayfarian means your route and distance keep recording even with the screen off.
           </Text>
 
-          {/* Steps */}
           <View style={styles.steps}>
             <Step n={1} text='Tap "Unrestrict Battery" below' />
             <Step n={2} text="Scroll to Wayfarian in the list" />
@@ -203,7 +191,6 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
             )}
           </View>
 
-          {/* Actions */}
           <View style={styles.actions}>
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -243,6 +230,7 @@ const BatteryOptimizationModal: React.FC<BatteryOptimizationModalProps> = ({
 
 // ─── Step row ────────────────────────────────────────────────────────────────
 
+/** Numbered instruction row used in the battery-unrestrict walkthrough. */
 function Step({ n, text }: { n: number; text: string }) {
   return (
     <View style={styles.stepRow}>
@@ -268,7 +256,7 @@ const styles = StyleSheet.create({
   },
 
   sheet: {
-    backgroundColor: '#FDFAF4',   // warm off-white — not cold #fff
+    backgroundColor: '#FDFAF4', // warm off-white — not cold #fff
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
@@ -289,7 +277,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  // Icon
   iconCluster: {
     alignSelf: 'center',
     alignItems: 'center',
@@ -314,7 +301,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Copy
   title: {
     fontSize: 20,
     fontWeight: '700',
@@ -332,7 +318,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
 
-  // Steps
   steps: {
     marginBottom: 24,
     gap: 12,
@@ -365,7 +350,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Actions
   actions: {
     gap: 10,
   },

@@ -1,3 +1,12 @@
+/**
+ * Vertical card displaying a single achievement with its badge image, title,
+ * and description. Fixed 160 dp width so horizontal lists snap cleanly.
+ *
+ * @prop title       - Achievement display name.
+ * @prop description - Short summary of how the achievement was earned.
+ * @prop imageUrl    - Remote URL for the badge artwork.
+ */
+
 import React from 'react';
 import {
   View,
@@ -16,8 +25,8 @@ interface AchievementCardProps {
 const AchievementCard = ({ title, description, imageUrl }: AchievementCardProps): React.JSX.Element => {
   return (
     <View style={styles.container}>
-      <Image 
-        source={{ uri: imageUrl }} 
+      <Image
+        source={{ uri: imageUrl }}
         style={styles.image}
         onError={(error) => console.log('Image load error:', error)}
         defaultSource={require('../../assets/placeholder-achievement.jpg')}

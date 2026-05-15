@@ -1,3 +1,11 @@
+/**
+ * Compact circular badge thumbnail with an optional label beneath it.
+ * Used in badge collection grids and profile summary rows.
+ *
+ * @prop title    - Label below the badge; omitted when empty string.
+ * @prop imageUrl - Remote URL for the badge artwork.
+ */
+
 import React from 'react';
 import {
   View,
@@ -11,11 +19,11 @@ interface BadgeCardProps {
   imageUrl: string;
 }
 
-const BadgeCard = ({title, imageUrl}: BadgeCardProps): React.JSX.Element => {
+const BadgeCard = ({ title, imageUrl }: BadgeCardProps): React.JSX.Element => {
   return (
     <View style={styles.container}>
       <View style={styles.imageContainer}>
-        <Image source={{uri: imageUrl}} style={styles.image} />
+        <Image source={{ uri: imageUrl }} style={styles.image} />
       </View>
       {title ? <Text style={styles.title}>{title}</Text> : null}
     </View>

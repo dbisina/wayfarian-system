@@ -1,7 +1,10 @@
-// app/utils/StatsCalculator.ts
-// Utility to calculate journey statistics using "Official Distance" (Roads API) 
-// and "Moving Time" (Local Physics).
-
+/**
+ * Pure journey-statistics helpers.
+ *
+ * Distance inputs are expected in kilometres from the Roads API (or Haversine
+ * fallback); time inputs are expected in seconds from the moving-time accumulator.
+ * Speed outputs are always in km/h to match the `JourneyStats` interface.
+ */
 export const StatsCalculator = {
   /**
    * Calculates average speed in km/h.
@@ -12,7 +15,6 @@ export const StatsCalculator = {
   calculateAverageSpeed: (distanceKm: number, movingTimeSeconds: number): number => {
     if (!movingTimeSeconds || movingTimeSeconds <= 0) return 0;
     const avgSpeed = (distanceKm / movingTimeSeconds) * 3600;
-    // Return actual calculated speed - no artificial caps for accuracy
     return avgSpeed;
   },
 
@@ -56,7 +58,6 @@ export const StatsCalculator = {
     if (days > 0) {
       return `${days}d ${hours}h ${minutes}m`;
     }
-    // For less than 24 hours, use HH:MM format
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     }

@@ -1,6 +1,3 @@
-// app/utils/platform.ts
-// Platform-specific utilities and helpers
-
 import { Platform, Dimensions, PixelRatio, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
@@ -10,27 +7,30 @@ export const isAndroid = Platform.OS === 'android';
 export const isWeb = Platform.OS === 'web';
 
 /**
- * Get platform-specific keyboard avoiding behavior
+ * Returns the correct `KeyboardAvoidingView` behavior for the current platform.
+ * iOS needs `'padding'`; Android needs `'height'` to avoid double-shifting.
  */
 export const getKeyboardBehavior = () => {
   return isIOS ? 'padding' : 'height';
 };
 
 /**
- * Get platform-specific keyboard vertical offset
- * @param defaultOffset - Default offset for iOS (default: 64)
+ * Returns the vertical offset for `KeyboardAvoidingView`.
+ * Android ignores the offset entirely (returns 0) because the behavior differs.
+ * @param defaultOffset - Offset in points applied on iOS (default: 64).
  */
 export const getKeyboardOffset = (defaultOffset: number = 64) => {
   return isIOS ? defaultOffset : 0;
 };
 
 /**
- * Get platform-specific haptic feedback
+ * Fires a haptic impact pulse. Silent no-op on web or when haptics are unavailable.
+ * @param type - Impact intensity: `'light'`, `'medium'` (default), or `'heavy'`.
  */
 export const triggerHaptic = async (type: 'light' | 'medium' | 'heavy' = 'medium') => {
   try {
-    if (isWeb) return; // No haptics on web
-    
+    if (isWeb) return;
+
     switch (type) {
       case 'light':
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -43,25 +43,24 @@ export const triggerHaptic = async (type: 'light' | 'medium' | 'heavy' = 'medium
         break;
     }
   } catch (error) {
-    // Silently fail if haptics not available
     console.debug('Haptic feedback not available:', error);
   }
 };
 
 /**
- * Platform-specific shadow styles
+ * Returns a platform-appropriate shadow style object.
+ * Android uses `elevation`; iOS uses the shadow* props — the two systems are
+ * mutually exclusive, so a single object cannot satisfy both.
+ * @param elevation - Conceptual elevation level (default: 4).
  */
 export const getPlatformShadow = (elevation: number = 4) => {
   if (isAndroid) {
-    return {
-      elevation,
-    };
+    return { elevation };
   }
-  
-  // iOS shadows
+
   const shadowOpacity = Math.min(elevation / 24, 0.3);
   const shadowRadius = elevation * 0.8;
-  
+
   return {
     shadowColor: '#000',
     shadowOffset: {
@@ -74,54 +73,54 @@ export const getPlatformShadow = (elevation: number = 4) => {
 };
 
 /**
- * Get platform-specific status bar height approximation
+ * Returns a rough status bar height approximation without requiring
+ * `react-native-safe-area-context`. Prefer `useSafeAreaInsets` where possible.
+ *
+ * iOS value (44) covers notched iPhones; older models report 20 at runtime.
  */
 export const getStatusBarHeight = () => {
   if (isAndroid) return 24;
-  if (isIOS) return 44; // Can be 20 or 44 depending on device
+  if (isIOS) return 44;
   return 0;
 };
 
 /**
- * Check if device has notch (iPhone X and newer)
+ * Returns true when the device is likely a notched iPhone (X or newer).
+ * Based on physical dimension thresholds rather than API because there is no
+ * reliable first-party notch detection in React Native.
  */
 export const hasNotch = () => {
   if (!isIOS) return false;
-  
+
   const dim = Dimensions.get('window');
-  
-  // iPhone X, XS, 11 Pro, 12, 13, 14, etc. have height >= 812
   return dim.height >= 812 || dim.width >= 812;
 };
 
 /**
- * Platform-specific font scaling
+ * Returns a font size capped at 1.3× system scale on Android.
+ * Uncapped system scaling can exceed layout bounds on accessibility font sizes.
+ * iOS handles its own scaling gracefully, so we pass through unchanged.
+ * @param size - Base font size in points.
  */
 export const getScaledFontSize = (size: number) => {
-  // On Android, system font scaling can make text too large
-  // Add a cap to prevent layout breaking
   if (isAndroid) {
     const fontScale = PixelRatio.getFontScale();
-    
-    // Cap font scaling at 1.3x on Android
     if (fontScale > 1.3) {
       return size * 1.3;
     }
     return size * fontScale;
   }
-  
+
   return size;
 };
 
 /**
- * Get platform-specific alert implementation
- * iOS: Native alert
- * Android: Can use native or custom modal
- * Web: Browser alert
+ * Cross-platform alert wrapper.
+ * Web uses `window.alert` (only the first button's `onPress` is invoked, if any),
+ * native platforms delegate to `Alert.alert`.
  */
 export const showAlert = (title: string, message: string, buttons?: any[]) => {
   if (isWeb) {
-    // Simple browser alert for web
     window.alert(`${title}\n\n${message}`);
     if (buttons && buttons[0] && buttons[0].onPress) {
       buttons[0].onPress();
@@ -132,42 +131,46 @@ export const showAlert = (title: string, message: string, buttons?: any[]) => {
 };
 
 /**
- * Platform-specific image picker options
+ * Returns image picker options tuned per platform.
+ * Android prefers square crops and heavier compression to reduce upload sizes;
+ * iOS allows a looser aspect ratio and lighter compression.
  */
 export const getImagePickerOptions = () => {
   return {
     mediaTypes: 'Images' as any,
     allowsEditing: true,
-    aspect: isAndroid ? [1, 1] : [4, 3], // Android prefers square, iOS more flexible
-    quality: isAndroid ? 0.8 : 0.9, // Android: compress more to reduce upload size
+    aspect: isAndroid ? [1, 1] : [4, 3],
+    quality: isAndroid ? 0.8 : 0.9,
   };
 };
 
 /**
- * Platform-specific map provider
+ * Returns the map provider string for `react-native-maps`.
+ * Android requires `'google'`; iOS defaults to Apple Maps when `undefined`.
  */
 export const getMapProvider = () => {
-  // Android must use PROVIDER_GOOGLE, iOS uses Apple Maps by default
   return isAndroid ? 'google' : undefined;
 };
 
 /**
- * Check if running in Expo Go
+ * Returns true when the app is running inside Expo Go rather than a standalone build.
+ * Used to conditionally disable features unavailable in the managed sandbox.
  */
 export const isExpoGo = () => {
   return Constants.appOwnership === 'expo';
 };
 
 /**
- * Get platform-specific safe area insets
+ * Returns static safe area inset estimates without requiring
+ * `react-native-safe-area-context`. Prefer `useSafeAreaInsets` hook for
+ * accurate runtime values; use this only where a hook cannot be called.
  */
 export const getSafeAreaInsets = () => {
-  // Default safe area values
   let top = 0;
   let bottom = 0;
   let left = 0;
   let right = 0;
-  
+
   if (isIOS) {
     top = hasNotch() ? 44 : 20;
     bottom = hasNotch() ? 34 : 0;
@@ -175,7 +178,7 @@ export const getSafeAreaInsets = () => {
     top = 24;
     bottom = 0;
   }
-  
+
   return { top, bottom, left, right };
 };
 
