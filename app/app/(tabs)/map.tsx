@@ -102,8 +102,8 @@ export default function MapScreen(): React.JSX.Element {
     if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
 
     const now = Date.now();
-    // Throttle camera updates to every 2 seconds to avoid excessive churn
-    if (now - lastCameraUpdateRef.current < 2000) return;
+    // 1s throttle matches 2Hz GPS — keeps camera snug to marker without churning.
+    if (now - lastCameraUpdateRef.current < 1000) return;
     // Cooldown after user interaction (3 seconds)
     if (now - lastUserGestureAtRef.current < 3000) return;
 

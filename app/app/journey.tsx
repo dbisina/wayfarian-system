@@ -218,13 +218,16 @@ export default function JourneyScreen(): React.JSX.Element {
     const normalizedTarget = ((targetHeading % 360) + 360) % 360;
     lastHeadingRef.current = normalizedTarget;
 
-    // Smoothly animate the marker to the new position
+    // Smoothly animate the marker to the new position.
+    // 400ms duration matches the 500ms GPS interval (2Hz) so each animation
+    // completes before the next sample arrives — eliminates the "stepping"
+    // feel from animations stacking on top of each other.
     markerPosition.timing({
       latitude: targetLat,
       longitude: targetLng,
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
-      duration: 900,
+      duration: 400,
       useNativeDriver: false,
     } as any).start();
 
@@ -292,7 +295,9 @@ export default function JourneyScreen(): React.JSX.Element {
     if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
 
     const now = Date.now();
-    if (now - lastCameraUpdateRef.current < 2000) return;
+    // 1s throttle keeps camera in sync with 2Hz GPS without animation pile-up.
+    // Previously 2s caused visible drift to screen edge at highway speed.
+    if (now - lastCameraUpdateRef.current < 1000) return;
     // Cooldown after any user touch — prevents a lingering follow animation from
     // yanking zoom/heading back while the user is still interacting (pinch, pan, rotate).
     if (now - lastUserGestureAtRef.current < 3000) return;

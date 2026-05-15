@@ -14,7 +14,7 @@ const BUFFER_SIZE = 8; // Flush every 8 points (more frequent than 10 for faster
 const FLUSH_INTERVAL_MS = 10000; // Faster flush for path refinement
 
 // Speed thresholds - much lower to avoid killing real movement
-const STATIONARY_SPEED_THRESHOLD_MPS = 0.5; // 0.5 m/s = 1.8 km/h (walking pace cutoff)
+const STATIONARY_SPEED_THRESHOLD_MPS = 0.3; // 0.3 m/s = 1.08 km/h — low enough to catch slow cycling uphill, high enough to reject GPS jitter at rest
 const DWELL_SPEED_THRESHOLD_MPS = 1.0; // 1.0 m/s = 3.6 km/h
 const DWELL_THRESHOLD_MS = 5000; // 5 seconds stationary = dwelling
 
@@ -22,7 +22,7 @@ const DWELL_THRESHOLD_MS = 5000; // 5 seconds stationary = dwelling
 const MAX_REASONABLE_SPEED_MPS = 55.5; // 200 km/h absolute ceiling (cars on highways)
 const MAX_ACCELERATION_MPS2 = 8.0; // Max realistic acceleration
 const SPEED_SMOOTHING_FACTOR = 0.4; // Smooth speed display
-const SPEED_DECAY_FACTOR = 0.4; // How fast speed drops to 0 when stopped
+const SPEED_DECAY_FACTOR = 0.7; // How fast speed drops to 0 when stopped. 0.7 = ~3 samples to halve, smoother decay that doesn't visibly drop on a single missed GPS tick.
 
 // Per-vehicle top-speed cap (km/h). Any max-speed sample exceeding this is rejected as a GPS glitch.
 type VehicleKind = 'car' | 'bike' | 'scooter';
@@ -169,8 +169,12 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         roadsApiDistanceRef.current += segmentDist;
         roadsApiActiveRef.current = true;
 
-        // Use Roads API distance as the official distance (more accurate than Haversine)
-        setOfficialDistance(roadsApiDistanceRef.current);
+        // Use whichever is GREATER between Roads API and live Haversine.
+        // Pure Roads-API replacement can VISIBLY SHRINK the on-screen distance
+        // (e.g. 1.05 km haversine → 0.95 km snapped) which users notice. Taking
+        // the max keeps the display monotonic while still benefiting from Roads
+        // API correction on subsequent flushes that exceed haversine.
+        setOfficialDistance(Math.max(roadsApiDistanceRef.current, haversineDistanceRef.current));
       } else {
         // Roads API returned no points - fall back, append raw points for path
         setOfficialSnappedPath(prev => {
@@ -371,8 +375,12 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
     }
 
     // === DISTANCE ACCUMULATION (Haversine - real-time) ===
-    // Accumulate distance from raw GPS positions regardless of Roads API
-    if (lastAccumulationPointRef.current && filteredSpeed > 0) {
+    // Accumulate distance from raw GPS positions regardless of Roads API.
+    // Gate on rawSpeedMps > 0.2 (not filteredSpeed > 0) so we capture slow movement
+    // BELOW the stationary threshold — e.g. the first few seconds of a slow cycling
+    // pull-off, or low-speed maneuvering. Jitter filter on distMeters below still
+    // protects against accumulating GPS noise while truly stopped.
+    if (lastAccumulationPointRef.current && rawSpeedMps > 0.2) {
       const distKm = haversineDistance(
         lastAccumulationPointRef.current.latitude,
         lastAccumulationPointRef.current.longitude,
@@ -483,7 +491,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         subscriptionRef.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000, // 1Hz for high-resolution tracking
+            timeInterval: 500, // 2Hz — at 60 km/h ~8m between samples for fluid marker movement. Battery cost is small with BestForNavigation already on.
             distanceInterval: 3, // 3 meters
           },
           handleLocationUpdate
