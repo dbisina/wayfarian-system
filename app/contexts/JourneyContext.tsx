@@ -924,40 +924,36 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       preResumeMovingTimeRef.current = 0;
       routePointsBaselineRef.current = [];
 
+      // Show disclosure BEFORE any permission dialog on Android.
+      // onAccept handles both fg and bg permission requests then re-calls startJourney,
+      // so returning false here is safe — the journey will be started after acceptance.
+      if (Platform.OS === 'android') {
+        const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
+        const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
+        if (accepted !== '1') {
+          setPendingJourneyData(journeyData);
+          setShowLocationDisclosure(true);
+          return false;
+        }
+      }
+
       let { status: fgStatus } = await Location.getForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
         fgStatus = (await Location.requestForegroundPermissionsAsync()).status;
       }
-      
+
       if (fgStatus !== 'granted') {
         throw new Error('Location permission denied');
       }
 
-      // Android Background Location Policy Compliance.
-      // Prominent Disclosure must be shown AFTER foreground permission but
-      // BEFORE background location permission access.
       if (Platform.OS === 'android') {
-        const DISCLOSURE_ACCEPTED_KEY = 'bg_location_disclosure_accepted_v1';
-        const accepted = await AsyncStorage.getItem(DISCLOSURE_ACCEPTED_KEY);
         const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-
         if (bgStatus === 'granted') {
-          // Background permission already granted — silently stamp acceptance if not yet
-          // recorded (user may have granted via Settings before ever opening this flow).
-          if (accepted !== '1') {
-            AsyncStorage.setItem(DISCLOSURE_ACCEPTED_KEY, '1').catch(() => {});
-          }
-          // Check battery optimisation on this path too (the disclosure modal path
-          // triggers its own check in onAccept; this covers the already-granted path).
+          // Battery check here covers the already-granted path; the disclosure modal
+          // path triggers its own check in onAccept.
           checkAndShowBatteryOptimization();
-        } else if (accepted !== '1') {
-          // First time needing background permission — show Play-policy disclosure first.
-          setPendingJourneyData(journeyData);
-          setShowLocationDisclosure(true);
-          return false; // Modal handles permission request and re-invokes startJourney
         } else {
-          // Disclosure previously accepted but bg permission now denied/revoked.
-          // Direct the user to Settings — don't show the disclosure again.
+          // Disclosure accepted but bg permission denied/revoked — send to Settings.
           Alert.alert(
             'Permission Required',
             'Background location is required to track your journey accurately. Please enable it in Settings.',
