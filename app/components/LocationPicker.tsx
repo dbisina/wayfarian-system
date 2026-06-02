@@ -29,6 +29,7 @@ interface LocationPickerProps {
   placeholder: string;
   value?: string;
   onLocationSelect: (location: LocationData) => void;
+  onLocationClear?: () => void;
   currentLocation?: { latitude: number; longitude: number };
   style?: any;
   suggestionsPosition?: 'bottom' | 'top';
@@ -38,6 +39,7 @@ export default function LocationPicker({
   placeholder,
   value = '',
   onLocationSelect,
+  onLocationClear,
   currentLocation,
   style,
   suggestionsPosition = 'bottom',
@@ -87,6 +89,10 @@ export default function LocationPicker({
 
   const handleTextChange = (text: string) => {
     setQuery(text);
+
+    if (value && text !== value) {
+      onLocationClear?.();
+    }
     
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -181,6 +187,7 @@ export default function LocationPicker({
     setQuery('');
     setSuggestions([]);
     setShowSuggestions(!!currentLocation);
+    onLocationClear?.();
   };
 
   const handleUseCurrentLocation = () => {

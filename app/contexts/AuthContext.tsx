@@ -24,7 +24,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI, setAuthToken, removeAuthToken } from '../services/api';
+import { authAPI, setAuthToken, removeAuthToken, setAuthSessionExpiredHandler } from '../services/api';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as FirebaseAuthNS from 'firebase/auth';
 import { getBoolSync, setBoolSync } from '../services/storage';
@@ -214,6 +214,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [initializing, setInitializing] = useState(true);
   const { setUserContext } = useSentryContextBridge();
   const tokenRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firebaseNullGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const currentUserRef = useRef<User | null>(null);
   // Synchronously seeded from MMKV so the onAuthStateChanged null callback can't wipe
@@ -232,6 +233,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       tokenRefreshTimeoutRef.current = null;
     }
   }, []);
+
+  const clearFirebaseNullGraceTimer = useCallback(() => {
+    if (firebaseNullGraceTimeoutRef.current) {
+      clearTimeout(firebaseNullGraceTimeoutRef.current);
+      firebaseNullGraceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearLocalAuthSession = useCallback(async (reason: string) => {
+    console.warn('[AuthContext] Clearing local auth session:', reason);
+    clearTokenRefreshTimer();
+    clearFirebaseNullGraceTimer();
+    await removeAuthToken();
+    currentUserRef.current = null;
+    wasAuthenticatedRef.current = false;
+    setFirebaseUser(null);
+    await setUser(null);
+    setIsAuthenticated(false);
+    setUserContext(null);
+  }, [clearTokenRefreshTimer, clearFirebaseNullGraceTimer, setUser, setUserContext]);
+
+  useEffect(() => {
+    setAuthSessionExpiredHandler(() => clearLocalAuthSession('API token refresh failed'));
+    return () => setAuthSessionExpiredHandler(null);
+  }, [clearLocalAuthSession]);
 
   /**
    * Fetches the current Firebase ID token, stores it, then schedules a proactive refresh
@@ -570,6 +596,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          clearFirebaseNullGraceTimer();
           setFirebaseUser(firebaseUser);
           firstAuthResolvedRef.current = true;
           wasAuthenticatedRef.current = true;
@@ -590,19 +617,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           //   1. currentUserRef — populated by initializeAuthState once cached user loads
           //   2. wasAuthenticatedRef — synchronously seeded from MMKV at module init
           //   3. firstAuthResolvedRef — skips only the very first null, not real sign-outs
-          if (!currentUserRef.current && !wasAuthenticatedRef.current) {
-            setFirebaseUser(null);
-            setUser(null);
-            setIsAuthenticated(false);
-            setUserContext(null);
-            clearTokenRefreshTimer();
-            await removeAuthToken();
-          } else if (!currentUserRef.current && wasAuthenticatedRef.current && !firstAuthResolvedRef.current) {
+          const mayStillBeRestoring = wasAuthenticatedRef.current && !firstAuthResolvedRef.current;
+          if (mayStillBeRestoring) {
             if (__DEV__) console.log('[AuthContext] Firebase null before cached user loaded, preserving MMKV auth state');
             setFirebaseUser(null);
+            clearFirebaseNullGraceTimer();
+            firebaseNullGraceTimeoutRef.current = setTimeout(() => {
+              firebaseNullGraceTimeoutRef.current = null;
+              if (!auth.currentUser) {
+                clearLocalAuthSession('Firebase session unavailable after restore').catch((error) => {
+                  console.warn('[AuthContext] Delayed session clear failed:', error);
+                });
+              }
+            }, 1500);
           } else {
-            if (__DEV__) console.log('[AuthContext] Firebase returned null but cached user exists, preserving session');
-            setFirebaseUser(null);
+            await clearLocalAuthSession('Firebase auth state is signed out');
           }
           firstAuthResolvedRef.current = true;
         }
@@ -625,7 +654,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       unsubscribe();
     };
-  }, [setUserContext, syncUserData, clearTokenRefreshTimer]);
+  }, [setUserContext, syncUserData, clearTokenRefreshTimer, clearFirebaseNullGraceTimer, clearLocalAuthSession]);
 
   // Secondary listener for token rotation — schedules a proactive refresh whenever Firebase
   // issues a new ID token (e.g. after a force-refresh or sign-in).

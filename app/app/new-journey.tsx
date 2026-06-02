@@ -110,7 +110,9 @@ export default function NewJourneyScreen() {
   };
 
   const handleSaveAndStart = async () => {
-    if (!journeyName.trim() || !startLocation || !endLocation) {
+    const trimmedJourneyName = journeyName.trim();
+
+    if (!trimmedJourneyName || !startLocation || !endLocation) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
       return;
     }
@@ -119,7 +121,7 @@ export default function NewJourneyScreen() {
     
     try {
       const success = await startJourney({
-        title: journeyName,
+        title: trimmedJourneyName,
         startLocation: {
           latitude: startLocation.latitude,
           longitude: startLocation.longitude,
@@ -155,7 +157,9 @@ export default function NewJourneyScreen() {
   };
 
   const handleSaveForLater = async () => {
-    if (!journeyName.trim()) {
+    const trimmedJourneyName = journeyName.trim();
+
+    if (!trimmedJourneyName) {
       Alert.alert('Missing Information', 'Please enter a journey name to save.');
       return;
     }
@@ -164,7 +168,7 @@ export default function NewJourneyScreen() {
 
     try {
       const success = await saveJourney({
-        title: journeyName,
+        title: trimmedJourneyName,
         startLocation: startLocation ? {
           latitude: startLocation.latitude,
           longitude: startLocation.longitude,
@@ -302,6 +306,7 @@ export default function NewJourneyScreen() {
             placeholder="Start Location"
             value={startLocation?.address || ''}
             onLocationSelect={setStartLocation}
+            onLocationClear={() => setStartLocation(null)}
             currentLocation={currentLocation || undefined}
           />
           {startLocation && (
@@ -318,6 +323,7 @@ export default function NewJourneyScreen() {
             placeholder="End Location"
             value={endLocation?.address || ''}
             onLocationSelect={setEndLocation}
+            onLocationClear={() => setEndLocation(null)}
             currentLocation={currentLocation || undefined}
           />
           {endLocation && (

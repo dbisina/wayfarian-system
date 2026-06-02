@@ -962,38 +962,54 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Layered location strategy: cached GPS first (<10ms), Balanced accuracy fallback (1-3s).
-      // Saves 5-20s vs the old BestForNavigation approach.
+      const trimmedTitle = typeof journeyData.title === 'string' ? journeyData.title.trim() : undefined;
+      const selectedStartLocation = journeyData.startLocation;
+
+      // Use explicit form start location when present. Quick-start rides with no
+      // picked start still use cached/current GPS for speed.
       let location: Location.LocationObject | null = null;
-      try {
-        location = await Location.getLastKnownPositionAsync();
-      } catch {
-        // fails silently on some devices
+      if (!selectedStartLocation) {
+        try {
+          location = await Location.getLastKnownPositionAsync();
+        } catch {
+          // fails silently on some devices
+        }
+
+        if (!location || (Date.now() - location.timestamp) > 60000) {
+          // Cached position missing or >60s stale
+          location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+        }
       }
 
-      if (!location || (Date.now() - location.timestamp) > 60000) {
-        // Cached position missing or >60s stale
-        location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+      if (!selectedStartLocation && !location) {
+        throw new Error('Could not resolve start location');
       }
+
+      const startLatitude = selectedStartLocation?.latitude ?? location!.coords.latitude;
+      const startLongitude = selectedStartLocation?.longitude ?? location!.coords.longitude;
+      const startAddress = selectedStartLocation?.address || 'Start Location';
+      const startLocationTimestamp = location?.timestamp ?? Date.now();
+
+      const buildStartJourneyPayload = () => ({
+        vehicle: journeyData.vehicle || 'car',
+        vehicleId: journeyData.vehicleId,
+        vehicleName: journeyData.vehicleName,
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
+        groupId: journeyData.groupId,
+        startLatitude,
+        startLongitude,
+        ...(journeyData.endLocation ? {
+          endLatitude: journeyData.endLocation.latitude,
+          endLongitude: journeyData.endLocation.longitude,
+          endAddress: journeyData.endLocation.address,
+        } : {}),
+      });
 
       let response: any;
       try {
-        response = await journeyAPI.startJourney({
-          vehicle: journeyData.vehicle || 'car',
-          vehicleId: journeyData.vehicleId,
-          vehicleName: journeyData.vehicleName,
-          title: journeyData.title || 'My Journey',
-          groupId: journeyData.groupId,
-          startLatitude: location.coords.latitude,
-          startLongitude: location.coords.longitude,
-          ...(journeyData.endLocation ? {
-            endLatitude: journeyData.endLocation.latitude,
-            endLongitude: journeyData.endLocation.longitude,
-            endAddress: journeyData.endLocation.address,
-          } : {}),
-        });
+        response = await journeyAPI.startJourney(buildStartJourneyPayload());
       } catch (apiError: any) {
         // 400 with activeJourney means the user already has a journey on the server
         if (apiError?.status === 400 && apiError?.body?.activeJourney?.id) {
@@ -1027,8 +1043,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
               { elapsedHrs: staleElapsedHrs.toFixed(1), dist: staleDist, avgSpd: staleAvgSpeed, topSpd: staleTopSpeed });
             try {
               await journeyAPI.endJourney(staleId, {
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
+                latitude: startLatitude,
+                longitude: startLongitude,
                 totalDistance: Math.max(staleDist, 0),
               });
             } catch {
@@ -1042,20 +1058,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
 
             // Retry immediately — forward endLocation so the new journey has the correct
             // destination rather than falling back to stale Redux/backend data.
-            response = await journeyAPI.startJourney({
-              vehicle: journeyData.vehicle || 'car',
-              vehicleId: journeyData.vehicleId,
-              vehicleName: journeyData.vehicleName,
-              title: journeyData.title || 'My Journey',
-              groupId: journeyData.groupId,
-              startLatitude: location.coords.latitude,
-              startLongitude: location.coords.longitude,
-              ...(journeyData.endLocation ? {
-                endLatitude: journeyData.endLocation.latitude,
-                endLongitude: journeyData.endLocation.longitude,
-                endAddress: journeyData.endLocation.address,
-              } : {}),
-            });
+            response = await journeyAPI.startJourney(buildStartJourneyPayload());
           } else {
           let timeAgo = '';
           if (staleJourney.startTime) {
@@ -1140,8 +1143,8 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           console.log('[JourneyContext] User chose to end stale journey:', staleId);
           try {
             await journeyAPI.endJourney(staleId, {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
+              latitude: startLatitude,
+              longitude: startLongitude,
               totalDistance: staleJourney.totalDistance || 0,
             });
           } catch (endErr) {
@@ -1154,18 +1157,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           await AsyncStorage.removeItem(JOURNEY_ID_KEY).catch(() => {});
           await AsyncStorage.removeItem(GROUP_INSTANCE_ID_KEY).catch(() => {});
 
-          response = await journeyAPI.startJourney({
-            vehicle: journeyData.vehicle || 'car',
-            title: journeyData.title || 'My Journey',
-            groupId: journeyData.groupId,
-            startLatitude: location.coords.latitude,
-            startLongitude: location.coords.longitude,
-            ...(journeyData.endLocation ? {
-              endLatitude: journeyData.endLocation.latitude,
-              endLongitude: journeyData.endLocation.longitude,
-              endAddress: journeyData.endLocation.address,
-            } : {}),
-          });
+          response = await journeyAPI.startJourney(buildStartJourneyPayload());
           } // end else (non-zombie — user prompt path)
         } else {
           throw apiError;
@@ -1182,11 +1174,11 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       
       const newJourney: JourneyData = {
         id: journeyId,
-        title: journeyData.title || 'My Journey',
+        title: trimmedTitle || response.journey.title || 'My Journey',
         startLocation: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            address: 'Start Location'
+            latitude: startLatitude,
+            longitude: startLongitude,
+            address: startAddress
         },
         endLocation: journeyData.endLocation || undefined,
         groupId: journeyData.groupId,
@@ -1221,10 +1213,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       let estimatedTotalDistance: number | undefined;
       if (journeyData.endLocation) {
         const R = 6371;
-        const dLat = (journeyData.endLocation.latitude - location.coords.latitude) * Math.PI / 180;
-        const dLon = (journeyData.endLocation.longitude - location.coords.longitude) * Math.PI / 180;
+        const dLat = (journeyData.endLocation.latitude - startLatitude) * Math.PI / 180;
+        const dLon = (journeyData.endLocation.longitude - startLongitude) * Math.PI / 180;
         const a = Math.sin(dLat / 2) ** 2 +
-          Math.cos(location.coords.latitude * Math.PI / 180) *
+          Math.cos(startLatitude * Math.PI / 180) *
           Math.cos(journeyData.endLocation.latitude * Math.PI / 180) *
           Math.sin(dLon / 2) ** 2;
         estimatedTotalDistance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -1239,9 +1231,9 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           estimatedTotalDistance,
           startTime: startTimestamp,
           initialLocation: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            timestamp: location.timestamp,
+            latitude: startLatitude,
+            longitude: startLongitude,
+            timestamp: startLocationTimestamp,
           },
           vehicle: (journeyData.vehicle as 'car' | 'bike' | 'scooter') || 'car',
         }).catch(err =>

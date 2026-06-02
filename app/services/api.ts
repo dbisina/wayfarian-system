@@ -4,12 +4,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { getAuth } from 'firebase/auth';
+import { Buffer } from 'buffer';
 
 const DEFAULT_API_URL = 'https://wayfarian-system-production.up.railway.app/api';
 const TOKEN_STORAGE_KEY = 'authToken';
 
 // Track if a token refresh is in progress to prevent multiple simultaneous refreshes
 let tokenRefreshPromise: Promise<string | null> | null = null;
+let authSessionExpiredHandler: (() => void | Promise<void>) | null = null;
 
 export type ApiRequestOptions = {
   method?: string;
@@ -107,9 +109,44 @@ const secureRemoveItem = async (key: string): Promise<void> => {
   await AsyncStorage.removeItem(key);
 };
 
+const decodeJwtPayload = (token: string): any | null => {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=');
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf-8'));
+  } catch {
+    return null;
+  }
+};
+
+const shouldRefreshToken = (token: string, skewMs = 2 * 60 * 1000): boolean => {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) return false;
+  return (payload.exp * 1000) - Date.now() <= skewMs;
+};
+
+const notifyAuthSessionExpired = async () => {
+  if (!authSessionExpiredHandler) return;
+  try {
+    await authSessionExpiredHandler();
+  } catch (error) {
+    console.warn('[API] Auth session expiry handler failed:', error);
+  }
+};
+
+export const setAuthSessionExpiredHandler = (handler: (() => void | Promise<void>) | null): void => {
+  authSessionExpiredHandler = handler;
+};
+
 export const getAuthToken = async (): Promise<string | null> => {
   // Return cached token if available
   if (cachedToken) {
+    if (shouldRefreshToken(cachedToken)) {
+      const refreshed = await refreshAuthToken();
+      if (refreshed) return refreshed;
+    }
     return cachedToken;
   }
 
@@ -118,6 +155,10 @@ export const getAuthToken = async (): Promise<string | null> => {
     // Update cache
     if (token) {
       cachedToken = token;
+      if (shouldRefreshToken(token)) {
+        const refreshed = await refreshAuthToken();
+        if (refreshed) return refreshed;
+      }
     }
     return token;
   } catch (error) {
@@ -150,7 +191,7 @@ export const removeAuthToken = async (): Promise<void> => {
 
 // FIX: Add token refresh function for 401 handling
 // This refreshes the Firebase ID token and updates storage
-const refreshAuthToken = async (): Promise<string | null> => {
+async function refreshAuthToken(): Promise<string | null> {
   // If a refresh is already in progress, wait for it instead of starting another
   if (tokenRefreshPromise) {
     console.log('[API] Token refresh already in progress, waiting...');
@@ -164,6 +205,7 @@ const refreshAuthToken = async (): Promise<string | null> => {
 
       if (!currentUser) {
         console.warn('[API] No Firebase user for token refresh');
+        await removeAuthToken();
         return null;
       }
 
@@ -187,7 +229,7 @@ const refreshAuthToken = async (): Promise<string | null> => {
   })();
 
   return tokenRefreshPromise;
-};
+}
 
 // Base API request function with timeout and retry logic
 export const apiRequest = async (
@@ -275,23 +317,27 @@ export const apiRequest = async (
         throw error;
       }
 
-      // FIX: Handle 401 Unauthorized - attempt token refresh and retry once
-      if (response.status === 401 && requiresAuth && retryCount === 0) {
-        console.log(`[API] 401 Unauthorized on ${endpoint}, attempting token refresh...`);
-        const newToken = await refreshAuthToken();
+      // Handle 401 Unauthorized: force-refresh once, then clear the bad local
+      // session if the server still rejects the token.
+      if (response.status === 401 && requiresAuth) {
+        if (retryCount === 0) {
+          console.log(`[API] 401 Unauthorized on ${endpoint}, attempting token refresh...`);
+          const newToken = await refreshAuthToken();
 
-        if (newToken) {
-          console.log(`[API] Token refreshed, retrying ${endpoint}...`);
-          // Retry the request with the new token (increment retryCount to prevent infinite loop)
-          return apiRequest(endpoint, methodOrOptions, data, requiresAuthDefault, timeoutMsDefault, retryCount + 1);
-        } else {
-          // Token refresh failed - likely user needs to re-login
-          console.error(`[API] Token refresh failed for ${endpoint}, user may need to re-authenticate`);
-          const error = new Error('Session expired. Please sign in again.') as any;
-          error.status = 401;
-          error.requiresReauth = true;
-          throw error;
+          if (newToken) {
+            console.log(`[API] Token refreshed, retrying ${endpoint}...`);
+            // Retry the request with the new token (increment retryCount to prevent infinite loop)
+            return apiRequest(endpoint, methodOrOptions, data, requiresAuthDefault, timeoutMsDefault, retryCount + 1);
+          }
         }
+
+        console.error(`[API] Unable to authenticate ${endpoint}; clearing local session`);
+        await removeAuthToken();
+        await notifyAuthSessionExpired();
+        const error = new Error('Session expired. Please sign in again.') as any;
+        error.status = 401;
+        error.requiresReauth = true;
+        throw error;
       }
 
       if (response.status >= 500 && retryCount < maxRetries) {
@@ -981,24 +1027,6 @@ export const groupJourneyAPI = {
   },
 };
 
-export default {
-  auth: authAPI,
-  user: userAPI,
-  journey: journeyAPI,
-  group: groupAPI,
-  groupJourney: groupJourneyAPI,
-  leaderboard: leaderboardAPI,
-  gallery: galleryAPI,
-  places: placesAPI,
-  vehicles: vehicleAPI,
-  apiRequest,
-  apiRequestWithOptions,
-  getAuthToken,
-  setAuthToken,
-  removeAuthToken,
-  getCurrentApiUrl,
-};
-
 // ─── Vehicle API ─────────────────────────────────────────────────────────────
 
 export interface GarageVehicle {
@@ -1074,4 +1102,22 @@ export const vehicleAPI = {
     if (!response.ok) throw new Error('Photo upload failed');
     return response.json();
   },
+};
+
+export default {
+  auth: authAPI,
+  user: userAPI,
+  journey: journeyAPI,
+  group: groupAPI,
+  groupJourney: groupJourneyAPI,
+  leaderboard: leaderboardAPI,
+  gallery: galleryAPI,
+  places: placesAPI,
+  vehicles: vehicleAPI,
+  apiRequest,
+  apiRequestWithOptions,
+  getAuthToken,
+  setAuthToken,
+  removeAuthToken,
+  getCurrentApiUrl,
 };
