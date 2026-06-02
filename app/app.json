@@ -2,7 +2,7 @@
   "expo": {
     "name": "Wayfarian",
     "slug": "wayfarian",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icons/adaptive-icon.png",
     "description": "Wayfarian is your group journey companion. Track, share, and relive your adventures with friends.",
