@@ -224,12 +224,6 @@ const JourneyDetailScreen = (): React.JSX.Element => {
     if (!journey) return;
 
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(t('journeyDetail.alerts.photoPermission'), t('journeyDetail.alerts.galleryNeeded'));
-        return;
-      }
-
       setShowOptionsMenu(false);
 
       const result = await ImagePicker.launchImageLibraryAsync({

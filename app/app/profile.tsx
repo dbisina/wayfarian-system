@@ -55,14 +55,6 @@ export default function ProfileScreen() {
 
   const handleChangePhoto = async () => {
     try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(t('profile.photo.permissionTitle'), t('profile.photo.permissionMsg'));
-        return;
-      }
-
-      // Pick image
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,

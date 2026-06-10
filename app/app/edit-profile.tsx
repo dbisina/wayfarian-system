@@ -79,14 +79,6 @@ export default function EditProfileScreen() {
 
   const handleChangePhoto = async () => {
     try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant camera roll permission to change your profile photo');
-        return;
-      }
-
-      // Pick image
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,

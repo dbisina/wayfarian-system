@@ -54,11 +54,6 @@ export default function AddVehicleScreen() {
 
   const handlePickPhoto = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Photo library access is needed to add a vehicle photo.');
-        return;
-      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,

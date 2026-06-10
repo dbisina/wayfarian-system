@@ -199,12 +199,6 @@ const PastJourneysScreen = ({ onBackPress }: PastJourneysScreenProps): React.JSX
     if (!journey) return;
 
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(t('journeyDetail.alerts.photoPermission'), t('journeyDetail.alerts.galleryNeeded'));
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,

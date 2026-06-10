@@ -65,12 +65,6 @@ export default function NewGroupScreen() {
 
   const handleUploadPhoto = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'We need access to your photos to set a cover.');
-        return;
-      }
-
       // Small delay to ensure ActivityResultLauncher is registered (Android fix)
       await new Promise(resolve => setTimeout(resolve, 100));
 

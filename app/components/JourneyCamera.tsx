@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -35,19 +34,11 @@ export default function JourneyCamera({
   const [isUploading, setIsUploading] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
-
   useEffect(() => {
     if (!cameraPermission || (cameraPermission.status === 'undetermined' && cameraPermission.canAskAgain)) {
       requestCameraPermission();
     }
   }, [cameraPermission, requestCameraPermission]);
-
-  useEffect(() => {
-    if (!mediaPermission) {
-      requestMediaPermission();
-    }
-  }, [mediaPermission, requestMediaPermission]);
 
   const ensureLocationPermission = useCallback(async () => {
     let { status } = await Location.getForegroundPermissionsAsync();
@@ -60,16 +51,6 @@ export default function JourneyCamera({
       throw new Error(t('components.journeyCamera.locationDenied'));
     }
   }, []);
-
-  const saveToLibraryIfAllowed = useCallback(async (uri: string) => {
-    if (mediaPermission?.granted) {
-      try {
-        await MediaLibrary.saveToLibraryAsync(uri);
-      } catch (error) {
-        console.warn('Unable to save photo to library', error);
-      }
-    }
-  }, [mediaPermission?.granted]);
 
   const takePicture = useCallback(async () => {
     if (!cameraRef.current) {
@@ -86,12 +67,11 @@ export default function JourneyCamera({
       }
 
       setCapturedPhoto(capture.uri);
-      saveToLibraryIfAllowed(capture.uri);
     } catch (error) {
       const message = error instanceof Error ? error.message : t('components.journeyCamera.failedCapture');
       Alert.alert(t('components.journeyCamera.cameraError'), message);
     }
-  }, [saveToLibraryIfAllowed]);
+  }, []);
 
   const handleConfirmPhoto = useCallback(async () => {
     if (!capturedPhoto || isUploading) return;

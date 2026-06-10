@@ -84,15 +84,6 @@ export default function ProfileSetupScreen() {
 
   const handleChangePhoto = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          t('alerts.error'), 
-          t('profileSetup.errors.photoPermission', 'Photo library access is required to change your profile picture.')
-        );
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,

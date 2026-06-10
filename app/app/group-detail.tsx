@@ -649,17 +649,9 @@ export default function GroupDetailScreen() {
     if (!group || !isAdmin) return;
     
     try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'We need access to your photos to set a cover.');
-        return;
-      }
-
       // Small delay to ensure ActivityResultLauncher is registered (Android fix)
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Pick image
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
