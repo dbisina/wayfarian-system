@@ -846,6 +846,16 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             await ensureGroupJourneySocket(gid, dispatch);
           }
         } else if (soloJourney) {
+          // The server stores status as the uppercase Prisma enum ('ACTIVE' / 'PAUSED').
+          // Normalise before comparing — a raw `=== 'active'` check is always false, which
+          // would hydrate every live solo ride as 'paused', stop foreground tracking, and
+          // skip the background-task re-arm. That froze long rides at their last server
+          // stats after any mid-ride process reload.
+          const soloStatus = typeof soloJourney.status === 'string'
+            ? soloJourney.status.toUpperCase()
+            : 'ACTIVE';
+          const isSoloActive = soloStatus === 'ACTIVE';
+
           dispatch(setCurrentJourney({
             id: soloJourney.id,
             title: soloJourney.title,
@@ -861,11 +871,29 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
             } : undefined,
             groupId: soloJourney.groupId,
             vehicle: soloJourney.vehicle,
-            status: soloJourney.status === 'active' ? 'active' : 'paused',
+            status: isSoloActive ? 'active' : 'paused',
             photos: soloJourney.photos || [],
           }));
 
-          if (soloJourney.status === 'active') {
+          // Seed the running totals from the server's last-known stats so a mid-ride
+          // recovery (cold start / process kill) continues the journey instead of
+          // restarting distance/time from zero. useSmartTracking's current segment is
+          // added on top of these baselines via derivedStats / the stats-sync effect.
+          const serverDistance = Number(soloJourney.totalDistance) || 0;
+          const serverAvgSpeed = Number(soloJourney.avgSpeed) || 0;
+          const serverMovingTime = serverAvgSpeed > 0 ? (serverDistance / serverAvgSpeed) * 3600 : 0;
+          preResumeDistanceRef.current = serverDistance;
+          preResumeMovingTimeRef.current = serverMovingTime;
+          dispatch(setStats({
+            totalDistance: serverDistance,
+            totalTime: Number(soloJourney.totalTime) || 0,
+            movingTime: serverMovingTime,
+            avgSpeed: serverAvgSpeed,
+            topSpeed: Number(soloJourney.topSpeed) || 0,
+            currentSpeed: 0,
+          }));
+
+          if (isSoloActive) {
             if (soloJourney.startTime) {
               const startTime = new Date(soloJourney.startTime).getTime();
               startTimeRef.current = startTime;
