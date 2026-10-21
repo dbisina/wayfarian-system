@@ -12,7 +12,7 @@ const { offset } = (() => {
 
 /** Minimal in-memory stand-in for the Prisma calls RideService makes. */
 function fakePrisma() {
-  const db = { rides: new Map(), points: [], events: [], stats: new Map(), ledger: [], users: new Map(), vehicles: [] };
+  const db = { rides: new Map(), points: [], events: [], stats: new Map(), ledger: [], achievements: [], users: new Map(), vehicles: [] };
   const apply = (row, data) => {
     for (const [k, v] of Object.entries(data)) {
       if (v && typeof v === 'object' && !(v instanceof Date)) {
@@ -42,7 +42,22 @@ function fakePrisma() {
         const rows = [...db.rides.values()].filter((r) => r.userId === where.userId && r.status === where.status);
         return { _max: { topSpeedMps: rows.length ? Math.max(...rows.map((r) => r.topSpeedMps)) : null } };
       },
-      findMany: async ({ where }) => [...db.rides.values()].filter((r) => r.userId === where.userId && r.status !== 'DELETED'),
+      findMany: async ({ where }) =>
+        [...db.rides.values()].filter(
+          (r) =>
+            r.userId === where.userId &&
+            (where.status === undefined ? true : typeof where.status === 'string' ? r.status === where.status : r.status !== where.status.not) &&
+            (!where.distanceM || r.distanceM >= where.distanceM.gte)
+        ),
+      count: async ({ where }) =>
+        [...db.rides.values()].filter(
+          (r) =>
+            r.userId === where.userId &&
+            r.status === where.status &&
+            (!where.distanceM || r.distanceM >= where.distanceM.gte) &&
+            (!where.movingTimeS || r.movingTimeS >= where.movingTimeS.gte) &&
+            (!where.groupRideId || r.groupRideId)
+        ).length,
     },
     vehicle: { findFirst: async ({ where }) => db.vehicles.find((v) => v.id === where.id && v.userId === where.userId) || null },
     ridePoint: {
@@ -73,6 +88,14 @@ function fakePrisma() {
       },
       update: async ({ where, data }) => apply(db.stats.get(where.userId), data),
     },
+    rideAchievement: {
+      findMany: async ({ where }) => db.achievements.filter((a) => a.userId === where.userId),
+      createMany: async ({ data }) => {
+        let count = 0;
+        for (const d of data) if (!db.achievements.some((a) => a.userId === d.userId && a.achievementId === d.achievementId)) { db.achievements.push({ earnedAt: new Date(), ...d }); count++; }
+        return { count };
+      },
+    },
     xpLedger: {
       findUnique: async ({ where }) => db.ledger.find((l) => l.userId === where.userId_source.userId && l.source === where.userId_source.source) || null,
       create: async ({ data }) => { const row = { id: String(db.ledger.length + 1), ...data }; db.ledger.push(row); return row; },
@@ -97,6 +120,8 @@ const track = (startSeq, startMs, speed, seconds, startEast = 0, segment = 0) =>
     ...offset(startEast + speed * i, 0),
   }));
 
+const rideXpOf = (id) => prisma.db.ledger.find((l) => l.source === `ride:${id}`)?.amount || 0;
+const achievementXp = () => prisma.db.ledger.filter((l) => l.source.startsWith('achievement:')).reduce((n, l) => n + l.amount, 0);
 const T0 = Date.UTC(2026, 9, 1, 8, 0, 0);
 const USER = 'user-1';
 let prisma;
@@ -145,8 +170,9 @@ test('finalize computes stats on the server and credits the user once', async ()
   const stats = prisma.db.stats.get(USER);
   expect(stats.rides).toBe(1);
   expect(stats.distanceM).toBeCloseTo(ride.distanceM, 3);
-  expect(prisma.db.ledger).toHaveLength(1);
-  expect(prisma.db.users.get(USER).xp).toBe(Math.floor((ride.distanceM / 1000) * 2)); // 2 XP per km
+  expect(rideXpOf('ride-0001')).toBe(Math.floor((ride.distanceM / 1000) * 2)); // 2 XP per km
+  expect(prisma.db.achievements.map((a) => a.achievementId)).toEqual(['first_journey']);
+  expect(prisma.db.users.get(USER).xp).toBe(prisma.db.ledger.reduce((n, l) => n + l.amount, 0));
 });
 
 test('finalizing again, even many times, never double-credits', async () => {
@@ -158,8 +184,9 @@ test('finalizing again, even many times, never double-credits', async () => {
   const after = prisma.db.stats.get(USER);
   expect(after.distanceM).toBeCloseTo(after1.distanceM, 6);
   expect(after.rides).toBe(1);
-  expect(prisma.db.ledger).toHaveLength(1);
-  expect(prisma.db.users.get(USER).xp).toBe(Math.floor((prisma.db.rides.get('ride-0001').distanceM / 1000) * 2));
+  expect(prisma.db.ledger).toHaveLength(2); // ride XP + first_journey, never repeated
+  expect(prisma.db.achievements).toHaveLength(1);
+  expect(prisma.db.users.get(USER).xp).toBe(rideXpOf('ride-0001') + achievementXp());
 });
 
 test('late points after finalize adjust totals by the difference only', async () => {
@@ -172,7 +199,8 @@ test('late points after finalize adjust totals by the difference only', async ()
   expect(ride.distanceM).toBeGreaterThan(11_900);
   expect(stats.distanceM).toBeCloseTo(ride.distanceM, 3);
   expect(stats.rides).toBe(1);
-  expect(prisma.db.users.get(USER).xp).toBe(Math.floor((ride.distanceM / 1000) * 2));
+  expect(rideXpOf('ride-0001')).toBe(Math.floor((ride.distanceM / 1000) * 2));
+  expect(prisma.db.users.get(USER).xp).toBe(rideXpOf('ride-0001') + achievementXp());
 });
 
 test('a pause is not counted: points in a new segment start fresh', async () => {
@@ -202,7 +230,9 @@ test('deleting a finalized ride reverses its totals and XP', async () => {
   expect(stats.distanceM).toBeCloseTo(0, 6);
   expect(stats.rides).toBe(0);
   expect(stats.topSpeedMps).toBe(0);
-  expect(prisma.db.users.get(USER).xp).toBe(0);
+  expect(rideXpOf('ride-0001')).toBe(0);
+  // Achievements already earned are kept; only the ride's own XP is reversed.
+  expect(prisma.db.users.get(USER).xp).toBe(achievementXp());
 });
 
 test('record top speed follows the remaining rides when the fastest is deleted', async () => {
@@ -227,4 +257,41 @@ test('events move the ride status and are deduped by id', async () => {
   // An older event arriving late must not move the status backwards.
   await svc.addEvents(USER, 'ride-0001', [ev('evt-0005', 'PAUSE', 30_000)]);
   expect(prisma.db.rides.get('ride-0001').status).toBe('ENDED');
+});
+
+describe('achievements and streaks', () => {
+  const { evaluate, computeStreak } = require('../achievementsV2');
+
+  test('tiny rides earn nothing and the night rider check uses the rider timezone', () => {
+    const base = { stats: { distanceM: 800, movingTimeS: 400, topSpeedMps: 10 }, qualifyingRides: 1 };
+    const night = { startedAt: '2026-10-01T22:30:00Z', timezone: 'UTC', distanceM: 800, movingTimeS: 400 };
+    expect(evaluate({ ...base, ride: night })).toContain('night_rider');
+    // 22:30 UTC is 23:30 in Lagos (night) but 15:30 in Los Angeles (afternoon).
+    expect(evaluate({ ...base, ride: { ...night, timezone: 'Africa/Lagos' } })).toContain('night_rider');
+    expect(evaluate({ ...base, ride: { ...night, timezone: 'America/Los_Angeles' } })).not.toContain('night_rider');
+    expect(evaluate({ stats: { distanceM: 10, movingTimeS: 5, topSpeedMps: 1 }, qualifyingRides: 0, ride: { ...night, distanceM: 10, movingTimeS: 5 } })).toEqual([]);
+  });
+
+  test('speed, distance and time thresholds', () => {
+    const got = evaluate({ stats: { distanceM: 150_000, movingTimeS: 4000, topSpeedMps: 32 }, qualifyingRides: 12 });
+    expect(got).toEqual(expect.arrayContaining(['first_journey', 'ten_journeys', 'hundred_km', 'speed_demon', 'hour_rider']));
+    expect(got).not.toContain('velocity_master');
+  });
+
+  test('streak counts consecutive days and survives until the day after the last ride', () => {
+    const d = (day) => ({ startedAt: `2026-10-${String(day).padStart(2, '0')}T12:00:00Z`, timezone: 'UTC' });
+    const now = new Date('2026-10-06T09:00:00Z');
+    expect(computeStreak([d(3), d(4), d(5)], now)).toMatchObject({ current: 3, longest: 3 });
+    expect(computeStreak([d(3), d(4), d(5)], new Date('2026-10-07T09:00:00Z')).current).toBe(0);
+    expect(computeStreak([d(1), d(2), d(4), d(5), d(6)], now)).toMatchObject({ current: 3, longest: 3 });
+    expect(computeStreak([], now)).toMatchObject({ current: 0, longest: 0 });
+  });
+
+  test('a repeated finalize does not award twice, and a milestone reached later is awarded once', async () => {
+    await svc.addPoints(USER, 'ride-0001', track(0, T0, 20, 600));
+    const first = await svc.finalize(USER, 'ride-0001');
+    expect(first.newAchievements.map((a) => a.achievementId)).toEqual(['first_journey']);
+    const again = await svc.finalize(USER, 'ride-0001');
+    expect(again.newAchievements).toEqual([]);
+  });
 });

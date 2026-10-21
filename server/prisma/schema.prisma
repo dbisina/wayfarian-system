@@ -49,6 +49,7 @@ model User {
   rides            Ride[]
   stats            UserStats?
   xpLedger         XpLedger[]
+  rideAchievements RideAchievement[]
 
   @@map("users")
 }
@@ -544,4 +545,21 @@ model XpLedger {
   @@unique([userId, source])
   @@index([userId, createdAt])
   @@map("xp_ledger")
+}
+
+// Achievements earned through the v2 engine. Unique per (user, achievement) so
+// awarding is idempotent; the XP itself lives in xp_ledger as "achievement:<id>".
+model RideAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  rideId        String? // the ride that tipped it over
+  xpAwarded     Int
+  earnedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, earnedAt])
+  @@map("ride_achievements")
 }

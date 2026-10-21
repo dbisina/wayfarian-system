@@ -8,6 +8,7 @@ const defaultPrisma = require('../prisma/client');
 const rideCore = require('@wayfarian/ride-core');
 const { rideXp, countsAsRide } = require('../constants/rideXp');
 const { calculateLevel } = require('../constants/xpSystem');
+const achievements = require('./achievementsV2');
 
 class RideError extends Error {
   constructor(code, status, message) {
@@ -250,8 +251,9 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
       });
 
       await applyXpDelta(tx, userId, `ride:${rideId}`, rideXp(next.distanceM));
+      const newAchievements = await achievements.awardForRide(tx, userId, saved);
 
-      return saved;
+      return { ...saved, newAchievements };
     });
   }
 
@@ -303,10 +305,26 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
     return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
+  async function getStreak(userId, now = new Date()) {
+    const since = new Date(now.getTime() - 400 * 86400000);
+    const rows = await prisma.ride.findMany({
+      where: {
+        userId,
+        status: 'FINALIZED',
+        distanceM: { gte: achievements.QUALIFY_MIN_DISTANCE_M },
+        startedAt: { gte: since },
+      },
+      select: { startedAt: true, timezone: true },
+    });
+    return achievements.computeStreak(rows, now);
+  }
+
   async function getSummary(userId) {
-    const [stats, user] = await Promise.all([
+    const [stats, user, streak, earned] = await Promise.all([
       prisma.userStats.findUnique({ where: { userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { xp: true, level: true } }),
+      getStreak(userId),
+      prisma.rideAchievement.findMany({ where: { userId }, orderBy: { earnedAt: 'desc' }, select: { achievementId: true, xpAwarded: true, earnedAt: true } }),
     ]);
     return {
       distanceM: stats?.distanceM || 0,
@@ -316,10 +334,12 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
       rides: stats?.rides || 0,
       xp: user?.xp || 0,
       level: user?.level || 1,
+      streak,
+      achievements: earned,
     };
   }
 
-  return { upsertRide, addPoints, addEvents, finalize, deleteRide, getRide, listRides, getSummary };
+  return { upsertRide, addPoints, addEvents, finalize, deleteRide, getRide, listRides, getSummary, getStreak };
 }
 
 module.exports = { createRideService, RideError, rideService: createRideService() };
