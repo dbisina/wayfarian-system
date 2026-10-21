@@ -19,6 +19,9 @@ class RideError extends Error {
   }
 }
 
+// Finalize/delete make a dozen queries in one transaction. Prisma's 5 s default is not enough
+// when the database is a network hop away (it rolled back against Railway), so allow more.
+const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 const MAX_POINTS_PER_BATCH = 1000;
 const MAX_EVENTS_PER_BATCH = 50;
 const ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
@@ -271,7 +274,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
       const newAchievements = await achievements.awardForRide(tx, userId, saved);
 
       return { ...saved, newAchievements };
-    });
+    }, TX_OPTIONS);
     await safely(onStatsChanged);
     return result;
   }
@@ -301,7 +304,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
         await applyXpDelta(tx, userId, `ride:${rideId}`, 0);
       }
       return gone;
-    });
+    }, TX_OPTIONS);
     await safely(onStatsChanged);
     return result;
   }

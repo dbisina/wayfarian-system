@@ -73,3 +73,21 @@ describe('planRide', () => {
     expect(legacyTotals({ totalDistance: 36, totalTime: 1800, topSpeed: 10 }).topSpeedMps).toBeGreaterThanOrEqual(20);
   });
 });
+
+describe('retrying', () => {
+  const { retrying } = require('../backfillV2');
+  test('retries transient database errors, then succeeds', async () => {
+    let n = 0;
+    const out = await retrying(async () => { if (++n < 3) throw Object.assign(new Error('x'), { code: 'P1001' }); return 'ok'; }, () => {}, { baseMs: 1 });
+    expect(out).toBe('ok');
+    expect(n).toBe(3);
+  });
+  test('does not retry real errors, and gives up after the limit', async () => {
+    let n = 0;
+    await expect(retrying(async () => { n++; throw new Error('bug'); }, () => {}, { baseMs: 1 })).rejects.toThrow('bug');
+    expect(n).toBe(1);
+    n = 0;
+    await expect(retrying(async () => { n++; throw Object.assign(new Error('x'), { code: 'P1001' }); }, () => {}, { attempts: 3, baseMs: 1 })).rejects.toMatchObject({ code: 'P1001' });
+    expect(n).toBe(3);
+  });
+});

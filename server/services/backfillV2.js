@@ -139,6 +139,22 @@ function summarizeUser(user, plans, skipped) {
   };
 }
 
+// Prisma codes for "could not reach / lost the database" and timeouts. Anything else is a real bug.
+const TRANSIENT = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024', 'P2028']);
+
+async function retrying(fn, log = () => {}, { attempts = 6, baseMs = 1500 } = {}) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const transient = TRANSIENT.has(err && err.code) || /Connection (reset|refused|terminated)|ECONNRESET|Can't reach database/i.test(String(err && err.message));
+      if (!transient || i >= attempts) throw err;
+      log(`[backfill] transient database error (${err.code || 'network'}), retry ${i}/${attempts - 1}`);
+      await new Promise((r) => setTimeout(r, baseMs * i));
+    }
+  }
+}
+
 function createBackfill({ prisma, rideService, core = defaultCore, log = () => {} }) {
   async function plansForUser(userId) {
     const [journeys, instances, hidden, unfinished] = await Promise.all([
@@ -242,7 +258,7 @@ function createBackfill({ prisma, rideService, core = defaultCore, log = () => {
     let cursor;
     let processed = 0;
     for (;;) {
-      const users = await prisma.user.findMany({
+      const users = await retrying(() => prisma.user.findMany({
         where: {
           ...(userId ? { id: userId } : {}),
           OR: [{ journeys: { some: { status: 'COMPLETED' } } }, { journeyInstances: { some: { status: 'COMPLETED' } } }],
@@ -251,13 +267,14 @@ function createBackfill({ prisma, rideService, core = defaultCore, log = () => {
         orderBy: { id: 'asc' },
         take: pageSize,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      });
+      }), log);
       if (!users.length) break;
       for (const user of users) {
         if (limit && processed >= limit) break;
-        const { plans, skipped } = await plansForUser(user.id);
+        const { plans, skipped } = await retrying(() => plansForUser(user.id), log);
         const row = summarizeUser(user, plans, skipped);
-        if (apply) Object.assign(row, { result: await applyUser(user, plans) });
+        // Re-running a user is safe (finished rides are skipped), so a dropped connection just retries.
+        if (apply) Object.assign(row, { result: await retrying(() => applyUser(user, plans), log) });
         rows.push(row);
         processed++;
         log(`[backfill] ${processed} ${user.id} ${row.distancePct}%`);
@@ -287,4 +304,4 @@ function totalsOf(rows) {
   return t;
 }
 
-module.exports = { createBackfill, normalizePoints, planRide, legacyTotals, summarizeUser, MIN_TRAIL_POINTS };
+module.exports = { createBackfill, retrying, normalizePoints, planRide, legacyTotals, summarizeUser, MIN_TRAIL_POINTS };

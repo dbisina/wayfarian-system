@@ -6,6 +6,10 @@ const prisma = require('../prisma/client');
 const journeySocket = require('./journeySocket');
 const groupSocket = require('./groupSockets');
 const groupJourneySocket = require('./groupJourneySocket');
+const { createGroupRidePresence } = require('./groupRidePresence');
+const { groupRides } = require('../services/rideServices');
+
+const groupRidePresence = createGroupRidePresence({ groupRides });
 
 // Use shared Prisma client
 
@@ -86,6 +90,7 @@ const initializeSocket = (server) => {
     journeySocket(io, socket);
     groupSocket(io, socket);
     groupJourneySocket(io, socket);
+    groupRidePresence(io, socket); // v2
 
     // Handle heartbeat
     socket.on('heartbeat', () => {
