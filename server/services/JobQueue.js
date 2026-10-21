@@ -437,4 +437,9 @@ class JobQueue extends EventEmitter {
   }
 }
 
-module.exports = new JobQueue();
+const jobQueue = new JobQueue();
+
+// Export the instance itself (existing callers) and as a named property
+// (app.js and index.js destructure `{ jobQueue }`).
+module.exports = jobQueue;
+module.exports.jobQueue = jobQueue;

@@ -22,7 +22,7 @@ const cacheMiddleware = (ttl = 300, keyGenerator = null, condition = null) => {
       res.set({
         'X-Cache': 'HIT',
         'X-Cache-Key': cacheKey,
-        'Cache-Control': `max-age=${ttl}`,
+        'Cache-Control': `private, max-age=${ttl}`,
       });
       
       return res.json(cachedData);
@@ -43,7 +43,7 @@ const cacheMiddleware = (ttl = 300, keyGenerator = null, condition = null) => {
         res.set({
           'X-Cache': 'MISS',
           'X-Cache-Key': cacheKey,
-          'Cache-Control': `max-age=${ttl}`,
+          'Cache-Control': `private, max-age=${ttl}`,
         });
       } else {
         // Add no-cache headers
@@ -144,17 +144,16 @@ const cacheLeaderboard = (ttl = 60) => {
   return cacheMiddleware(
     ttl,
     (req) => {
-      const { sortBy = 'totalDistance', timeFrame = 'allTime', page = 1, limit = 50 } = req.query;
-      const { groupId } = req.params;
-      const userId = req.user.id;
-      
-      if (req.path.includes('/friends')) {
-        return `leaderboard:friends:${userId}:${sortBy}:${timeFrame}`;
-      } else if (groupId) {
-        return `leaderboard:group:${groupId}:${sortBy}:${timeFrame}`;
-      } else {
-        return `leaderboard:global:${sortBy}:${timeFrame}:${page}:${limit}`;
-      }
+      // This middleware is mounted on the whole /api/leaderboard router, so
+      // req.params is empty here. Key on the full path + query and on the user:
+      // responses include per-user data (currentUser, position, achievements)
+      // and must never be shared between users or groups.
+      const query = Object.keys(req.query || {})
+        .filter((k) => k !== '_t')
+        .sort()
+        .map((k) => `${k}=${req.query[k]}`)
+        .join('&');
+      return `leaderboard:${req.user.id}:${req.path}:${query}`;
     }
   );
 };
