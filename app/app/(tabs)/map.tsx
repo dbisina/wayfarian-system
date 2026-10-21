@@ -38,6 +38,8 @@ import {
   selectSelectedVehicle,
 } from '../../store/slices/vehicleSlice';
 import type { Vehicle } from '../../contexts/SettingsContext';
+import Icon from '../../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
 
 interface Place {
   id: string;
@@ -75,6 +77,7 @@ export default function MapScreen(): React.JSX.Element {
   const routePoints = useJourneyRoutePoints();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const d = useDW();
   const mapRef = useRef<MapView | null>(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -635,39 +638,45 @@ export default function MapScreen(): React.JSX.Element {
         </View>
       )}
 
-      <View style={styles.searchBar}>
+      <View style={[styles.searchBar, shadow(d, 8), { top: Math.max(56, insets.top + 8), backgroundColor: d.surface }]}>
         <TextInput
           value={query}
           onChangeText={onChangeQuery}
           onSubmitEditing={handleSearchSubmit}
           placeholder={t('map.searchPlaceholder')}
           returnKeyType="search"
-          style={styles.searchInput}
-          placeholderTextColor="#666"
+          style={[styles.searchInput, { color: d.ink, backgroundColor: 'transparent' }]}
+          placeholderTextColor={d.ink2}
         />
         {query.length > 0 && (
           <TouchableOpacity
             onPress={() => { setQuery(''); setSuggestions([]); }}
-            style={styles.clearBtn}
+            style={[styles.clearBtn, { backgroundColor: d.surface2 }]}
             accessibilityRole="button"
+            accessibilityLabel="Clear search"
           >
-            <Text style={styles.clearIcon}>✕</Text>
+            <Icon name="close" size={14} color={d.ink2} stroke={2.2} />
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={handleSearchSubmit} accessibilityRole="button">
-          <Feather name="search" size={16} color="#fff" />
+        <TouchableOpacity
+          onPress={handleSearchSubmit}
+          accessibilityRole="button"
+          accessibilityLabel="Search"
+          style={styles.searchGo}
+        >
+          <Feather name="search" size={18} color={INK} />
         </TouchableOpacity>
       </View>
 
       {suggestions.length > 0 && (
-        <View style={styles.suggestionsBox}>
+        <View style={[styles.suggestionsBox, { top: Math.max(56, insets.top + 8) + 56, backgroundColor: d.surface }]}>
           <FlatList
             keyboardShouldPersistTaps="handled"
             data={suggestions}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.suggestionItem} onPress={() => handlePickSuggestion(item.placeId, item.description)}>
-                <Text numberOfLines={1} style={styles.suggestionText}>{item.description}</Text>
+              <TouchableOpacity style={[styles.suggestionItem, { borderBottomColor: d.line }]} onPress={() => handlePickSuggestion(item.placeId, item.description)}>
+                <Text numberOfLines={1} style={[styles.suggestionText, { color: d.ink }]}>{item.description}</Text>
               </TouchableOpacity>
             )}
           />
@@ -677,7 +686,7 @@ export default function MapScreen(): React.JSX.Element {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
+        style={[styles.filterContainer, { top: Math.max(56, insets.top + 8) + 62 }]}
         contentContainerStyle={styles.filterContent}
       >
         {filterTypes.map((filter) => (
@@ -685,12 +694,14 @@ export default function MapScreen(): React.JSX.Element {
             key={filter.key}
             style={[
               styles.filterButton,
+              { backgroundColor: d.surface },
               selectedFilter === filter.key && styles.filterButtonActive,
             ]}
             onPress={() => handleFilterPress(filter.key)}
           >
             <Text style={[
               styles.filterText,
+              { color: d.ink },
               selectedFilter === filter.key && styles.filterTextActive,
             ]}>
               {filter.label}
@@ -700,14 +711,14 @@ export default function MapScreen(): React.JSX.Element {
       </ScrollView>
 
       {destination && !isTracking && (
-        <View style={[styles.destinationSheet, { bottom: insets.bottom + 100 }]}>
+        <View style={[styles.destinationSheet, shadow(d, 10), { bottom: insets.bottom + 100, backgroundColor: d.surface }]}>
           <View style={styles.destinationInfo}>
-            <MaterialIcons name="place" size={18} color="#F9A825" />
-            <Text style={styles.destinationName} numberOfLines={1}>
+            <MaterialIcons name="place" size={18} color={AMBER} />
+            <Text style={[styles.destinationName, { color: d.ink }]} numberOfLines={1}>
               {destination.name || t('map.destination')}
             </Text>
-            <TouchableOpacity onPress={() => { setDestination(null); setQuery(''); }}>
-              <MaterialIcons name="close" size={18} color="#888" />
+            <TouchableOpacity onPress={() => { setDestination(null); setQuery(''); }} accessibilityLabel="Clear destination">
+              <Icon name="close" size={18} color={d.ink2} stroke={2.2} />
             </TouchableOpacity>
           </View>
           <TouchableOpacity
@@ -726,24 +737,24 @@ export default function MapScreen(): React.JSX.Element {
       )}
 
       {isTracking && (
-        <View style={[styles.miniStatsSheet, { bottom: insets.bottom + 80 }]}>
+        <View style={[styles.miniStatsSheet, shadow(d, 10), { bottom: insets.bottom + 100, backgroundColor: d.surface }]}>
           <View style={styles.miniStatsRow}>
             <View style={styles.miniStatItem}>
-              <Text style={styles.miniStatValue}>{formatTime(Math.floor(stats?.totalTime || 0))}</Text>
-              <Text style={styles.miniStatLabel}>{t('journey.time')}</Text>
+              <Text style={[styles.miniStatValue, { color: d.ink }]}>{formatTime(Math.floor(stats?.totalTime || 0))}</Text>
+              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>{t('journey.time')}</Text>
             </View>
-            <View style={styles.miniStatDivider} />
+            <View style={[styles.miniStatDivider, { backgroundColor: d.line }]} />
             <View style={styles.miniStatItem}>
-              <Text style={styles.miniStatValue}>{stats?.currentSpeed?.toFixed(0) || '0'}</Text>
-              <Text style={styles.miniStatLabel}>km/h</Text>
+              <Text style={[styles.miniStatValue, { color: d.ink }]}>{stats?.currentSpeed?.toFixed(0) || '0'}</Text>
+              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>km/h</Text>
             </View>
-            <View style={styles.miniStatDivider} />
+            <View style={[styles.miniStatDivider, { backgroundColor: d.line }]} />
             <View style={styles.miniStatItem}>
-              <Text style={styles.miniStatValue}>{(stats?.totalDistance || 0).toFixed(2)}</Text>
-              <Text style={styles.miniStatLabel}>km</Text>
+              <Text style={[styles.miniStatValue, { color: d.ink }]}>{(stats?.totalDistance || 0).toFixed(2)}</Text>
+              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>km</Text>
             </View>
-            <TouchableOpacity style={styles.expandBtn} onPress={() => router.push('/journey')}>
-              <MaterialIcons name="open-in-full" size={18} color="#F9A825" />
+            <TouchableOpacity style={styles.expandBtn} onPress={() => router.push('/journey')} accessibilityLabel="Open ride">
+              <MaterialIcons name="open-in-full" size={18} color={AMBER} />
             </TouchableOpacity>
           </View>
           <View style={styles.liveStrip}>
@@ -754,42 +765,36 @@ export default function MapScreen(): React.JSX.Element {
       )}
 
       <TouchableOpacity
-        style={[styles.floatingButton, { bottom: insets.bottom + (isTracking ? 230 : 150) }]}
+        style={[styles.floatingButton, shadow(d, 6), { bottom: insets.bottom + (isTracking ? 230 : 190) }]}
         onPress={handleStartJourney}
         activeOpacity={0.8}
         disabled={isStartBusy && !isTracking}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel={isTracking ? 'Stop ride' : 'Start ride'}
       >
         {isTracking ? (
-          <Animated.View style={[styles.stopButtonOuter, { transform: [{ scale: pulseAnim }] }]}>
-            <View style={styles.stopButtonInner}>
-              <MaterialIcons name="stop" size={22} color="#fff" />
-            </View>
+          <Animated.View style={[styles.fab, { backgroundColor: '#E5484D', transform: [{ scale: pulseAnim }] }]}>
+            <MaterialIcons name="stop" size={24} color="#fff" />
           </Animated.View>
-        ) : isStartBusy ? (
-          <View style={[styles.floatingButtonImage, styles.loadingButton]}>
-            <ActivityIndicator color="#000" size="small" />
-          </View>
         ) : (
-          <Image
-            source={require('../../assets/images/2025-09-26/NydH8KLPYS.png')}
-            style={styles.floatingButtonImage}
-            contentFit="contain"
-          />
+          <View style={[styles.fab, { backgroundColor: AMBER }]}>
+            {isStartBusy ? <ActivityIndicator color={INK} size="small" /> : <Icon name="nav" size={24} color={INK} fill />}
+          </View>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.floatingButton, { bottom: insets.bottom + (isTracking ? 165 : 85) }]}
+        style={[styles.floatingButton, shadow(d, 6), { bottom: insets.bottom + (isTracking ? 165 : 125) }]}
         onPress={() => getCurrentLocation(true)}
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel="Recenter"
       >
-        <Image
-          source={require('../../assets/images/2025-09-26/4BNFvkcOE2.png')}
-          style={styles.floatingButtonImage}
-          contentFit="contain"
-        />
+        <View style={[styles.fab, { backgroundColor: d.surface }]}>
+          <MaterialIcons name="my-location" size={22} color={d.ink} />
+        </View>
       </TouchableOpacity>
 
       {!isNavigationMode && isTracking && (
@@ -808,10 +813,10 @@ export default function MapScreen(): React.JSX.Element {
             }
             lastCameraUpdateRef.current = Date.now();
           }}
-          style={[styles.recenterButton, { bottom: insets.bottom + 295 }]}
+          style={[styles.recenterButton, { bottom: insets.bottom + 295, backgroundColor: d.surface }]}
           activeOpacity={0.85}
         >
-          <MaterialIcons name="navigation" size={20} color="#F9A825" />
+          <MaterialIcons name="navigation" size={20} color={AMBER} />
           <Text style={styles.recenterText}>{t('journey.recenter') || 'Recenter'}</Text>
         </TouchableOpacity>
       )}
@@ -826,6 +831,8 @@ export default function MapScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  fab: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  searchGo: { width: 40, height: 40, borderRadius: 14, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -860,16 +867,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: "#666",
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
   },
   searchBar: {
     position: "absolute",
     top: 50,
     left: 15,
     right: 15,
-    height: 50,
+    height: 52,
     backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 12,
+    borderRadius: 18,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
@@ -891,7 +898,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.95)",
     fontSize: 16,
     color: "#000",
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
   },
   searchIcon: {
     fontSize: 16,
@@ -948,7 +955,7 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 14,
     color: "#333",
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
   },
   filterContainer: {
     position: "absolute",
@@ -965,7 +972,7 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 20,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 8,
     justifyContent: "center",
@@ -973,17 +980,17 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   filterButtonActive: {
-    backgroundColor: "#F9A825",
+    backgroundColor: AMBER,
   },
   filterText: {
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 18,
     color: "#000000",
   },
   filterTextActive: {
-    color: "#FFFFFF",
+    color: INK,
     fontWeight: "600",
   },
   floatingButton: {
@@ -1031,7 +1038,7 @@ const styles = StyleSheet.create({
     left: 15,
     right: 15,
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 22,
     padding: 14,
     zIndex: 50,
     elevation: 10,
@@ -1048,29 +1055,29 @@ const styles = StyleSheet.create({
   },
   destinationName: {
     flex: 1,
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 14,
     fontWeight: '600',
     color: '#000',
   },
   startJourneyDestBtn: {
-    backgroundColor: '#BEFFA7',
-    borderRadius: 12,
+    backgroundColor: AMBER,
+    borderRadius: 16,
     paddingVertical: 12,
     alignItems: 'center',
   },
   startJourneyDestBtnText: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: INK,
   },
   miniStatsSheet: {
     position: 'absolute',
     left: 15,
     right: 80,
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 22,
     zIndex: 50,
     elevation: 10,
     shadowColor: '#000',
@@ -1091,13 +1098,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   miniStatValue: {
-    fontFamily: 'Poppins',
+    fontFamily: F.monoBold,
     fontSize: 16,
     fontWeight: '700',
     color: '#000',
   },
   miniStatLabel: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 9,
     color: '#888',
   },
@@ -1124,7 +1131,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   liveText: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 10,
     fontWeight: '700',
     color: '#fff',
@@ -1140,7 +1147,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
     textAlign: "center",
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
     marginBottom: 16,
   },
   retryButton: {
@@ -1153,7 +1160,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
-    fontFamily: "Space Grotesk",
+    fontFamily: F.bold,
   },
   loadingOverlay: {
     position: "absolute",
@@ -1207,7 +1214,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   cardTitle: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 12,
     fontWeight: '700',
     color: '#000000',
@@ -1219,7 +1226,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   cardSubtitle: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 10,
     color: '#000000',
     fontWeight: '500',
@@ -1260,7 +1267,7 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   recenterText: {
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.bold,
     fontSize: 14,
     fontWeight: '700',
     color: '#F9A825',

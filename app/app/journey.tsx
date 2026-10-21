@@ -49,6 +49,8 @@ import { SpeedLimitSign } from '../components/ui/SpeedLimitSign';
 import RideCelebration, { CelebrationEvent } from '../components/RideCelebration';
 import { snapSinglePoint } from '../services/roads';
 import NavArrowMarker from '../components/NavArrowMarker';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 type MeasurementParts = { value: string; unit: string };
@@ -88,6 +90,7 @@ export default function JourneyScreen(): React.JSX.Element {
   const stats = useJourneyStats();
   const { convertDistance, convertSpeed, mapType, vehicle: settingsVehicle } = useSettings();
   const insets = useSafeAreaInsets();
+  const d = useDW();
 
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<{
@@ -849,43 +852,29 @@ export default function JourneyScreen(): React.JSX.Element {
             )}
           </MapView>
 
-          {currentLocation && (
-            <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} />
-          )}
-
           <RideCelebration
             event={celebrationEvent}
             onDismiss={() => setCelebrationEvent(null)}
           />
 
-          <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-            <View style={styles.headerLeft}>
-              <TouchableOpacity onPress={handleMinimize}>
-                <Image
-                  source={require("../assets/images/2025-09-26/qjy0a6B7aU.png")}
-                  style={styles.profileImage}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleMinimize}
-                style={styles.minimizeButton}
-              >
-                <MaterialIcons
-                  name="keyboard-arrow-down"
-                  size={24}
-                  color="#000"
-                />
-              </TouchableOpacity>
+          <View style={[styles.dwTop, { top: insets.top + 8 }]}>
+            <TouchableOpacity
+              onPress={handleMinimize}
+              accessibilityRole="button"
+              accessibilityLabel="Minimise ride"
+              style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
+            >
+              <Icon name="chevron" size={20} color={d.ink} stroke={2} />
+            </TouchableOpacity>
+            <View style={[styles.rec, shadow(d, 8), { backgroundColor: d.surface }]} accessibilityRole="text">
+              <View style={[styles.recDot, isTracking && { backgroundColor: '#E5484D' }]} />
+              <Text style={[styles.recLabel, { color: d.ink }]}>{isTracking ? 'REC' : 'READY'}</Text>
+              <Text style={[styles.recTime, { color: d.ink }]}>
+                {isTracking && stats ? formatTime(Math.floor(stats.totalTime)) : '00:00'}
+              </Text>
             </View>
-            <View style={styles.headerRight} />
+            <View style={styles.dwRound} />
           </View>
-
-          <TouchableOpacity
-            onPress={handleTakePhoto}
-            style={[styles.floatingCameraButton, { bottom: insets.bottom + 230 }]}
-          >
-            <MaterialIcons name="camera-alt" size={24} color="#fff" />
-          </TouchableOpacity>
 
           {!isNavigationMode && isTracking && (
             <TouchableOpacity
@@ -928,74 +917,68 @@ export default function JourneyScreen(): React.JSX.Element {
             </TouchableOpacity>
           )}
 
-          <View style={styles.bottomPanel}>
-            <View style={styles.friendsRow}>
-              <View style={styles.friendsContainer}>
-                {user?.photoURL ? (
-                  <Image
-                    source={{ uri: user.photoURL }}
-                    style={styles.friendAvatar}
-                  />
-                ) : null}
+          <View style={[styles.bottomPanel, { backgroundColor: d.surface, paddingBottom: insets.bottom + 12 }]}>
+            <View style={[styles.grab, { backgroundColor: d.line2 }]} />
+            <View style={styles.speedRow}>
+              <View>
+                <Text style={[styles.eyebrow, { color: d.ink2 }]}>{t('journey.speed')}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                  <Text style={[styles.bigSpeed, { color: d.ink }]}>
+                    {String(speedMeasurement.value || '0').split(/[.,]/)[0]}
+                  </Text>
+                  <Text style={[styles.speedUnitDw, { color: d.ink2 }]}>{speedMeasurement.unit || 'KM/H'}</Text>
+                </View>
               </View>
+              {currentLocation ? <SpeedLimitSign latitude={currentLocation.latitude} longitude={currentLocation.longitude} /> : null}
             </View>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>
-                  {isTracking && stats
-                    ? formatTime(Math.floor(stats.totalTime))
-                    : "00:00"}
-                </Text>
-                <Text style={styles.statLabel}>{t('journey.time')}</Text>
-              </View>
-              <View style={styles.statItem}>
-                <View style={styles.speedContainer}>
-                  <Text style={styles.statValue}>
-                    {speedMeasurement.value || '0.0'}
+            <View style={[styles.statsGrid, { borderColor: d.line }]}>
+              {[
+                { label: t('journey.distance'), value: distanceMeasurement.value || '0.0', unit: distanceMeasurement.unit },
+                { label: t('journey.time'), value: isTracking && stats ? formatTime(Math.floor(stats.totalTime)) : '00:00', unit: '' },
+              ].map((s, i) => (
+                <View key={s.label} style={[styles.statCell, i > 0 && { borderLeftWidth: 1, borderLeftColor: d.line, paddingLeft: 16 }]}>
+                  <Text style={[styles.statCellLabel, { color: d.ink2 }]}>{s.label}</Text>
+                  <Text style={[styles.statCellValue, { color: d.ink }]}>
+                    {s.value}
+                    {s.unit ? <Text style={{ fontSize: 12, color: d.ink2 }}> {s.unit}</Text> : null}
                   </Text>
-                  <Text style={styles.speedUnit}>{speedMeasurement.unit || 'KM/H'}</Text>
                 </View>
-                <Text style={styles.statLabel}>{t('journey.speed')}</Text>
-              </View>
-              <View style={styles.statItem}>
-                <View style={styles.distanceContainer}>
-                  <Text style={styles.statValue}>
-                    {distanceMeasurement.value || '0.0'}
-                  </Text>
-                  <Text style={styles.distanceUnit}>{distanceMeasurement.unit || 'KM'}</Text>
-                </View>
-                <Text style={styles.statLabel}>{t('journey.distance')}</Text>
-              </View>
+              ))}
             </View>
 
-            <View style={styles.actionButtonsRow}>
+            <View style={styles.controls}>
               <TouchableOpacity
-                style={[styles.startButton, isStartBusy && styles.startButtonDisabled]}
+                onPress={handleTakePhoto}
+                accessibilityRole="button"
+                accessibilityLabel="Take a photo"
+                style={[styles.ctrlSquare, { backgroundColor: d.surface2 }]}
+              >
+                <Icon name="camera" size={22} color={d.ink} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ctrlMain, { backgroundColor: isTracking ? d.ink : AMBER }, isStartBusy && { opacity: 0.6 }]}
                 onPress={handleStartJourney}
                 disabled={isStartBusy}
+                accessibilityRole="button"
                 accessibilityLabel={t('journey.toggleRecording')}
                 accessibilityHint={isTracking ? t('journey.stopRecording') : t('journey.startRecording')}
               >
                 {isStartBusy ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color={INK} />
                 ) : isTracking ? (
-                  <MaterialIcons name="stop" size={24} color="#000" />
-                ) : currentJourney?.status === 'paused' ? (
-                  <MaterialIcons name="play-arrow" size={24} color="#000" />
+                  <>
+                    <View style={[styles.stopSquare, { backgroundColor: d.bg }]} />
+                    <Text style={[styles.ctrlMainText, { color: d.bg }]}>{t('journey.stopRecording')}</Text>
+                  </>
                 ) : (
-                  <Animated.Image
-                    source={require("../assets/images/custom/start_ride.png")}
-                    style={[styles.startIcon, { width: 32, height: 32, transform: [{ translateX: bikeTranslation }] }]}
-                  />
+                  <>
+                    <Icon name="nav" size={20} color={INK} fill />
+                    <Text style={[styles.ctrlMainText, { color: INK }]}>
+                      {currentJourney?.status === 'paused' ? t('journey.resume', { defaultValue: 'Resume' }) : t('journey.startJourney')}
+                    </Text>
+                  </>
                 )}
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.shareButton}>
-                <Image
-                  source={require("../assets/images/2025-09-26/oaseCkwYnL.png")}
-                  style={styles.shareIcon}
-                />
-                <Text style={styles.shareText}>{t('journey.shareLiveLocation')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1052,6 +1035,26 @@ export default function JourneyScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  dwTop: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 20 },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '90deg' }] },
+  rec: { height: 36, paddingHorizontal: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#A29B8D' },
+  recLabel: { fontFamily: F.extra, fontSize: 12, letterSpacing: 1.2 },
+  recTime: { fontFamily: F.monoBold, fontSize: 14 },
+  grab: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2 },
+  speedRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 14 },
+  eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase' },
+  bigSpeed: { fontFamily: F.extra, fontSize: 92, lineHeight: 96, letterSpacing: -3.5 },
+  speedUnitDw: { fontFamily: F.extra, fontSize: 16 },
+  statsGrid: { flexDirection: 'row', marginTop: 14, paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1 },
+  statCell: { flex: 1, gap: 4 },
+  statCellLabel: { fontFamily: F.bold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  statCellValue: { fontFamily: F.monoBold, fontSize: 19 },
+  controls: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  ctrlSquare: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  ctrlMain: { flex: 1, height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  ctrlMainText: { fontFamily: F.extra, fontSize: 15 },
+  stopSquare: { width: 12, height: 12, borderRadius: 3 },
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",

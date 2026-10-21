@@ -13,6 +13,9 @@ import {
   FlatList,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,7 +23,9 @@ import { COUNTRIES, getCountryByCode } from '../constants/countries';
 import { userAPI, getCurrentApiUrl, getAuthToken } from '../services/api';
 
 export default function EditProfileScreen() {
-  const { user, refreshUser } = useAuth();
+  const d = useDW();
+  const insets = useSafeAreaInsets();
+  const { user, refreshUser, deleteAccount } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<typeof COUNTRIES[0] | null>(null);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
@@ -75,6 +80,24 @@ export default function EditProfileScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete account', 'This permanently deletes your account and rides. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteAccount();
+            router.replace('/(auth)/login');
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Could not delete account');
+          }
+        },
+      },
+    ]);
   };
 
   const handleChangePhoto = async () => {
@@ -141,95 +164,100 @@ export default function EditProfileScreen() {
     }
   };
 
+  const initials = (displayName || user?.displayName || 'W')
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
+  const fields = [
+    { label: 'Display name', node: (
+      <TextInput
+        value={displayName}
+        onChangeText={setDisplayName}
+        placeholder="Enter your name"
+        placeholderTextColor={d.ink2}
+        maxLength={50}
+        style={[styles.dwInput, { color: d.ink }]}
+      />
+    ) },
+    { label: 'Home city', help: 'National board', node: (
+      <TouchableOpacity onPress={() => setShowCountryPicker(true)} accessibilityRole="button" style={styles.dwSelect}>
+        {selectedCountry ? <Image source={selectedCountry.flag} style={styles.dwFlag} /> : null}
+        <Text style={[styles.dwInput, { color: selectedCountry ? d.ink : d.ink2, flex: 1 }]} numberOfLines={1}>
+          {selectedCountry?.name || 'Select your country'}
+        </Text>
+        <Icon name="chevron" size={16} color={d.ink2} />
+      </TouchableOpacity>
+    ) },
+    { label: 'Email', help: 'Cannot be changed', node: (
+      <Text style={[styles.dwInput, { color: d.ink2 }]} numberOfLines={1}>{user?.email || 'Not set'}</Text>
+    ) },
+  ];
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Profile Picture */}
-        <View style={styles.profilePictureSection}>
-          <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: user?.photoURL || 'https://via.placeholder.com/120' }}
-              style={styles.avatar}
-            />
-            <TouchableOpacity 
-              style={styles.changePhotoButton} 
-              onPress={handleChangePhoto}
-              disabled={uploadingPhoto}
-            >
-              {uploadingPhoto ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <MaterialIcons name="camera-alt" size={20} color="#FFFFFF" />
-              )}
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.photoLabel}>Profile Picture</Text>
-          <Text style={styles.photoHelperText}>Tap to change your photo</Text>
-        </View>
-
-        {/* Display Name */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Display Name</Text>
-          <TextInput
-            style={styles.input}
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Enter your name"
-            placeholderTextColor="#9CA3AF"
-            maxLength={50}
-          />
-          <Text style={styles.helperText}>This is how others will see you</Text>
-        </View>
-
-        {/* Country Selection */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Country</Text>
-          <TouchableOpacity
-            style={styles.countrySelector}
-            onPress={() => setShowCountryPicker(true)}
-          >
-            {selectedCountry ? (
-              <View style={styles.selectedCountryRow}>
-                <Image source={selectedCountry.flag} style={styles.flagImage} />
-                <Text style={styles.countryName}>{selectedCountry.name}</Text>
-              </View>
-            ) : (
-              <Text style={styles.placeholderText}>Select your country</Text>
-            )}
-            <MaterialIcons name="chevron-right" size={24} color="#9CA3AF" />
-          </TouchableOpacity>
-          <Text style={styles.helperText}>Your country will be shown on the leaderboard</Text>
-        </View>
-
-        {/* Email (Read-only) */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.readOnlyInput}>
-            <Text style={styles.readOnlyText}>{user?.email || 'Not set'}</Text>
-          </View>
-          <Text style={styles.helperText}>Email cannot be changed</Text>
-        </View>
-
-        {/* Save Button */}
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
+      <View style={[styles.dwHeader, { paddingTop: Math.max(56, insets.top + 8) }]}>
         <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
+        >
+          <Icon name="close" size={18} color={d.ink} stroke={2.4} />
+        </TouchableOpacity>
+        <Text style={[styles.dwTitle, { color: d.ink }]}>Edit profile</Text>
+        <TouchableOpacity
           onPress={handleSave}
           disabled={saving}
+          accessibilityRole="button"
+          style={[styles.dwSave, { opacity: saving ? 0.6 : 1 }]}
         >
-          {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Changes</Text>
-          )}
+          {saving ? <ActivityIndicator color={INK} /> : <Text style={styles.dwSaveText}>Save</Text>}
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 60 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={[styles.dwCard, shadow(d, 8), { backgroundColor: d.surface }]}>
+          <View style={[styles.dwCover, { backgroundColor: d.surface2 }]}>
+            <View style={styles.dwChip}>
+              <Text style={styles.dwChipText}>What riders see</Text>
+            </View>
+          </View>
+          <View style={styles.dwAvatarWrap}>
+            <View style={[styles.dwAvatar, { borderColor: d.surface }]}>
+              {user?.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.dwAvatarImg} />
+              ) : (
+                <Text style={styles.dwAvatarText}>{initials}</Text>
+              )}
+            </View>
+            <TouchableOpacity
+              onPress={handleChangePhoto}
+              disabled={uploadingPhoto}
+              accessibilityRole="button"
+              accessibilityLabel="Change photo"
+              style={[styles.dwCam, { borderColor: d.surface }]}
+            >
+              {uploadingPhoto ? <ActivityIndicator size="small" color={INK} /> : <Icon name="camera" size={15} color={INK} stroke={2.2} />}
+            </TouchableOpacity>
+          </View>
+          <View style={styles.dwWho}>
+            <Text style={[styles.dwWhoName, { color: d.ink }]} numberOfLines={1}>{displayName || 'Your name'}</Text>
+            <Text style={[styles.dwWhoSub, { color: d.ink2 }]} numberOfLines={1}>
+              {selectedCountry?.name || 'Add your country'}
+            </Text>
+          </View>
+        </View>
+
+        {fields.map((f) => (
+          <View key={f.label} style={[styles.dwField, { backgroundColor: d.surface, borderColor: d.line }]}>
+            <View style={styles.dwFieldHead}>
+              <Text style={[styles.dwFieldLabel, { color: d.ink2 }]}>{f.label}</Text>
+              {f.help ? <Text style={[styles.dwFieldHelp, { color: d.ink2 }]}>{f.help}</Text> : null}
+            </View>
+            {f.node}
+          </View>
+        ))}
+
+        <TouchableOpacity onPress={handleDelete} accessibilityRole="button" style={{ height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
+          <Text style={{ fontFamily: F.extra, fontSize: 14, color: d.danger }}>Delete account</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -241,12 +269,12 @@ export default function EditProfileScreen() {
         onRequestClose={() => setShowCountryPicker(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: d.surface }]}>
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Country</Text>
+              <Text style={[styles.modalTitle, { color: d.ink }]}>Select Country</Text>
               <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                <MaterialIcons name="close" size={24} color="#000000" />
+                <MaterialIcons name="close" size={24} color={d.ink} />
               </TouchableOpacity>
             </View>
 
@@ -282,7 +310,7 @@ export default function EditProfileScreen() {
                   }}
                 >
                   <Image source={item.flag} style={styles.flagImage} />
-                  <Text style={styles.countryItemText}>{item.name}</Text>
+                  <Text style={[styles.countryItemText, { color: d.ink }]}>{item.name}</Text>
                   {selectedCountry?.code === item.code && (
                     <MaterialIcons name="check" size={20} color="#6366f1" />
                   )}
@@ -298,6 +326,30 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  dwHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwTitle: { flex: 1, fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
+  dwSave: { height: 44, paddingHorizontal: 18, borderRadius: 22, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  dwSaveText: { fontFamily: F.black, fontSize: 14, color: INK },
+  dwCard: { borderRadius: 28, overflow: 'hidden', height: 236, marginTop: 8 },
+  dwCover: { height: 112 },
+  dwChip: { position: 'absolute', left: 12, top: 12, height: 26, paddingHorizontal: 10, borderRadius: 13, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
+  dwChipText: { fontFamily: F.extra, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: '#FFFDF8' },
+  dwAvatarWrap: { position: 'absolute', left: 16, top: 76, width: 72, height: 72 },
+  dwAvatar: { width: 72, height: 72, borderRadius: 24, backgroundColor: INK, borderWidth: 4, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dwAvatarImg: { width: 72, height: 72 },
+  dwAvatarText: { fontFamily: F.black, fontSize: 26, color: AMBER },
+  dwCam: { position: 'absolute', right: -8, bottom: -6, width: 32, height: 32, borderRadius: 16, backgroundColor: AMBER, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  dwWho: { position: 'absolute', left: 16, right: 16, top: 160 },
+  dwWhoName: { fontFamily: F.black, fontSize: 20, letterSpacing: -0.4 },
+  dwWhoSub: { fontFamily: F.regular, fontSize: 12 },
+  dwField: { minHeight: 60, borderRadius: 18, borderWidth: 1, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 8 },
+  dwFieldHead: { flexDirection: 'row', justifyContent: 'space-between' },
+  dwFieldLabel: { fontFamily: F.extra, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  dwFieldHelp: { fontFamily: F.regular, fontSize: 11 },
+  dwInput: { fontFamily: F.bold, fontSize: 16, padding: 0 },
+  dwSelect: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dwFlag: { width: 22, height: 16, resizeMode: 'contain' },
   container: {
     flex: 1,
     backgroundColor: '#F6F6F6',

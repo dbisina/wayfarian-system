@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import ClipCard from '../components/dw/ClipCard';
+import Icon from '../components/dw/Icon';
+import { AMBER, CREAM, F, INK, shadow, useDW } from '../constants/design';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from '../services/api';
@@ -185,302 +187,161 @@ export default function FutureRidesScreen() {
     return `${minutes} min${minutes > 1 ? 's' : ''} left`;
   };
 
-  const renderItem = ({ item }: { item: FutureRide }) => {
-    const isReady = item.status === 'READY_TO_START';
-    const isPlanned = item.status === 'PLANNED';
-    const isStarting = startingJourneyId === item.id;
-    
-    return (
-      <TouchableOpacity 
-        style={[styles.card, isReady && styles.readyCard]}
-        onPress={() => handleStartJourney(item.id, isPlanned)}
-        disabled={isStarting}
-      >
-        {isReady && (
-          <View style={styles.readyBadge}>
-            <Ionicons name="flag" size={12} color="#fff" />
-            <Text style={styles.readyBadgeText}>Ready to Start!</Text>
-          </View>
-        )}
-        {isPlanned && (
-          <View style={styles.plannedBadge}>
-            <Ionicons name="calendar-outline" size={12} color="#fff" />
-            <Text style={styles.plannedBadgeText}>Scheduled</Text>
-          </View>
-        )}
-        
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <Text style={styles.groupName}>{item.groupName}</Text>
-        </View>
-        
-        <View style={styles.cardDetails}>
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar" size={16} color={isReady ? "#059669" : "#666"} />
-            <Text style={[styles.detailText, isReady && styles.readyText]}>
-              {new Date(item.date).toLocaleDateString()} at {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="location" size={16} color="#666" />
-            <Text style={styles.detailText}>{item.location}</Text>
-          </View>
-          {isPlanned && (
-            <View style={styles.detailRow}>
-              <Ionicons name="time" size={16} color="#F9A825" />
-              <Text style={styles.countdownText}>{getTimeUntil(item.date)}</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Start button for READY_TO_START journeys */}
-        {isReady && (
-          <TouchableOpacity 
-            style={styles.startButton}
-            onPress={() => handleStartJourney(item.id, false)}
-            disabled={isStarting}
-          >
-            {isStarting ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="play" size={18} color="#fff" />
-                <Text style={styles.startButtonText}>Start Journey</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-        
-        {/* Start Early button for PLANNED journeys */}
-        {isPlanned && (
-          <TouchableOpacity 
-            style={styles.startEarlyButton}
-            onPress={() => handleStartJourney(item.id, true)}
-            disabled={isStarting}
-          >
-            {isStarting ? (
-              <ActivityIndicator size="small" color="#F9A825" />
-            ) : (
-              <>
-                <Ionicons name="play-circle-outline" size={18} color="#F9A825" />
-                <Text style={styles.startEarlyButtonText}>Start Now</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </TouchableOpacity>
-    );
-  };
+  const d = useDW();
+  const [next, ...later] = rides;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() + i);
+    const has = rides.some((r) => new Date(r.date).toDateString() === day.toDateString());
+    return { l: day.toLocaleDateString(undefined, { weekday: 'narrow' }), n: day.getDate(), today: i === 0, has };
+  });
+  const daysTo = (iso: string) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      
-      {/* Custom Header with Back Button */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#1D1B20" />
+      <View style={[styles.header, { paddingTop: Math.max(56, insets.top + 8) }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.round, shadow(d, 8), { backgroundColor: d.surface }]}
+        >
+          <Icon name="back" size={20} color={d.ink} stroke={2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Future Rides</Text>
-        <View style={styles.headerPlaceholder} />
+        <Text style={[styles.h1, { color: d.ink }]}>Planned rides</Text>
       </View>
-      
+
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#F9A825" />
+          <ActivityIndicator size="large" color={AMBER} />
         </View>
       ) : (
         <FlatList
-          data={rides}
-          renderItem={renderItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
+          data={later}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 120, gap: 0 }}
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={64} color="#d1d5db" />
-              <Text style={styles.emptyText}>No upcoming rides scheduled.</Text>
-              <Text style={styles.emptySubtext}>Plan a journey to see it here!</Text>
+          ListHeaderComponent={
+            <View style={{ gap: 14, marginBottom: 14 }}>
+              <View style={styles.week} accessibilityLabel="This week">
+                {week.map((w, i) => (
+                  <View key={i} style={[styles.weekDay, { backgroundColor: w.today ? d.ink : d.surface }]}>
+                    <Text style={[styles.weekL, { color: w.today ? d.bg : d.ink }]}>{w.l}</Text>
+                    <Text style={[styles.weekN, { color: w.today ? d.bg : d.ink }]}>{w.n}</Text>
+                    <View style={[styles.weekDot, { backgroundColor: w.has ? AMBER : 'transparent' }]} />
+                  </View>
+                ))}
+              </View>
+
+              {next ? (
+                <ClipCard color={AMBER} corner={22} radius={24}>
+                  <View style={{ padding: 18, gap: 14 }}>
+                    <View style={styles.rowBetween}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.nextEyebrow}>
+                          Next up · {new Date(next.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </Text>
+                        <Text style={styles.nextTitle} numberOfLines={2}>{next.title}</Text>
+                        <Text style={styles.nextSub}>{next.groupName} · {next.location}</Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.nextDays}>{daysTo(next.date)}d</Text>
+                        <Text style={styles.nextGo}>to go</Text>
+                      </View>
+                    </View>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.nextWhen}>Leaves {hm(next.date)}</Text>
+                      <TouchableOpacity
+                        onPress={() => handleStartJourney(next.id, next.status === 'PLANNED')}
+                        disabled={startingJourneyId === next.id}
+                        accessibilityRole="button"
+                        style={styles.nextBtn}
+                      >
+                        {startingJourneyId === next.id ? (
+                          <ActivityIndicator color={CREAM} />
+                        ) : (
+                          <Text style={styles.nextBtnText}>{next.status === 'READY_TO_START' ? 'Start ride' : 'Start now'}</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </ClipCard>
+              ) : (
+                <Text style={[styles.empty, { color: d.ink2 }]}>No upcoming rides scheduled. Plan a journey to see it here.</Text>
+              )}
+
+              {later.length > 0 && <Text style={[styles.eyebrow, { color: d.ink2 }]}>Later</Text>}
             </View>
           }
+          renderItem={({ item }) => {
+            const dt = new Date(item.date);
+            return (
+              <TouchableOpacity
+                onPress={() => handleStartJourney(item.id, item.status === 'PLANNED')}
+                accessibilityRole="button"
+                style={[styles.laterRow, { borderTopColor: d.line }]}
+              >
+                <View style={[styles.dateTile, { backgroundColor: d.surface, borderColor: d.line }]}>
+                  <Text style={[styles.mon, { color: d.ink2 }]}>{dt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
+                  <Text style={[styles.day, { color: d.ink }]}>{String(dt.getDate()).padStart(2, '0')}</Text>
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.laterTitle, { color: d.ink }]} numberOfLines={1}>{item.title}</Text>
+                  <Text style={[styles.laterMeta, { color: d.ink2 }]} numberOfLines={1}>{item.groupName} · {hm(item.date)}</Text>
+                </View>
+                <Text style={[styles.laterWho, { color: d.ink2 }]}>{getTimeUntil(item.date)}</Text>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
+
+      <TouchableOpacity
+        onPress={() => router.push('/new-journey')}
+        accessibilityRole="button"
+        style={[styles.plan, { backgroundColor: d.ink, bottom: Math.max(30, insets.bottom + 10) }]}
+      >
+        <Icon name="plus" size={16} color={d.bg} stroke={3} />
+        <Text style={[styles.planText, { color: d.bg }]}>Plan a ride</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  readyCard: {
-    borderColor: '#059669',
-    borderWidth: 2,
-    backgroundColor: '#ecfdf5',
-  },
-  readyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    gap: 4,
-  },
-  readyBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardHeader: {
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  groupName: {
-    fontSize: 14,
-    color: '#F9A825',
-    fontWeight: '600',
-  },
-  cardDetails: {
-    gap: 8,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#4b5563',
-  },
-  readyText: {
-    color: '#059669',
-    fontWeight: '600',
-  },
-  countdownText: {
-    fontSize: 14,
-    color: '#F9A825',
-    fontWeight: '600',
-  },
-  startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#059669',
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 16,
-    gap: 8,
-  },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  startEarlyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF8E1',
-    borderWidth: 1,
-    borderColor: '#F9A825',
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 16,
-    gap: 8,
-  },
-  startEarlyButtonText: {
-    color: '#F9A825',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  plannedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9A825',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    gap: 4,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1D1B20',
-    textAlign: 'center',
-  },
-  headerPlaceholder: {
-    width: 40,
-  },
-  plannedBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    padding: 48,
-    alignItems: 'center',
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#6b7280',
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 14 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  h1: { fontFamily: F.black, fontSize: 28, letterSpacing: -0.6 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  week: { flexDirection: 'row', gap: 4 },
+  weekDay: { flex: 1, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  weekL: { fontFamily: F.extra, fontSize: 11 },
+  weekN: { fontFamily: F.monoBold, fontSize: 17 },
+  weekDot: { width: 5, height: 5, borderRadius: 3 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  nextEyebrow: { fontFamily: F.black, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: INK },
+  nextTitle: { fontFamily: F.black, fontSize: 22, letterSpacing: -0.4, color: INK },
+  nextSub: { fontFamily: F.semi, fontSize: 13, color: 'rgba(26,24,20,0.72)' },
+  nextDays: { fontFamily: F.monoBold, fontSize: 26, lineHeight: 28, color: INK },
+  nextGo: { fontFamily: F.bold, fontSize: 12, color: INK },
+  nextWhen: { fontFamily: F.extra, fontSize: 13, color: INK },
+  nextBtn: { height: 40, paddingHorizontal: 14, borderRadius: 12, backgroundColor: INK, justifyContent: 'center' },
+  nextBtnText: { fontFamily: F.extra, fontSize: 13, color: CREAM },
+  eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', marginLeft: 4 },
+  empty: { fontFamily: F.medium, fontSize: 14, textAlign: 'center', paddingVertical: 30 },
+  laterRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, paddingHorizontal: 4, borderTopWidth: 1 },
+  dateTile: { width: 52, height: 56, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  mon: { fontFamily: F.black, fontSize: 10, letterSpacing: 0.8 },
+  day: { fontFamily: F.monoBold, fontSize: 20 },
+  laterTitle: { fontFamily: F.extra, fontSize: 16 },
+  laterMeta: { fontFamily: F.regular, fontSize: 12 },
+  laterWho: { fontFamily: F.extra, fontSize: 12 },
+  plan: { position: 'absolute', left: 16, right: 16, height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  planText: { fontFamily: F.black, fontSize: 16 },
 });
-

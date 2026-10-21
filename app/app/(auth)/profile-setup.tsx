@@ -9,14 +9,13 @@ import {
   Image,
   StatusBar,
   ActivityIndicator,
-  Dimensions,
   Modal,
   FlatList,
-  Platform,
   Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../../components/dw/Icon';
+import { AMBER, F, INK, useDW } from '../../constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,10 +29,11 @@ import { userAPI, getCurrentApiUrl, getAuthToken } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BackgroundLocationDisclosureModal from '../../components/BackgroundLocationDisclosureModal';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function ProfileSetupScreen() {
   const { t, i18n } = useTranslation();
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const { user, refreshUser, completeProfileSetup, firebaseUser } = useAuth();
   const { units, setUnits } = useSettings();
   
@@ -187,291 +187,175 @@ export default function ProfileSetupScreen() {
     router.replace('/add-vehicle?fromOnboarding=1');
   };
 
+  const initials = (displayName || 'W').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View
-        style={styles.backgroundGradient}
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
+      <StatusBar barStyle={d.dark ? 'light-content' : 'dark-content'} />
+      <ScrollView
+        contentContainerStyle={{ paddingTop: Math.max(56, insets.top + 8), paddingHorizontal: 16, paddingBottom: 130, gap: 18 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>{t('profileSetup.title', 'Welcome!')}</Text>
-            <Text style={styles.subtitle}>
-              {t('profileSetup.subtitle', "Let's set up your profile")}
-            </Text>
-          </View>
-
-          {/* Profile Photo */}
-          <View style={styles.glassCard}>
-            <BlurView intensity={40} tint="light" style={styles.blurContainer}>
-              <View style={styles.cardContent}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="person-circle-outline" size={24} color="#757575" />
-                  <Text style={styles.sectionTitle}>
-                    {t('profileSetup.profilePhoto', 'Profile Photo')}
-                  </Text>
-                </View>
-                
-                <TouchableOpacity 
-                  style={styles.avatarContainer} 
-                  onPress={handleChangePhoto}
-                  disabled={uploadingPhoto}
-                >
-                  {profilePhotoUri ? (
-                    <Image source={{ uri: profilePhotoUri }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Ionicons name="camera" size={32} color="#9CA3AF" />
-                    </View>
-                  )}
-                  <View style={styles.cameraButton}>
-                    {uploadingPhoto ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="camera" size={16} color="#fff" />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </BlurView>
-          </View>
-
-          {/* Display Name */}
-          <View style={styles.glassCard}>
-            <BlurView intensity={40} tint="light" style={styles.blurContainer}>
-              <View style={styles.cardContent}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="text-outline" size={24} color="#757575" />
-                  <Text style={styles.sectionTitle}>
-                    {t('profileSetup.displayName', 'Display Name')}
-                  </Text>
-                </View>
-                
-                <TextInput
-                  style={styles.textInput}
-                  value={displayName}
-                  onChangeText={setDisplayName}
-                  placeholder={t('profileSetup.enterName', 'Enter your name')}
-                  placeholderTextColor="#9E9E9E"
-                  maxLength={50}
-                />
-              </View>
-            </BlurView>
-          </View>
-
-          {/* Language */}
-          <View style={styles.glassCard}>
-            <BlurView intensity={40} tint="light" style={styles.blurContainer}>
-              <View style={styles.cardContent}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="language-outline" size={24} color="#757575" />
-                  <Text style={styles.sectionTitle}>
-                    {t('profileSetup.language', 'Language')}
-                  </Text>
-                </View>
-                
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.languageScroll}
-                >
-                  {LANGUAGES.map((language) => (
-                    <TouchableOpacity
-                      key={language.code}
-                      style={[
-                        styles.languageOption,
-                        selectedLanguage.code === language.code && styles.languageOptionActive
-                      ]}
-                      onPress={() => handleLanguageChange(language)}
-                    >
-                      <Text style={styles.languageFlag}>{language.flag}</Text>
-                      <Text style={styles.languageName}>{language.nativeName}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </BlurView>
-          </View>
-
-          {/* Units */}
-          <View style={styles.glassCard}>
-            <BlurView intensity={40} tint="light" style={styles.blurContainer}>
-              <View style={styles.cardContent}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="speedometer-outline" size={24} color="#757575" />
-                  <Text style={styles.sectionTitle}>
-                    {t('profileSetup.units', 'Units')}
-                  </Text>
-                </View>
-                
-                <View style={styles.unitsContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.unitOption,
-                      selectedUnits === 'km' && styles.unitOptionActive
-                    ]}
-                    onPress={() => setSelectedUnits('km')}
-                  >
-                    <Ionicons 
-                      name={selectedUnits === 'km' ? 'checkmark-circle' : 'ellipse-outline'} 
-                      size={24} 
-                      color={selectedUnits === 'km' ? '#F9A825' : '#757575'} 
-                    />
-                    <View style={styles.unitTextContainer}>
-                      <Text style={styles.unitLabel}>
-                        {t('settings.metricUnits', 'Metric')}
-                      </Text>
-                      <Text style={styles.unitDescription}>km, km/h</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.unitOption,
-                      selectedUnits === 'mi' && styles.unitOptionActive
-                    ]}
-                    onPress={() => setSelectedUnits('mi')}
-                  >
-                    <Ionicons 
-                      name={selectedUnits === 'mi' ? 'checkmark-circle' : 'ellipse-outline'} 
-                      size={24} 
-                      color={selectedUnits === 'mi' ? '#F9A825' : '#757575'} 
-                    />
-                    <View style={styles.unitTextContainer}>
-                      <Text style={styles.unitLabel}>
-                        {t('settings.imperialUnits', 'Imperial')}
-                      </Text>
-                      <Text style={styles.unitDescription}>mi, mph</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </BlurView>
-          </View>
-
-          {/* Country */}
-          <View style={styles.glassCard}>
-            <BlurView intensity={40} tint="light" style={styles.blurContainer}>
-              <View style={styles.cardContent}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="globe-outline" size={24} color="#757575" />
-                  <Text style={styles.sectionTitle}>
-                    {t('profileSetup.country', 'Country')}
-                  </Text>
-                </View>
-                
-                <TouchableOpacity
-                  style={styles.countrySelector}
-                  onPress={() => setShowCountryPicker(true)}
-                >
-                  {selectedCountry ? (
-                    <View style={styles.selectedCountryRow}>
-                      <Image source={selectedCountry.flag} style={styles.flagImage} />
-                      <Text style={styles.countryName}>{selectedCountry.name}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.placeholderText}>
-                      {t('profileSetup.selectCountry', 'Select your country')}
-                    </Text>
-                  )}
-                  <Ionicons name="chevron-forward" size={20} color="#757575" />
-                </TouchableOpacity>
-              </View>
-            </BlurView>
-          </View>
-
-          {/* Continue Button */}
+        <View style={styles.top}>
           <TouchableOpacity
-            style={[styles.continueButton, saving && styles.buttonDisabled]}
-            onPress={handleContinue}
-            disabled={saving}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            style={[styles.round, { backgroundColor: d.surface }]}
           >
-            {saving ? (
-              <ActivityIndicator color="#1a1a2e" size="small" />
+            <Ionicons name="chevron-back" size={22} color={d.ink} />
+          </TouchableOpacity>
+          <View style={styles.bars} accessibilityLabel="Step 2 of 2">
+            <View style={styles.bar} />
+            <View style={styles.bar} />
+          </View>
+          <TouchableOpacity onPress={handleContinue} accessibilityRole="button" style={{ padding: 10 }}>
+            <Text style={[styles.skip, { color: d.ink2 }]}>Skip</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={[styles.h1, { color: d.ink }]}>{t('profileSetup.title', 'Set up your profile')}</Text>
+
+        <View style={styles.avatarRow}>
+          <TouchableOpacity
+            onPress={handleChangePhoto}
+            disabled={uploadingPhoto}
+            accessibilityRole="button"
+            accessibilityLabel="Change photo"
+            style={[styles.avatar, { borderColor: d.line2 }]}
+          >
+            {profilePhotoUri ? (
+              <Image source={{ uri: profilePhotoUri }} style={styles.avatarImg} />
             ) : (
-              <>
-                <Text style={styles.continueButtonText}>
-                  {t('profileSetup.continue', 'Continue')}
-                </Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-              </>
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
+            {uploadingPhoto && (
+              <View style={styles.avatarBusy}>
+                <ActivityIndicator color={AMBER} />
+              </View>
             )}
           </TouchableOpacity>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.eyebrow, { color: d.ink2 }]}>Your name on boards</Text>
+            <TextInput
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Your name"
+              placeholderTextColor={d.ink2}
+              style={[styles.nameInput, { color: d.ink }]}
+              maxLength={50}
+            />
+          </View>
+        </View>
 
-          {/* Skip link */}
+        <View style={styles.grid}>
           <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleContinue}
-            disabled={saving}
+            onPress={() => setShowCountryPicker(true)}
+            accessibilityRole="button"
+            style={[styles.country, { backgroundColor: d.surface, borderColor: d.line }]}
           >
-            <Text style={styles.skipText}>
-              {t('profileSetup.skip', 'Skip for now')}
+            <Text style={[styles.eyebrow, { color: d.ink2 }]}>Country</Text>
+            <Text style={[styles.countryName, { color: d.ink }]} numberOfLines={1}>
+              {selectedCountry?.name || 'Choose'}
             </Text>
           </TouchableOpacity>
-        </ScrollView>
-      </View>
+          <View style={[styles.units, { backgroundColor: d.surface2 }]} accessibilityRole="radiogroup">
+            {(['km', 'mi'] as const).map((u) => {
+              const on = selectedUnits === u;
+              return (
+                <TouchableOpacity
+                  key={u}
+                  onPress={() => setSelectedUnits(u)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: on }}
+                  style={[styles.unit, on && { backgroundColor: d.surface }]}
+                >
+                  <Text style={{ fontFamily: on ? F.black : F.bold, fontSize: 15, color: on ? d.ink : d.ink2 }}>{u}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
-      {/* Background Location Disclosure — shown once after first profile setup */}
+        <View style={{ gap: 8 }}>
+          <Text style={[styles.eyebrow, { color: d.ink2 }]}>Language</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {LANGUAGES.map((l) => {
+              const on = selectedLanguage.code === l.code;
+              return (
+                <TouchableOpacity
+                  key={l.code}
+                  onPress={() => handleLanguageChange(l)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.chip, on ? { backgroundColor: d.ink } : { borderWidth: 1.5, borderColor: d.line2 }]}
+                >
+                  <Text style={{ fontFamily: F.extra, fontSize: 13, color: on ? d.bg : d.ink }}>{l.nativeName}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </ScrollView>
+
+      <TouchableOpacity
+        onPress={handleContinue}
+        disabled={saving}
+        accessibilityRole="button"
+        style={[styles.cta, { bottom: Math.max(30, insets.bottom + 10), opacity: saving ? 0.6 : 1 }]}
+      >
+        {saving ? (
+          <ActivityIndicator color={INK} />
+        ) : (
+          <>
+            <Icon name="nav" size={18} color={INK} fill />
+            <Text style={styles.ctaText}>Start riding</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
       <BackgroundLocationDisclosureModal
         visible={showDisclosureModal}
         onAccept={handleDisclosureAccept}
         onDecline={handleDisclosureDecline}
       />
 
-      {/* Country Picker Modal */}
-      <Modal
-        visible={showCountryPicker}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCountryPicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {t('profileSetup.selectCountry', 'Select Country')}
-              </Text>
-              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                <Ionicons name="close" size={24} color="#000" />
+      <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => setShowCountryPicker(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.modal, { backgroundColor: d.surface }]}>
+            <View style={styles.modalHead}>
+              <Text style={[styles.modalTitle, { color: d.ink }]}>Select country</Text>
+              <TouchableOpacity onPress={() => setShowCountryPicker(false)} accessibilityRole="button" accessibilityLabel="Close">
+                <Icon name="close" size={22} color={d.ink} stroke={2.2} />
               </TouchableOpacity>
             </View>
-
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                value={countrySearchQuery}
-                onChangeText={setCountrySearchQuery}
-                placeholder={t('profileSetup.searchCountries', 'Search countries...')}
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-
+            <TextInput
+              value={countrySearchQuery}
+              onChangeText={setCountrySearchQuery}
+              placeholder="Search countries"
+              placeholderTextColor={d.ink2}
+              autoCapitalize="none"
+              style={[styles.search, { backgroundColor: d.surface2, color: d.ink }]}
+            />
             <FlatList
               data={filteredCountries}
               keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.countryItem}
+                  style={[styles.countryRow, { borderTopColor: d.line }]}
                   onPress={() => {
                     setSelectedCountry(item);
                     setShowCountryPicker(false);
                     setCountrySearchQuery('');
                   }}
                 >
-                  <Image source={item.flag} style={styles.flagImage} />
-                  <Text style={styles.countryItemText}>{item.name}</Text>
-                  {selectedCountry?.code === item.code && (
-                    <Ionicons name="checkmark" size={20} color="#F9A825" />
-                  )}
+                  <Image source={item.flag} style={styles.flag} />
+                  <Text style={[styles.countryRowText, { color: d.ink }]}>{item.name}</Text>
+                  {selectedCountry?.code === item.code && <Ionicons name="checkmark" size={20} color={AMBER} />}
                 </TouchableOpacity>
               )}
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
             />
           </View>
         </View>
@@ -481,293 +365,34 @@ export default function ProfileSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  backgroundGradient: {
-    flex: 1,
-    width: screenWidth,
-    minHeight: screenHeight,
-    backgroundColor: '#FFFFFF', // Fallback
-  },
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 32,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#757575',
-  },
-  glassCard: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  blurContainer: {
-    backgroundColor: 'transparent',
-  },
-  cardContent: {
-    padding: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  avatarContainer: {
-    alignSelf: 'center',
-    position: 'relative',
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: '#E0E0E0',
-  },
-  avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
-    borderStyle: 'dashed',
-  },
-  cameraButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F9A825',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  textInput: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#000000',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  languageScroll: {
-    marginHorizontal: -8,
-  },
-  languageOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    marginHorizontal: 4,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  languageOptionActive: {
-    borderColor: '#F9A825',
-    backgroundColor: 'rgba(249, 168, 37, 0.1)',
-  },
-  languageFlag: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  languageName: {
-    fontSize: 12,
-    color: '#000000',
-    fontWeight: '500',
-  },
-  unitsContainer: {
-    gap: 12,
-  },
-  unitOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  unitOptionActive: {
-    borderColor: '#F9A825',
-    backgroundColor: 'rgba(249, 168, 37, 0.1)',
-  },
-  unitTextContainer: {
-    flex: 1,
-  },
-  unitLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  unitDescription: {
-    fontSize: 14,
-    color: '#757575',
-  },
-  countrySelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  selectedCountryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  flagImage: {
-    width: 28,
-    height: 20,
-    marginRight: 12,
-    resizeMode: 'contain',
-  },
-  countryName: {
-    fontSize: 16,
-    color: '#000000',
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: '#757575',
-  },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#F9A825',
-    borderRadius: 16,
-    paddingVertical: 16,
-    marginTop: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  continueButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    marginTop: 8,
-  },
-  skipText: {
-    fontSize: 14,
-    color: '#757575',
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: '80%',
-    paddingTop: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#000000',
-  },
-  countryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-  countryItemText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#000000',
-    marginLeft: 12,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 20,
-  },
+  container: { flex: 1 },
+  top: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  bars: { flex: 1, flexDirection: 'row', gap: 6 },
+  bar: { flex: 1, height: 5, borderRadius: 3, backgroundColor: AMBER },
+  skip: { fontFamily: F.extra, fontSize: 14 },
+  h1: { fontFamily: F.black, fontSize: 30, lineHeight: 32, letterSpacing: -0.9, marginHorizontal: 8 },
+  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 4 },
+  avatar: { width: 72, height: 72, borderRadius: 24, borderWidth: 1.5, borderStyle: 'dashed', backgroundColor: INK, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: 72, height: 72 },
+  avatarText: { fontFamily: F.black, fontSize: 24, color: AMBER },
+  avatarBusy: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  nameInput: { fontFamily: F.extra, fontSize: 18, padding: 0 },
+  grid: { flexDirection: 'row', gap: 10 },
+  country: { flex: 1.4, height: 60, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, justifyContent: 'center' },
+  countryName: { fontFamily: F.extra, fontSize: 16 },
+  units: { flex: 1, height: 60, borderRadius: 20, padding: 5, flexDirection: 'row' },
+  unit: { flex: 1, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  chip: { height: 38, paddingHorizontal: 16, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  cta: { position: 'absolute', left: 16, right: 16, height: 56, borderRadius: 28, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  ctaText: { fontFamily: F.black, fontSize: 16, color: INK },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modal: { maxHeight: '80%', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 30 },
+  modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  modalTitle: { fontFamily: F.black, fontSize: 20 },
+  search: { height: 46, borderRadius: 14, paddingHorizontal: 14, fontFamily: F.regular, fontSize: 15, marginBottom: 6 },
+  countryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, borderTopWidth: 1 },
+  flag: { width: 26, height: 18, resizeMode: 'contain' },
+  countryRowText: { flex: 1, fontFamily: F.bold, fontSize: 15 },
 });

@@ -18,6 +18,7 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { AMBER, F, INK, useDW } from '../constants/design';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { groupJourneyAPI, galleryAPI } from '../services/api';
 import { getFirebaseDownloadUrl } from '../utils/storage';
@@ -79,6 +80,7 @@ const ExpandableMemberCard = ({
   formatTime: (seconds: number) => string;
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const dw = useDW();
 
   const toggleExpand = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -87,7 +89,7 @@ const ExpandableMemberCard = ({
 
   return (
     <TouchableOpacity
-      style={styles.expandableCard}
+      style={[styles.expandableCard, { backgroundColor: dw.surface2, borderColor: dw.line }]}
       activeOpacity={0.7}
       onPress={toggleExpand}
     >
@@ -109,10 +111,10 @@ const ExpandableMemberCard = ({
           )}
         </View>
         <View style={styles.expandableNameSection}>
-          <Text style={styles.expandableName} numberOfLines={1}>
+          <Text style={[styles.expandableName, { color: dw.ink }]} numberOfLines={1}>
             {member.displayName}
           </Text>
-          <Text style={styles.expandableDistance}>
+          <Text style={[styles.expandableDistance, { color: dw.ink2 }]}>
             {convertDistance(member.totalDistance)}
           </Text>
         </View>
@@ -130,37 +132,37 @@ const ExpandableMemberCard = ({
             <View style={styles.expandedStatIconContainer}>
               <Ionicons name="navigate-outline" size={14} color="#F9A825" />
             </View>
-            <Text style={styles.expandedStatValue}>{convertDistance(member.totalDistance)}</Text>
-            <Text style={styles.expandedStatLabel}>Distance</Text>
+            <Text style={[styles.expandedStatValue, { color: dw.ink }]}>{convertDistance(member.totalDistance)}</Text>
+            <Text style={[styles.expandedStatLabel, { color: dw.ink2 }]}>Distance</Text>
           </View>
           <View style={styles.expandedStatItem}>
             <View style={styles.expandedStatIconContainer}>
               <Ionicons name="time-outline" size={14} color="#F9A825" />
             </View>
-            <Text style={styles.expandedStatValue}>{formatTime(member.totalTime)}</Text>
-            <Text style={styles.expandedStatLabel}>Time</Text>
+            <Text style={[styles.expandedStatValue, { color: dw.ink }]}>{formatTime(member.totalTime)}</Text>
+            <Text style={[styles.expandedStatLabel, { color: dw.ink2 }]}>Time</Text>
           </View>
           <View style={styles.expandedStatItem}>
             <View style={styles.expandedStatIconContainer}>
               <Ionicons name="speedometer-outline" size={14} color="#F9A825" />
             </View>
-            <Text style={styles.expandedStatValue}>{convertSpeed(member.avgSpeed)}</Text>
-            <Text style={styles.expandedStatLabel}>Avg Speed</Text>
+            <Text style={[styles.expandedStatValue, { color: dw.ink }]}>{convertSpeed(member.avgSpeed)}</Text>
+            <Text style={[styles.expandedStatLabel, { color: dw.ink2 }]}>Avg Speed</Text>
           </View>
           <View style={styles.expandedStatItem}>
             <View style={styles.expandedStatIconContainer}>
               <Ionicons name="flash-outline" size={14} color="#F9A825" />
             </View>
-            <Text style={styles.expandedStatValue}>{convertSpeed(member.topSpeed)}</Text>
-            <Text style={styles.expandedStatLabel}>Top Speed</Text>
+            <Text style={[styles.expandedStatValue, { color: dw.ink }]}>{convertSpeed(member.topSpeed)}</Text>
+            <Text style={[styles.expandedStatLabel, { color: dw.ink2 }]}>Top Speed</Text>
           </View>
           {member.photoCount != null && (
             <View style={styles.expandedStatItem}>
               <View style={styles.expandedStatIconContainer}>
                 <Ionicons name="camera-outline" size={14} color="#F9A825" />
               </View>
-              <Text style={styles.expandedStatValue}>{member.photoCount}</Text>
-              <Text style={styles.expandedStatLabel}>Photos</Text>
+              <Text style={[styles.expandedStatValue, { color: dw.ink }]}>{member.photoCount}</Text>
+              <Text style={[styles.expandedStatLabel, { color: dw.ink2 }]}>Photos</Text>
             </View>
           )}
         </View>
@@ -172,6 +174,7 @@ const ExpandableMemberCard = ({
 const GroupJourneyDetailScreen = (): React.JSX.Element => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const dw = useDW();
   const params = useLocalSearchParams<{ groupJourneyId: string | string[] }>();
   const groupJourneyId = Array.isArray(params.groupJourneyId)
     ? params.groupJourneyId[0]
@@ -267,128 +270,123 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+  const initialsOf = (n?: string) =>
+    (n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]!.toUpperCase()).join('');
+  const glass = {
+    backgroundColor: 'rgba(255,253,248,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+  } as const;
+  const best = <K extends keyof MemberStat>(key: K) =>
+    summary.memberStats.reduce<MemberStat | null>((b, m) => ((m[key] as number) > ((b?.[key] as number) ?? -1) ? m : b), null);
+  const awards = [
+    { award: 'Fastest', m: best('topSpeed'), value: (m: MemberStat) => convertSpeed(m.topSpeed) },
+    { award: 'Furthest', m: best('totalDistance'), value: (m: MemberStat) => convertDistance(m.totalDistance) },
+    { award: 'Shutterbug', m: best('photoCount'), value: (m: MemberStat) => `${m.photoCount ?? 0} photos` },
+  ].filter((a) => a.m);
+  const tiles = [
+    { label: 'Riding time', value: formatTime(summary.groupStats.duration) },
+    { label: 'Distance', value: convertDistance(summary.groupStats.totalDistance) },
+  ];
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+  return (
+    <View style={[styles.container, { backgroundColor: '#1A1814' }]}>
+      <StatusBar barStyle="light-content" />
+
+      {heroUri ? (
+        <Image source={{ uri: heroUri }} style={dwStyles.hero} contentFit="cover" />
+      ) : (
+        <View style={[dwStyles.hero, { backgroundColor: '#2B2924' }]} />
+      )}
+      <LinearGradient colors={['rgba(17,16,14,0.45)', 'rgba(17,16,14,0)']} style={dwStyles.heroTop} />
+
+      <View style={[dwStyles.top, { top: Math.max(56, insets.top + 8) }]}>
         <TouchableOpacity
-          style={styles.backButton}
           onPress={() => router.back()}
-          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[dwStyles.round, glass]}
         >
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="chevron-back" size={22} color="#FFFDF8" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {summary.title}
-        </Text>
-        <View style={styles.backButton} />
+        <View style={[dwStyles.pill, glass]}>
+          <View style={dwStyles.pillDot} />
+          <Text style={dwStyles.pillText}>Group ride</Text>
+        </View>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
-          {heroUri ? (
-            <Image
-              source={{ uri: heroUri }}
-              style={styles.heroImage}
-              contentFit="cover"
-              blurRadius={8}
-            />
-          ) : (
-            <LinearGradient
-              colors={['#F9A825', '#FF8F00']}
-              style={styles.heroImage}
-            />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.7)']}
-            style={styles.heroOverlay}
-          >
-            <Text style={styles.heroTitle}>{summary.title}</Text>
-            <Text style={styles.heroDate}>{formatDate(summary.startedAt)}</Text>
-            <Text style={styles.heroGroup}>{summary.groupName}</Text>
-          </LinearGradient>
-        </View>
+      <View style={dwStyles.tiles}>
+        {tiles.map((s) => (
+          <View key={s.label} style={dwStyles.tile}>
+            <Text style={dwStyles.tileLabel}>{s.label}</Text>
+            <Text style={dwStyles.tileValue}>{s.value}</Text>
+          </View>
+        ))}
+      </View>
 
-        {/* Group Stats Card */}
-        <View style={styles.statsCard}>
-          <Text style={styles.sectionTitle}>Group Stats</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="navigate-outline" size={20} color="#F9A825" />
-              </View>
-              <Text style={styles.statValue}>
-                {convertDistance(summary.groupStats.totalDistance)}
+      <ScrollView
+        style={StyleSheet.absoluteFill}
+        contentContainerStyle={{ paddingTop: 580 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[dwStyles.sheet, { backgroundColor: dw.surface }]}>
+          <View style={dwStyles.titleRow}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[dwStyles.title, { color: dw.ink }]}>{summary.title}</Text>
+              <Text style={[dwStyles.sub, { color: dw.ink2 }]}>
+                {new Date(summary.startedAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · {summary.groupName}
               </Text>
-              <Text style={styles.statLabel}>Distance</Text>
-            </View>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="time-outline" size={20} color="#F9A825" />
-              </View>
-              <Text style={styles.statValue}>
-                {formatTime(summary.groupStats.duration)}
-              </Text>
-              <Text style={styles.statLabel}>Duration</Text>
-            </View>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="camera-outline" size={20} color="#F9A825" />
-              </View>
-              <Text style={styles.statValue}>{summary.groupStats.totalPhotos}</Text>
-              <Text style={styles.statLabel}>Photos</Text>
-            </View>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="people-outline" size={20} color="#F9A825" />
-              </View>
-              <Text style={styles.statValue}>{summary.groupStats.membersCount}</Text>
-              <Text style={styles.statLabel}>Riders</Text>
             </View>
           </View>
-        </View>
 
-        {/* Expandable Member Cards */}
-        {summary.memberStats.length > 0 && (
-          <View style={styles.memberSection}>
-            <Text style={styles.sectionTitle}>Riders</Text>
-            {summary.memberStats.map((member) => {
-              const color = memberColors[member.userId] || '#F9A825';
-              return (
+          {awards.length > 0 && (
+            <View style={dwStyles.awards}>
+              {awards.map((a) => (
+                <View key={a.award} style={[dwStyles.award, { backgroundColor: dw.surface2 }]}>
+                  <View style={[dwStyles.awardAv, { backgroundColor: dw.dark ? '#F2EEE5' : INK }]}>
+                    <Text style={{ fontFamily: F.black, fontSize: 11, color: dw.dark ? INK : AMBER }}>{initialsOf(a.m!.displayName)}</Text>
+                  </View>
+                  <Text style={[dwStyles.awardLabel, { color: dw.ink2 }]}>{a.award}</Text>
+                  <Text style={[dwStyles.awardName, { color: dw.ink }]} numberOfLines={1}>{a.m!.displayName?.split(' ')[0]}</Text>
+                  <Text style={[dwStyles.awardValue, { color: dw.ink2 }]} numberOfLines={1}>{a.value(a.m!)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {summary.memberStats.length > 0 && (
+            <View style={{ gap: 6 }}>
+              <Text style={[dwStyles.h2, { color: dw.ink }]}>Riders</Text>
+              {summary.memberStats.map((member) => (
                 <ExpandableMemberCard
                   key={member.userId}
                   member={member}
-                  color={color}
+                  color={memberColors[member.userId] || AMBER}
                   convertDistance={convertDistance}
                   convertSpeed={convertSpeed}
                   formatTime={formatTime}
                 />
-              );
-            })}
-          </View>
-        )}
+              ))}
+            </View>
+          )}
 
-        {/* Photo Timeline */}
-        <View style={styles.timelineSection}>
-          <View style={styles.timelineSectionHeader}>
-            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Photo Timeline</Text>
-            <Text style={styles.photoCount}>
-              {photos.length} {photos.length === 1 ? 'moment' : 'moments'}
-            </Text>
+          <View>
+            <View style={dwStyles.rowBetween}>
+              <Text style={[dwStyles.h2, { color: dw.ink }]}>Photo timeline</Text>
+              <Text style={[dwStyles.count, { color: dw.ink2 }]}>
+                {photos.length} {photos.length === 1 ? 'moment' : 'moments'}
+              </Text>
+            </View>
+            <GroupPhotoTimeline
+              photos={photos}
+              onPhotoPress={(index) => setSelectedPhotoIndex(index)}
+              memberColors={memberColors}
+              convertSpeed={convertSpeed}
+              convertDistance={convertDistance}
+            />
           </View>
-          <GroupPhotoTimeline
-            photos={photos}
-            onPhotoPress={(index) => setSelectedPhotoIndex(index)}
-            memberColors={memberColors}
-            convertSpeed={convertSpeed}
-            convertDistance={convertDistance}
-          />
+          <View style={{ height: 40 }} />
         </View>
-
-        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Full-screen Photo Viewer Modal */}
@@ -519,6 +517,33 @@ const GroupJourneyDetailScreen = (): React.JSX.Element => {
     </View>
   );
 };
+
+const dwStyles = StyleSheet.create({
+  hero: { position: 'absolute', top: 0, left: 0, right: 0, height: 620 },
+  heroTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 140 },
+  top: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  pill: { height: 44, paddingHorizontal: 14, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pillDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: AMBER },
+  pillText: { fontFamily: F.extra, fontSize: 13, color: '#FFFDF8' },
+  tiles: { position: 'absolute', top: 470, left: 16, right: 16, flexDirection: 'row', gap: 10 },
+  tile: { flex: 1, height: 86, borderRadius: 20, padding: 14, justifyContent: 'space-between', backgroundColor: 'rgba(26,24,20,0.45)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  tileLabel: { fontFamily: F.bold, fontSize: 12, color: 'rgba(255,253,248,0.82)' },
+  tileValue: { fontFamily: F.monoBold, fontSize: 26, letterSpacing: -0.5, color: '#FFFDF8' },
+  sheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 16, minHeight: 600 },
+  titleRow: { flexDirection: 'row' },
+  title: { fontFamily: F.black, fontSize: 22, letterSpacing: -0.4 },
+  sub: { fontFamily: F.regular, fontSize: 13 },
+  awards: { flexDirection: 'row', gap: 8 },
+  award: { flex: 1, borderRadius: 16, padding: 12, paddingHorizontal: 10, gap: 6 },
+  awardAv: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  awardLabel: { fontFamily: F.extra, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  awardName: { fontFamily: F.extra, fontSize: 14 },
+  awardValue: { fontFamily: F.monoBold, fontSize: 12 },
+  h2: { fontFamily: F.black, fontSize: 18 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  count: { fontFamily: F.bold, fontSize: 13 },
+});
 
 const styles = StyleSheet.create({
   container: {

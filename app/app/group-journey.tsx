@@ -15,6 +15,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, CREAM, F, INK, shadow, useDW } from '../constants/design';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Region } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
@@ -89,6 +91,7 @@ export default function GroupJourneyScreen() {
   const googleKey = getGoogleMapsApiKey();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const dw = useDW();
   const stats = useJourneyStats();
 
   const [journeyData, setJourneyData] = useState<GroupJourneyData | null>(null);
@@ -1168,146 +1171,137 @@ export default function GroupJourneyScreen() {
         onDecline={() => setShowLocationDisclosure(false)}
       />
 
-      {/* Floating Camera Button - Above Bottom Panel */}
-      {myInstance && myInstance.status !== 'COMPLETED' && (
+      {/* Top bar: minimise + live status */}
+      <View style={[styles.dwTop, { top: Math.max(56, insets.top + 8) }]}>
         <TouchableOpacity
-          style={styles.floatingCameraButton}
-          onPress={() => setShowCamera(true)}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Minimise ride"
+          style={[styles.dwRound, shadow(dw, 8), { backgroundColor: dw.surface }]}
         >
-          <MaterialIcons name="camera-alt" size={24} color="#000" />
+          <Icon name="chevron" size={20} color={dw.ink} stroke={2} />
         </TouchableOpacity>
-      )}
+        <View style={[styles.dwStatus, shadow(dw, 8), { backgroundColor: dw.surface }]} accessibilityRole="text">
+          <View style={styles.dwRec} />
+          <Text style={[styles.dwStatusText, { color: dw.ink }]} numberOfLines={1}>
+            {journeyData.title}
+          </Text>
+          <Text style={[styles.dwStatusTime, { color: dw.ink }]}>{formatTime(displayedStats.time)}</Text>
+        </View>
+      </View>
 
-      {/* Bottom Panel */}
-      <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + 12 }]}>
-        {/* Friends Row - Horizontal Scroll */}
-        <View style={styles.friendsRow}>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.friendsContainer}
-          >
-            {/* Always show ME first */}
-            <TouchableOpacity 
-              onPress={() => setSelectedMemberId(null)} 
-              style={[styles.friendAvatarContainer, !selectedMemberId && styles.selectedAvatar]}
-            >
-              <Image 
-                source={user?.photoURL ? { uri: user.photoURL } : require("../assets/images/2025-09-26/byc45z4XPi.png")} 
-                style={[styles.friendAvatar, !selectedMemberId && styles.selectedFriendAvatar]} 
-              />
-              <Text style={styles.friendName} numberOfLines={1}>{t('common.you')}</Text>
-              {myInstance?.status === 'COMPLETED' && (
-                <View style={styles.avatarStatusBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+      {/* Riders sheet */}
+      <View style={[styles.dwSheet, { backgroundColor: dw.surface, paddingBottom: insets.bottom + 12 }]}>
+        <View style={[styles.dwGrab, { backgroundColor: dw.line2 }]} />
+        <View style={styles.dwSpeedRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+            <Text style={[styles.dwSpeed, { color: dw.ink }]}>
+              {String(splitMeasurement(convertSpeed(displayedStats.speed)).value).split(/[.,]/)[0]}
+            </Text>
+            <Text style={[styles.dwUnit, { color: dw.ink2 }]}>{splitMeasurement(convertSpeed(displayedStats.speed)).unit}</Text>
+          </View>
+          <Text style={[styles.dwMono, { color: dw.ink2 }]}>
+            {splitMeasurement(convertDistance(displayedStats.distance)).value} {splitMeasurement(convertDistance(displayedStats.distance)).unit}
+          </Text>
+        </View>
+
+        <ScrollView style={{ maxHeight: 190, marginTop: 10 }} showsVerticalScrollIndicator={false}>
+          {[
+            { id: user?.id ?? 'me', name: t('common.you'), photo: user?.photoURL, status: myInstance?.status, me: true },
+            ...memberLocations
+              .filter((m) => m.userId !== user?.id)
+              .map((m) => ({ id: m.userId, name: m.displayName?.split(' ')[0] || '', photo: m.photoURL, status: m.status, me: false })),
+          ].map((r, i) => {
+            const ini = (r.name || '?').slice(0, 2).toUpperCase();
+            const stopped = r.status === 'PAUSED';
+            const done = r.status === 'COMPLETED';
+            return (
+              <TouchableOpacity
+                key={r.id}
+                onPress={() => setSelectedMemberId(r.me ? null : selectedMemberId === r.id ? null : r.id)}
+                accessibilityRole="button"
+                style={[styles.dwRider, { borderTopColor: dw.line }]}
+              >
+                <Text style={[styles.dwPos, { color: dw.ink2 }]}>{i + 1}</Text>
+                <View style={[styles.dwAv, { backgroundColor: r.me ? AMBER : dw.surface2 }]}>
+                  {r.photo ? (
+                    <Image source={{ uri: r.photo }} style={styles.dwAv} />
+                  ) : (
+                    <Text style={{ fontFamily: F.black, fontSize: 10, color: r.me ? INK : dw.ink }}>{ini}</Text>
+                  )}
                 </View>
+                <Text style={[styles.dwName, { color: dw.ink }]} numberOfLines={1}>{r.name}</Text>
+                <Text style={[styles.dwStat, { color: stopped ? (dw.dark ? '#FFB86B' : '#A4520B') : dw.ink2 }]}>
+                  {done ? 'Finished' : stopped ? 'Paused' : r.status ? 'Riding' : 'Waiting'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {myInstance && myInstance.status !== 'COMPLETED' && (
+          <View style={styles.dwActions}>
+            <TouchableOpacity
+              onPress={() => setShowCamera(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Take a photo"
+              style={[styles.dwSquare, { backgroundColor: dw.surface2 }]}
+            >
+              <Icon name="camera" size={22} color={dw.ink} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleTogglePause}
+              disabled={isPausing}
+              accessibilityRole="button"
+              accessibilityLabel={myInstance.status === 'PAUSED' ? 'Resume' : 'Pause'}
+              style={[styles.dwSquare, { backgroundColor: dw.surface2 }]}
+            >
+              {isPausing ? (
+                <ActivityIndicator color={dw.ink} />
+              ) : (
+                <MaterialIcons name={myInstance.status === 'PAUSED' ? 'play-arrow' : 'pause'} size={26} color={dw.ink} />
               )}
             </TouchableOpacity>
-             
-            {/* Other Members */}
-            {memberLocations.filter(m => m.userId !== user?.id).map(member => (
-              <TouchableOpacity 
-                key={member.userId} 
-                onPress={() => setSelectedMemberId(selectedMemberId === member.userId ? null : member.userId)} 
-                style={[styles.friendAvatarContainer, selectedMemberId === member.userId && styles.selectedAvatar]}
-              >
-                 <Image 
-                    source={member.photoURL ? { uri: member.photoURL } : require("../assets/images/2025-09-26/byc45z4XPi.png")} 
-                    style={[styles.friendAvatar, selectedMemberId === member.userId && styles.selectedFriendAvatar]} 
-                 />
-                 <Text style={styles.friendName} numberOfLines={1}>{member.displayName?.split(' ')[0]}</Text>
-                 {member.status === 'COMPLETED' && (
-                    <View style={styles.avatarStatusBadge}>
-                        <Ionicons name="checkmark-circle" size={14} color="#10b981" />
-                    </View>
-                 )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          {/* Time */}
-          <View style={styles.statItem}>
-             <Text style={styles.statValue}>{formatTime(displayedStats.time)}</Text>
-             <Text style={styles.statLabel}>{t('journey.time')}</Text>
-          </View>
-          
-          {/* Speed */}
-          <View style={styles.statItem}>
-             <View style={styles.speedContainer}>
-                <Text style={styles.statValue}>{splitMeasurement(convertSpeed(displayedStats.speed)).value}</Text>
-                <Text style={styles.speedUnit}>{splitMeasurement(convertSpeed(displayedStats.speed)).unit}</Text>
-             </View>
-             <Text style={styles.statLabel}>{t('journey.speed')}</Text>
-          </View>
-          
-          {/* Distance */}
-          <View style={styles.statItem}>
-             <View style={styles.distanceContainer}>
-                <Text style={styles.statValue}>{splitMeasurement(convertDistance(displayedStats.distance)).value}</Text>
-                <Text style={styles.distanceUnit}>{splitMeasurement(convertDistance(displayedStats.distance)).unit}</Text>
-             </View>
-             <Text style={styles.statLabel}>{t('journey.distance')}</Text>
-          </View>
-        </View>
-
-        {/* Action Buttons Row */}
-        {myInstance && myInstance.status !== 'COMPLETED' && (
-          <View style={styles.actionButtonsRow}>
-             <TouchableOpacity 
-                style={[styles.actionButton, styles.pauseButton]} 
-                onPress={handleTogglePause} 
-                disabled={isPausing}
-             >
-                {isPausing ? (
-                    <ActivityIndicator color="#000" />
-                ) : (
-                    <MaterialIcons name={myInstance.status === 'PAUSED' ? "play-arrow" : "pause"} size={28} color="#000" />
-                )}
-             </TouchableOpacity>
-             
-             <TouchableOpacity 
-                style={[styles.actionButton, styles.completeButton]} 
-                onPress={handleComplete} 
-                disabled={isCompleting}
-             >
-                {isCompleting ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.completeButtonText}>{t('common.complete')}</Text>
-                )}
-             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleComplete}
+              disabled={isCompleting}
+              accessibilityRole="button"
+              style={[styles.dwLeave, { backgroundColor: dw.dark ? '#F2EEE5' : INK }]}
+            >
+              {isCompleting ? (
+                <ActivityIndicator color={dw.dark ? INK : CREAM} />
+              ) : (
+                <>
+                  <View style={[styles.dwStop, { backgroundColor: dw.dark ? INK : CREAM }]} />
+                  <Text style={[styles.dwLeaveText, { color: dw.dark ? INK : CREAM }]}>{t('common.complete')}</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
-       
-        {/* Start Button if not started */}
+
         {!myInstance && !userStartLocation && (
-          <View style={styles.startJourneyContainer}>
-             <TouchableOpacity 
-                style={styles.startJourneyButton} 
-                onPress={() => setShowStartLocationModal(true)}
-             >
-                <Text style={styles.startJourneyText}>{t('groupJourney.setStartLocation')}</Text>
-             </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.dwStart} onPress={() => setShowStartLocationModal(true)} accessibilityRole="button">
+            <Text style={styles.dwStartText}>{t('groupJourney.setStartLocation')}</Text>
+          </TouchableOpacity>
         )}
 
         {!myInstance && userStartLocation && (
-          <View style={styles.startJourneyContainer}>
-             <TouchableOpacity 
-                style={[styles.startJourneyButton, isStarting && styles.buttonDisabled]} 
-                onPress={handleStartInstance} 
-                disabled={isStarting}
-             >
-                {isStarting ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.startJourneyText}>{t('groupJourney.startRiding')}</Text>
-                )}
-             </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.dwStart, isStarting && { opacity: 0.6 }]}
+            onPress={handleStartInstance}
+            disabled={isStarting}
+            accessibilityRole="button"
+          >
+            {isStarting ? (
+              <ActivityIndicator color={INK} />
+            ) : (
+              <>
+                <Icon name="nav" size={18} color={INK} fill />
+                <Text style={styles.dwStartText}>{t('groupJourney.startRiding')}</Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
       </View>
 
@@ -1371,6 +1365,30 @@ export default function GroupJourneyScreen() {
 }
 
 const styles = StyleSheet.create({
+  dwTop: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 20 },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '90deg' }] },
+  dwStatus: { flex: 1, height: 44, paddingHorizontal: 14, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dwRec: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E5484D' },
+  dwStatusText: { flex: 1, fontFamily: F.extra, fontSize: 13 },
+  dwStatusTime: { fontFamily: F.monoBold, fontSize: 13 },
+  dwSheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 10, zIndex: 20, elevation: 12 },
+  dwGrab: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2 },
+  dwSpeedRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 12 },
+  dwSpeed: { fontFamily: F.extra, fontSize: 52, lineHeight: 56, letterSpacing: -2 },
+  dwUnit: { fontFamily: F.extra, fontSize: 14 },
+  dwMono: { fontFamily: F.monoBold, fontSize: 14 },
+  dwRider: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 46, borderTopWidth: 1 },
+  dwPos: { width: 18, fontFamily: F.monoBold, fontSize: 12 },
+  dwAv: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dwName: { flex: 1, fontFamily: F.extra, fontSize: 14 },
+  dwStat: { fontFamily: F.monoBold, fontSize: 12 },
+  dwActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  dwSquare: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  dwLeave: { flex: 1, height: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  dwStop: { width: 12, height: 12, borderRadius: 3 },
+  dwLeaveText: { fontFamily: F.extra, fontSize: 15 },
+  dwStart: { height: 52, borderRadius: 16, marginTop: 10, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  dwStartText: { fontFamily: F.black, fontSize: 15, color: INK },
   container: {
     flex: 1,
     backgroundColor: '#fff',

@@ -1,482 +1,222 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  StatusBar,
-  RefreshControl,
-  Platform,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, RefreshControl } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
-import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { SkeletonCircle, SkeletonLine } from '../../components/Skeleton';
-import { getCountryByCode } from '../../constants/countries';
-import AnimatedLogoButton from '../../components/AnimatedLogoButton';
+import { SkeletonLine } from '../../components/Skeleton';
+import ClipCard from '../../components/dw/ClipCard';
+import Cut from '../../components/dw/Cut';
+import { AMBER, F, INK, useDW } from '../../constants/design';
 
-// const { width: screenWidth } = Dimensions.get('window');
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
 
 export default function LeaderboardScreen(): React.JSX.Element {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation();
   const { friendsData, globalData, loading, error, refreshLeaderboard } = useLeaderboard();
-  const { convertDistance, convertSpeed } = useSettings();
-  const [activeTab, setActiveTab] = useState<'friends' | 'global'>('friends');
-  const [sortBy] = useState<'totalDistance' | 'topSpeed' | 'totalTrips' | 'totalTime'>('totalDistance');
+  const { convertDistance } = useSettings();
+  const [activeTab, setActiveTab] = useState<'friends' | 'global'>('global');
+  const sortBy = 'totalDistance' as const;
 
-  const normalizeDistance = (value: number) => {
-    if (!value) return 0;
-    // API returns distance in kilometers, use as-is
-    return value;
-  };
-
-  const formatTime = (timeInSeconds: number) => {
-    const hours = Math.floor(timeInSeconds / 3600);
-    const minutes = Math.floor((timeInSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
-  };
-
-  const getDisplayValue = (user: any) => {
-    switch (sortBy) {
-      case 'totalDistance':
-        return convertDistance(normalizeDistance(user.totalDistance || 0));
-      case 'totalTime':
-        return formatTime(user.totalTime || 0);
-      case 'topSpeed':
-        return convertSpeed(user.topSpeed || 0);
-      case 'totalTrips':
-        return `${user.totalTrips || 0} ${t('leaderboard.trips')}`;
-      default:
-        return convertDistance(normalizeDistance(user.totalDistance || 0));
-    }
-  };
-
+  const currentData = activeTab === 'friends' ? friendsData : globalData;
   const onRefresh = async () => {
     await refreshLeaderboard(activeTab, sortBy);
   };
 
-  const currentData = activeTab === 'friends' ? friendsData : globalData;
-
-  const getKmLevel = (totalDistance: number) => {
-    const km = normalizeDistance(totalDistance || 0);
-    return Math.max(1, Math.floor(km / 100) + 1);
-  };
-
-  const renderLeaderboardItem = (item: any, isCurrentUser = false) => {
-    // Use photoURL if available, otherwise generate avatar with user's initials
-    const displayName = item.displayName || item.name || t('leaderboard.user');
-    const avatarUri = item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=128&background=F9A825&color=fff&bold=true&rounded=true`;
-    const userLevel = getKmLevel(item.totalDistance);
-    
-    return (
-      <View key={item.id || 'current-user'} style={styles.leaderboardItem}>
-        <Image 
-          source={{ uri: avatarUri }} 
-          style={styles.avatar}
-        />
-        <View style={styles.userInfo}>
-          <View style={styles.nameRow}>
-            <Text style={[styles.userName, isCurrentUser && styles.currentUserName]} numberOfLines={1}>
-              {displayName}
-              {isCurrentUser && ` (${t('leaderboard.you')})`}
-            </Text>
-            <View style={styles.levelBadge}>
-              <Text style={styles.levelBadgeText}>Lv.{userLevel}</Text>
-            </View>
-          </View>
-          <View style={styles.countryContainer}>
-            {item.countryCode ? (
-              <>
-                {(() => {
-                  const country = getCountryByCode(item.countryCode);
-                  return country ? <Image source={country.flag} style={styles.flagIcon} /> : null;
-                })()}
-                <Text style={styles.countryText}>{item.country || t('leaderboard.unknown')}</Text>
-              </>
-            ) : (
-              <Text style={styles.countryText}>{t('leaderboard.unknown')}</Text>
-            )}
-            {item.defaultVehicle && (
-              <Text style={styles.vehicleText}>
-                {item.defaultVehicle.make} {item.defaultVehicle.model}
-              </Text>
-            )}
-          </View>
-        </View>
-        <Text style={styles.rank}>#{item.rank || item.position || t('leaderboard.na')}</Text>
-        <Text style={styles.distance}>{getDisplayValue(item)}</Text>
-      </View>
-    );
-  };
-
   if (!isAuthenticated) {
     return (
-      <View style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>{t('leaderboard.loginToView')}</Text>
-        </View>
+      <View style={[styles.center, { backgroundColor: d.bg }]}>
+        <Text style={{ fontFamily: F.bold, color: d.ink }}>{t('leaderboard.loginToView')}</Text>
       </View>
     );
   }
 
+  const users: any[] = currentData?.users || [];
+  const me: any = currentData?.currentUser;
+  const top = users.slice(0, 3);
+  const rest = users.slice(3);
+  const slots = [
+    { x: 0, y: 0 },
+    { x: 184, y: 48 },
+    { x: 0, y: 124 },
+  ];
+  const nameOf = (u: any) => u.displayName || u.name || t('leaderboard.user');
+  const ccOf = (u: any) => (u.countryCode ? String(u.countryCode).toUpperCase() : '');
+  const km = (u: any) => convertDistance(u.totalDistance || 0);
+  const topInk = d.dark ? AMBER : '#B26A00';
+  const top0 = Math.max(56, insets.top + 8);
+
+  const setTab = (tab: 'friends' | 'global') => {
+    setActiveTab(tab);
+    refreshLeaderboard(tab, sortBy);
+  };
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <AnimatedLogoButton size={34} padding={0} />
-        <Text style={styles.headerTitle}>{t('leaderboard.title')}</Text>
-        <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
-          <Image
-            source={require('../../assets/images/2025-09-26/itjep5JQ04.png')}
-            style={styles.profileIcon}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tab Selector */}
-      <View style={styles.tabContainer}>
-        <View style={styles.tabSelector}>
-          <TouchableOpacity 
-            style={activeTab === 'friends' ? styles.activeTab : styles.inactiveTab}
-            onPress={() => {
-              setActiveTab('friends');
-              refreshLeaderboard('friends', sortBy);
-            }}
-          >
-            <Text style={activeTab === 'friends' ? styles.activeTabText : styles.inactiveTabText}>
-              {t('leaderboard.friendsTab')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={activeTab === 'global' ? styles.activeTab : styles.inactiveTab}
-            onPress={() => {
-              setActiveTab('global');
-              refreshLeaderboard('global', sortBy);
-            }}
-          >
-            <Text style={activeTab === 'global' ? styles.activeTabText : styles.inactiveTabText}>
-              {t('leaderboard.globalTab')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView 
-        style={styles.scrollView} 
+    <View style={[styles.root, { backgroundColor: d.bg }]}>
+      <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onRefresh} />
-        }
+        contentContainerStyle={{ paddingBottom: 220 }}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={AMBER} />}
       >
-        {loading && !currentData ? (
-          <>
-            {/* Current user skeleton */}
-            <View style={styles.leaderboardItem}>
-              <SkeletonCircle size={56} />
-              <View style={[styles.userInfo, { marginLeft: 16 }]}>
-                <SkeletonLine width={140} height={14} style={{ marginBottom: 6 }} />
-                <SkeletonLine width={80} height={10} />
-              </View>
-              <SkeletonLine width={40} height={14} style={{ marginRight: 16 }} />
-              <SkeletonLine width={60} height={14} />
+        <View style={{ height: 250 }}>
+          <Cut height={250} />
+          <View style={[styles.header, { top: top0 }]}>
+            <Text style={styles.h1}>{t('leaderboard.title')}</Text>
+            <View style={styles.seg} accessibilityRole="tablist">
+              {(['global', 'friends'] as const).map((tab) => {
+                const on = activeTab === tab;
+                return (
+                  <Pressable
+                    key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    onPress={() => setTab(tab)}
+                    style={[styles.segItem, on && { backgroundColor: INK }]}
+                  >
+                    <Text style={{ fontFamily: on ? F.extra : F.bold, fontSize: 13, color: on ? AMBER : INK }}>
+                      {tab === 'global' ? t('leaderboard.globalTab') : t('leaderboard.friendsTab')}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            {/* List skeletons */}
-            {Array.from({ length: 5 }).map((_, idx) => (
-              <View key={idx} style={styles.leaderboardItem}>
-                <SkeletonCircle size={56} />
-                <View style={[styles.userInfo, { marginLeft: 16 }]}>
-                  <SkeletonLine width={120} height={14} style={{ marginBottom: 6 }} />
-                  <SkeletonLine width={70} height={10} />
-                </View>
-                <SkeletonLine width={30} height={14} style={{ marginRight: 16 }} />
-                <SkeletonLine width={50} height={14} />
-              </View>
-            ))}
-          </>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
-              <Text style={styles.retryButtonText}>{t('leaderboard.retry')}</Text>
-            </TouchableOpacity>
+            <Text style={styles.eyebrow}>Distance</Text>
           </View>
-        ) : currentData ? (
-          <>
-            {/* Current User */}
-            {currentData.currentUser && renderLeaderboardItem(currentData.currentUser, true)}
+        </View>
 
-            {/* Top Section */}
-            <Text style={styles.sectionTitle}>
-              {activeTab === 'friends' ? t('leaderboard.friendsTitle') : t('leaderboard.globalTitle')}
+        {loading && !currentData ? (
+          <View style={{ paddingHorizontal: 20, gap: 14 }}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonLine key={i} width={'100%' as any} height={40} />
+            ))}
+          </View>
+        ) : error ? (
+          <View style={styles.msg}>
+            <Text style={[styles.msgText, { color: d.ink2 }]}>{error}</Text>
+            <Pressable onPress={onRefresh} style={styles.retry}>
+              <Text style={styles.retryText}>{t('leaderboard.retry')}</Text>
+            </Pressable>
+          </View>
+        ) : users.length === 0 ? (
+          <View style={styles.msg}>
+            <Text style={[styles.msgText, { color: d.ink }]}>
+              {activeTab === 'friends' ? t('leaderboard.noFriends') : t('leaderboard.noGlobal')}
             </Text>
+            <Text style={[styles.msgText, { color: d.ink2, fontFamily: F.regular, fontSize: 14 }]}>
+              {activeTab === 'friends' ? t('leaderboard.joinFriends') : t('leaderboard.beFirst')}
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.podium}>
+              {top.map((u, i) => {
+                const first = i === 0;
+                return (
+                  <View key={u.id || i} style={[styles.podiumCell, { left: slots[i].x, top: slots[i].y }]}>
+                    <View style={[styles.podiumTop, { borderColor: d.ink }]} />
+                    <View style={styles.rowBetween}>
+                      <Text style={[styles.pos, { color: first ? topInk : d.ink }]}>P{i + 1}</Text>
+                      <View style={[styles.av34, { backgroundColor: first ? AMBER : d.surface2 }]}>
+                        {u.photoURL ? (
+                          <Image source={{ uri: u.photoURL }} style={styles.av34} />
+                        ) : (
+                          <Text style={{ fontFamily: F.extra, fontSize: 12, color: first ? INK : d.ink }}>
+                            {initials(nameOf(u))}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <Text style={[styles.podName, { color: d.ink }]} numberOfLines={1}>{nameOf(u)}</Text>
+                    <Text style={[styles.mono, { color: d.ink2 }]} numberOfLines={1}>
+                      {km(u)}{ccOf(u) ? ` · ${ccOf(u)}` : ''}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
 
-            {/* Leaderboard List */}
-            {currentData.users && currentData.users.length > 0 ? (
-              currentData.users.map((item) => renderLeaderboardItem(item))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  {activeTab === 'friends' 
-                    ? t('leaderboard.noFriends') 
-                    : t('leaderboard.noGlobal')
-                  }
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {activeTab === 'friends' 
-                    ? t('leaderboard.joinFriends')
-                    : t('leaderboard.beFirst')
-                  }
-                </Text>
-              </View>
-            )}
+            <View style={styles.list}>
+              {rest.map((u, i) => (
+                <View key={u.id || i} style={[styles.row, { borderTopColor: d.line }]}>
+                  <Text style={[styles.rowPos, { color: d.ink2 }]}>{u.rank || u.position || i + 4}</Text>
+                  <View style={[styles.av32, { backgroundColor: d.surface2 }]}>
+                    {u.photoURL ? (
+                      <Image source={{ uri: u.photoURL }} style={styles.av32} />
+                    ) : (
+                      <Text style={{ fontFamily: F.extra, fontSize: 11, color: d.ink }}>{initials(nameOf(u))}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.rowName, { color: d.ink }]} numberOfLines={1}>
+                    {nameOf(u)} <Text style={[styles.cc, { color: d.ink2 }]}>{ccOf(u)}</Text>
+                  </Text>
+                  <Text style={[styles.rowVal, { color: d.ink }]}>{km(u)}</Text>
+                </View>
+              ))}
+            </View>
           </>
-        ) : null}
-
-        <View style={{ height: 120 }} />
+        )}
       </ScrollView>
+
+      {me && (
+        <ClipCard
+          color={AMBER}
+          corner={16}
+          radius={18}
+          style={[styles.me, { bottom: Math.max(20, insets.bottom) + 66 + 18 }]}
+        >
+          <View style={styles.meRow}>
+            <Text style={styles.meRank}>#{me.rank || me.position || '--'}</Text>
+            <View style={[styles.av32, { backgroundColor: INK }]}>
+              {me.photoURL ? (
+                <Image source={{ uri: me.photoURL }} style={styles.av32} />
+              ) : (
+                <Text style={{ fontFamily: F.extra, fontSize: 11, color: AMBER }}>{initials(nameOf(me))}</Text>
+              )}
+            </View>
+            <Text style={styles.meName}>{t('leaderboard.you')}</Text>
+            <Text style={styles.meVal}>{km(me)}</Text>
+          </View>
+        </ClipCard>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 27 : 40,
-    paddingBottom: 11,
-  },
-  backButton: {
-    width: 34,
-    height: 34,
-  },
-  headerTitle: {
-    fontFamily: 'Space Grotesk',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
-    color: '#000000',
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 34,
-  },
-  profileIcon: {
-    width: 34,
-    height: 34,
-  },
-  tabContainer: {
-    paddingHorizontal: 27,
-    paddingVertical: 16,
-  },
-  tabSelector: {
-    flexDirection: 'row',
-    backgroundColor: '#D9D9D9',
-    borderRadius: 10,
-    height: 36,
-    position: 'relative',
-  },
-  activeTab: {
-    flex: 1,
-    backgroundColor: '#F9A825',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  inactiveTab: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  activeTabText: {
-    fontFamily: 'Poppins',
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#000000',
-    fontWeight: '400',
-  },
-  inactiveTabText: {
-    fontFamily: 'Poppins',
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#000000',
-    fontWeight: '400',
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  leaderboardItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E0E0E0',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  userInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  userName: {
-    fontFamily: 'Poppins',
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#000000',
-    fontWeight: '400',
-    flexShrink: 1,
-  },
-  levelBadge: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  levelBadgeText: {
-    fontFamily: 'Poppins',
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#6366F1',
-  },
-  currentUserName: {
-    opacity: 0.6,
-  },
-  countryContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  flagIcon: {
-    width: 20,
-    height: 15,
-    marginRight: 6,
-    resizeMode: 'contain',
-  },
-  countryText: {
-    fontFamily: 'Poppins',
-    fontSize: 8,
-    lineHeight: 12,
-    color: '#000000',
-  },
-  vehicleText: {
-    marginLeft: 6,
-    fontSize: 9,
-    fontWeight: '400',
-    color: '#AAAAAA',
-    fontFamily: 'Poppins',
-  },
-  rank: {
-    fontFamily: 'Poppins',
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#000000',
-    fontWeight: '500',
-    marginRight: 16,
-    minWidth: 30,
-  },
-  distance: {
-    fontFamily: 'Poppins',
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#000000',
-    fontWeight: '400',
-    minWidth: 60,
-    textAlign: 'right',
-  },
-  sectionTitle: {
-    fontFamily: 'Poppins',
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#000000',
-    fontWeight: '600',
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Poppins',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Poppins',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  retryButton: {
-    marginTop: 16,
-    backgroundColor: '#F9A825',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'Poppins',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    fontFamily: 'Poppins',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    fontFamily: 'Poppins',
-  },
+  root: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { position: 'absolute', left: 20, right: 20, gap: 14 },
+  h1: { fontFamily: F.black, fontSize: 30, letterSpacing: -0.6, color: INK },
+  seg: { alignSelf: 'flex-start', flexDirection: 'row', gap: 4, padding: 4, borderRadius: 14, backgroundColor: 'rgba(26,24,20,0.1)' },
+  segItem: { height: 36, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(26,24,20,0.72)' },
+  podium: { marginHorizontal: 20, marginTop: 12, height: 232 },
+  podiumCell: { position: 'absolute', width: 166, height: 102, paddingTop: 14, paddingHorizontal: 12, gap: 8 },
+  podiumTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 26, borderWidth: 2, borderBottomWidth: 0, borderTopLeftRadius: 4, borderTopRightRadius: 4, opacity: 0.85 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pos: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.8 },
+  av34: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  av32: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  podName: { fontFamily: F.extra, fontSize: 15 },
+  mono: { fontFamily: F.monoSemi, fontSize: 12 },
+  list: { paddingHorizontal: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 54, borderTopWidth: 1 },
+  rowPos: { width: 26, fontFamily: F.monoBold, fontSize: 14 },
+  rowName: { flex: 1, fontFamily: F.bold, fontSize: 15 },
+  cc: { fontFamily: F.bold, fontSize: 11 },
+  rowVal: { fontFamily: F.monoBold, fontSize: 14 },
+  me: { position: 'absolute', left: 16, right: 16, height: 58 },
+  meRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  meRank: { fontFamily: F.monoBold, fontSize: 15, color: INK },
+  meName: { flex: 1, fontFamily: F.extra, fontSize: 15, color: INK },
+  meVal: { fontFamily: F.monoBold, fontSize: 14, color: INK },
+  msg: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: 8 },
+  msgText: { fontFamily: F.bold, fontSize: 16, textAlign: 'center' },
+  retry: { marginTop: 8, backgroundColor: AMBER, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
+  retryText: { fontFamily: F.extra, fontSize: 14, color: INK },
 });
-
-

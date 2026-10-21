@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
   Platform,
   Alert,
   ActionSheetIOS,
@@ -13,6 +12,11 @@ import {
   Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon, { IconName } from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, setThemePref, useDW, useThemePref, ThemePref } from '../constants/design';
+import { useAppSelector } from '../store/hooks';
+import { selectDefaultVehicle } from '../store/slices/vehicleSlice';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,6 +25,10 @@ import LanguageSelector from '../components/LanguageSelector';
 import { LANGUAGES } from '../i18n';
 
 export default function SettingsScreen() {
+  const d = useDW();
+  const themePref = useThemePref();
+  const insets = useSafeAreaInsets();
+  const defaultVehicle = useAppSelector(selectDefaultVehicle);
   const { i18n, t } = useTranslation();
   const { logout, deleteAccount } = useAuth();
   const {
@@ -70,7 +78,7 @@ export default function SettingsScreen() {
           title,
           options: [...options, t('common.cancel')],
           cancelButtonIndex: options.length,
-          userInterfaceStyle: 'light',
+          userInterfaceStyle: d.dark ? 'dark' : 'light',
         },
         (buttonIndex) => {
           if (buttonIndex < options.length) onPick(buttonIndex);
@@ -84,178 +92,117 @@ export default function SettingsScreen() {
     }
   };
 
-  const SettingItem = ({ 
-    title, 
-    subtitle, 
-    onPress, 
-    showArrow = false,
-    children 
-  }: {
-    title: string;
-    subtitle: string;
-    onPress?: () => void;
-    showArrow?: boolean;
-    children?: React.ReactNode;
-  }) => (
-    <TouchableOpacity style={styles.settingItem} onPress={onPress}>
-      <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        <Text style={styles.settingSubtitle}>{subtitle}</Text>
-      </View>
-      {children || (showArrow ? (
-        <MaterialIcons name="chevron-right" size={24} color="#757575" />
-      ) : (
-        <View style={styles.editButton}>
-          <Text style={styles.editButtonText}>{t('common.edit')}</Text>
-        </View>
-      ))}
-    </TouchableOpacity>
-  );
+  const themeOptions: { label: string; value: ThemePref; preview: string; bar: string }[] = [
+    { label: 'Match phone', value: 'system', preview: '', bar: '#1C1A16' },
+    { label: 'Light', value: 'light', preview: '#F4F1E9', bar: '#1C1A16' },
+    { label: 'Dark', value: 'dark', preview: '#11100E', bar: '#3A362F' },
+  ];
+  const mapTypes = ['standard', 'satellite', 'terrain'];
+  const rows: { label: string; meta: string; icon: IconName; onPress: () => void; tile?: boolean }[] = [
+    { label: 'Account', meta: '', icon: 'user', onPress: () => router.push('/edit-profile') },
+    {
+      label: t('settings.notifications'),
+      meta: notificationsEnabled ? 'On' : 'Off',
+      icon: 'bell',
+      onPress: () => setNotificationsEnabled(!notificationsEnabled),
+    },
+    {
+      label: t('settings.mapType'),
+      meta: t(`settings.${mapType}`),
+      icon: 'map',
+      tile: true,
+      onPress: () =>
+        pickOption(
+          t('settings.mapType'),
+          [t('settings.standard'), t('settings.satellite'), t('settings.terrain')],
+          mapTypes.indexOf(mapType),
+          (i) => setMapType(mapTypes[i] as MapType)
+        ),
+    },
+    { label: t('settings.language'), meta: currentLanguage.nativeName, icon: 'globe', onPress: () => setShowLanguageModal(true) },
+    { label: t('settings.units'), meta: units === 'km' ? 'km' : 'mi', icon: 'route', onPress: () => setShowUnitsModal(true) },
+    { label: t('settings.managePrivacySettings'), meta: '', icon: 'lock', onPress: () => Alert.alert(t('alerts.privacy'), t('alerts.comingSoon')) },
+    { label: t('settings.helpCenter'), meta: '', icon: 'help', onPress: () => Alert.alert(t('settings.helpCenter'), t('alerts.comingSoon')) },
+  ];
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
+      <StatusBar barStyle={d.dark ? 'light-content' : 'dark-content'} />
+      <View style={[styles.dwHeader, { paddingTop: Math.max(56, insets.top + 8) }]}>
+        <TouchableOpacity
           onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
         >
-          <MaterialIcons name="arrow-back" size={24} color="#000000" />
+          <Icon name="back" size={20} color={d.ink} stroke={2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={[styles.dwTitle, { color: d.ink }]}>{t('settings.title')}</Text>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Account Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.accountSettings')}</Text>
-          
-          <SettingItem
-            title={t('settings.editProfile')}
-            subtitle={t('settings.changeProfileInfo')}
-            onPress={() => router.push('/edit-profile')}
-          />
-
-          <SettingItem
-            title="My Garage"
-            subtitle="Manage your vehicles"
-            onPress={() => router.push('/manage-vehicles')}
-          />
-
-          <TouchableOpacity 
-            style={styles.settingItem} 
-            disabled={isDeleting}
-            onPress={() => {
-              Alert.alert(
-                t('settings.deleteAccount.confirmTitle'),
-                t('settings.deleteAccount.confirmMsg'),
-                [
-                  { text: t('common.cancel'), style: 'cancel' },
-                  { 
-                    text: t('settings.deleteAccount.button'), 
-                    style: 'destructive',
-                    onPress: handleDeleteAccount
-                  },
-                ]
-              );
-            }}
-          >
-            <View style={styles.settingContent}>
-              <Text style={styles.deleteAccountTitle}>
-                {isDeleting ? t('settings.deleteAccount.deleting') : t('settings.deleteAccount.title')}
-              </Text>
-              <Text style={styles.deleteAccountSubtitle}>{t('settings.deleteAccount.subtitle')}</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#DC2626" />
-          </TouchableOpacity>
-        </View>
-
-        {/* App Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.appPreferences')}</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>{t('settings.notifications')}</Text>
-              <Text style={styles.settingSubtitle}>{t('settings.enableDisableNotifications')}</Text>
-            </View>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: '#D1D5DB', true: '#000000' }}
-              thumbColor={notificationsEnabled ? '#FFFFFF' : '#FFFFFF'}
-              ios_backgroundColor="#D1D5DB"
-            />
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+        <TouchableOpacity
+          onPress={() => router.push('/manage-vehicles')}
+          accessibilityRole="button"
+          style={styles.dwSetup}
+        >
+          <Text style={styles.dwSetupEyebrow}>Riding setup</Text>
+          <Text style={styles.dwSetupName} numberOfLines={1}>
+            {defaultVehicle ? defaultVehicle.name || `${defaultVehicle.make} ${defaultVehicle.model}` : 'Add a vehicle'}
+          </Text>
+          <Text style={styles.dwSetupSub}>Starts every new ride</Text>
+          <View style={styles.dwChips}>
+            <View style={styles.dwSetupChip}><Text style={[styles.dwSetupChipText, { fontFamily: F.monoBold }]}>{units}</Text></View>
+            <View style={styles.dwSetupChip}><Text style={styles.dwSetupChipText}>{notificationsEnabled ? 'Alerts on' : 'Alerts off'}</Text></View>
           </View>
+        </TouchableOpacity>
 
-          <SettingItem
-            title={t('settings.language')}
-            subtitle={`${t('settings.currentLanguage')}: ${currentLanguage.nativeName}`}
-            onPress={() => setShowLanguageModal(true)}
-          />
-
-          <SettingItem
-            title={t('settings.units')}
-            subtitle={`${t('settings.currentLanguage')}: ${units === 'km' ? t('settings.metricUnits') : t('settings.imperialUnits')}`}
-            onPress={() => setShowUnitsModal(true)}
-          />
-
-          <SettingItem
-            title={t('settings.mapType')}
-            subtitle={`${t('settings.currentLanguage')}: ${t(`settings.${mapType}`)}`}
-            onPress={() => pickOption(t('settings.mapType'), [t('settings.standard'), t('settings.satellite'), t('settings.terrain')], ['standard','satellite','terrain'].indexOf(mapType), (i) => setMapType(['standard','satellite','terrain'][i] as MapType))}
-          />
+        <View style={styles.dwThemes} accessibilityRole="radiogroup">
+          {themeOptions.map((m) => {
+            const on = themePref === m.value;
+            return (
+              <TouchableOpacity
+                key={m.value}
+                onPress={() => setThemePref(m.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: on }}
+                style={[
+                  styles.dwTheme,
+                  { backgroundColor: d.surface },
+                  on ? { borderWidth: 2.5, borderColor: AMBER } : { borderWidth: 1, borderColor: d.line2 },
+                ]}
+              >
+                <View style={[styles.dwPreview, { backgroundColor: m.preview || '#F4F1E9' }]}>
+                  {m.value === 'system' && <View style={[StyleSheet.absoluteFill, { left: '50%', backgroundColor: '#11100E' }]} />}
+                  <View style={styles.dwPreviewCut} />
+                  <View style={[styles.dwPreviewBar, { backgroundColor: m.bar }]} />
+                </View>
+                <Text style={[styles.dwThemeLabel, { color: d.ink }]}>{m.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* Privacy Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.privacySettings')}</Text>
-          
-          <SettingItem
-            title={t('settings.managePrivacySettings')}
-            subtitle=""
-            onPress={() => Alert.alert(t('alerts.privacy'), t('alerts.comingSoon'))}
-            showArrow={true}
-          />
+        <View style={[styles.dwList, { backgroundColor: d.surface }]}>
+          {rows.map((r, i) => (
+            <TouchableOpacity
+              key={r.label}
+              onPress={r.onPress}
+              accessibilityRole="button"
+              style={[styles.dwRow, i > 0 && { borderTopWidth: 1, borderTopColor: d.line }]}
+            >
+              <View style={[styles.dwTile, { backgroundColor: r.tile ? INK : d.surface2 }]}>
+                <Icon name={r.icon} size={17} color={r.tile ? AMBER : d.ink} stroke={2} />
+              </View>
+              <Text style={[styles.dwRowLabel, { color: d.ink }]} numberOfLines={1}>{r.label}</Text>
+              <Text style={[styles.dwRowMeta, { color: d.ink2 }]} numberOfLines={1}>{r.meta}</Text>
+              <Icon name="chevron" size={16} color={d.ink2} stroke={2} />
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Support & About */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.supportAbout')}</Text>
-          
-          <SettingItem
-            title={t('settings.faq')}
-            subtitle=""
-            onPress={() => Alert.alert(t('settings.faq'), t('alerts.comingSoon'))}
-            showArrow={true}
-          />
-
-          <SettingItem
-            title={t('settings.helpCenter')}
-            subtitle=""
-            onPress={() => Alert.alert(t('settings.helpCenter'), t('alerts.comingSoon'))}
-            showArrow={true}
-          />
-
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>{t('settings.appVersion')}</Text>
-            </View>
-            <Text style={styles.versionText}>1.2.3</Text>
-          </View>
-        </View>
-
-        {/* Logout */}
-        <View style={styles.section}>
+        <View style={styles.dwFooter}>
           <TouchableOpacity
-            style={styles.logoutButton}
             onPress={async () => {
               try {
                 await logout();
@@ -264,9 +211,12 @@ export default function SettingsScreen() {
                 console.error('Logout failed', e);
               }
             }}
+            accessibilityRole="button"
+            style={{ height: 44, justifyContent: 'center' }}
           >
-            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
+            <Text style={[styles.dwLogout, { color: d.danger }]}>{t('settings.logout')}</Text>
           </TouchableOpacity>
+          <Text style={[styles.dwVersion, { color: d.ink2 }]}>Wayfarian 2.0</Text>
         </View>
       </ScrollView>
       <Modal
@@ -276,8 +226,8 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowUnitsModal(false)}
       >
         <View style={styles.unitsModalBackdrop}>
-          <View style={styles.unitsModalCard}>
-            <Text style={styles.unitsModalTitle}>{t('settings.measurementUnits')}</Text>
+          <View style={[styles.unitsModalCard, { backgroundColor: d.surface }]}>
+            <Text style={[styles.unitsModalTitle, { color: d.ink }]}>{t('settings.measurementUnits')}</Text>
             <Text style={styles.unitsModalSubtitle}>{t('settings.chooseUnitsDisplay')}</Text>
             {[
               { label: t('settings.metricUnits'), value: 'km', description: t('settings.metricDescription') },
@@ -293,7 +243,7 @@ export default function SettingsScreen() {
                 activeOpacity={0.8}
               >
                 <View style={styles.unitsOptionHeader}>
-                  <Text style={styles.unitsOptionLabel}>{option.label}</Text>
+                  <Text style={[styles.unitsOptionLabel, { color: d.ink }]}>{option.label}</Text>
                   <MaterialIcons
                     name={units === option.value ? 'radio-button-checked' : 'radio-button-unchecked'}
                     size={20}
@@ -320,6 +270,30 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  dwHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwTitle: { fontFamily: F.black, fontSize: 28, letterSpacing: -0.6 },
+  dwSetup: { height: 150, borderRadius: 26, backgroundColor: AMBER, padding: 20, justifyContent: 'space-between' },
+  dwSetupEyebrow: { fontFamily: F.black, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: INK },
+  dwSetupName: { fontFamily: F.black, fontSize: 22, letterSpacing: -0.4, color: INK, marginTop: -26 },
+  dwSetupSub: { fontFamily: F.bold, fontSize: 13, color: 'rgba(26,24,20,0.72)', marginTop: -26 },
+  dwChips: { flexDirection: 'row', gap: 6 },
+  dwSetupChip: { backgroundColor: 'rgba(255,253,248,0.55)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  dwSetupChipText: { fontFamily: F.extra, fontSize: 12, color: INK },
+  dwThemes: { flexDirection: 'row', gap: 8 },
+  dwTheme: { flex: 1, height: 104, borderRadius: 20, padding: 8, gap: 8 },
+  dwPreview: { flex: 1, borderRadius: 12, overflow: 'hidden' },
+  dwPreviewCut: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, borderStyle: 'solid', borderTopWidth: 40, borderRightWidth: 40, borderTopColor: AMBER, borderRightColor: 'transparent' },
+  dwPreviewBar: { position: 'absolute', left: '10%', right: '10%', bottom: 8, height: 8, borderRadius: 4 },
+  dwThemeLabel: { fontFamily: F.extra, fontSize: 12 },
+  dwList: { borderRadius: 24, paddingHorizontal: 14, paddingVertical: 4 },
+  dwRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 56 },
+  dwTile: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  dwRowLabel: { flex: 1, fontFamily: F.extra, fontSize: 15 },
+  dwRowMeta: { fontFamily: F.bold, fontSize: 13, maxWidth: 120 },
+  dwFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 },
+  dwLogout: { fontFamily: F.extra, fontSize: 15 },
+  dwVersion: { fontFamily: F.mono, fontSize: 12 },
   container: {
     flex: 1,
     backgroundColor: '#F6F6F6',

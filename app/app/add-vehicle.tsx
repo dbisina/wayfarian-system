@@ -16,6 +16,9 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
   createVehicle,
@@ -34,6 +37,8 @@ const VEHICLE_TYPES = [
 ] as const;
 
 export default function AddVehicleScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const params = useLocalSearchParams<{ vehicleId?: string; fromOnboarding?: string }>();
   const vehicles = useAppSelector(selectVehicles);
@@ -113,331 +118,167 @@ export default function AddVehicleScreen() {
     }
   };
 
+  const typeLabel = VEHICLE_TYPES.find((v) => v.value === type)?.label ?? 'Vehicle';
+  const field = (label: string, value: string, onChange: (v: string) => void, placeholder: string, extra?: object) => (
+    <View style={[styles.field, { backgroundColor: d.surface, borderColor: d.line }]}>
+      <Text style={[styles.fieldLabel, { color: d.ink2 }]}>{label}</Text>
+      <TextInput
+        style={[styles.fieldInput, { color: d.ink }]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={d.ink2}
+        maxLength={60}
+        {...extra}
+      />
+    </View>
+  );
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: d.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={d.dark ? 'light-content' : 'dark-content'} />
 
-      {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(56, insets.top + 8) }]}>
         {isOnboarding ? (
-          <View style={{ width: 40 }} />
+          <View style={{ width: 44 }} />
         ) : (
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+          <TouchableOpacity
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            style={[styles.round, shadow(d, 8), { backgroundColor: d.surface }]}
+          >
+            <Icon name="back" size={20} color={d.ink} stroke={2} />
           </TouchableOpacity>
         )}
-        <Text style={styles.headerTitle}>
-          {isOnboarding ? '🚗 Add Your Vehicle' : isEditing ? 'Edit Vehicle' : 'Add Vehicle'}
+        <Text style={[styles.h1, { color: d.ink }]}>
+          {isOnboarding ? 'What do you ride?' : isEditing ? 'Edit vehicle' : 'Add vehicle'}
         </Text>
-        {isOnboarding ? (
-          <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.backBtn}>
-            <Text style={styles.skipText}>Skip</Text>
+        {isOnboarding && (
+          <TouchableOpacity onPress={() => router.replace('/(tabs)')} accessibilityRole="button" style={{ padding: 10 }}>
+            <Text style={[styles.skip, { color: d.ink2 }]}>Skip</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
         )}
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.content} 
+      <ScrollView
+        contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Onboarding hint */}
-        {isOnboarding && (
-          <Text style={styles.onboardingHint}>
-            Add a vehicle to show on your journeys and leaderboard. You can add more later in Settings.
-          </Text>
-        )}
-
-        {/* Photo */}
-        <TouchableOpacity style={styles.photoContainer} onPress={handlePickPhoto} disabled={uploadingPhoto}>
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.photo} />
-          ) : (
-            <View style={styles.photoPlaceholder}>
-              <Ionicons name="camera-outline" size={36} color="#9E9E9E" />
-              <Text style={styles.photoPlaceholderText}>Add Photo</Text>
-            </View>
-          )}
-          <View style={styles.cameraButton}>
-            {uploadingPhoto ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <Ionicons name="camera" size={16} color="#FFF" />
-            )}
-          </View>
-        </TouchableOpacity>
-
-        {/* Vehicle Type Selection Grid */}
-        <Text style={styles.sectionLabel}>Vehicle Type</Text>
-        <View style={styles.typeGrid}>
-          {VEHICLE_TYPES.map(t => (
-            <TouchableOpacity
-              key={t.value}
-              style={[styles.typeCard, type === t.value && styles.typeCardSelected]}
-              onPress={() => setType(t.value)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.typeIconContainer}>
-                {'image' in t ? (
-                  <Image source={t.image} style={styles.typeImage} resizeMode="contain" />
-                ) : (
-                  <MaterialIcons name={t.icon as any} size={32} color={type === t.value ? '#F9A825' : '#9E9E9E'} />
-                )}
-              </View>
-              <Text style={[styles.typeLabel, type === t.value && styles.typeLabelSelected]}>{t.label}</Text>
-              {type === t.value && (
-                <View style={styles.selectedBadge}>
-                  <Ionicons name="checkmark-circle" size={16} color="#F9A825" />
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Fields */}
-        <View style={styles.formSection}>
-          <Text style={styles.fieldLabel}>Nickname *</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. My Kawasaki"
-            placeholderTextColor="#BDBDBD"
-            maxLength={60}
-          />
-
-          <Text style={styles.fieldLabel}>Make *</Text>
-          <TextInput
-            style={styles.input}
-            value={make}
-            onChangeText={setMake}
-            placeholder="e.g. Kawasaki"
-            placeholderTextColor="#BDBDBD"
-            maxLength={60}
-          />
-
-          <Text style={styles.fieldLabel}>Model *</Text>
-          <TextInput
-            style={styles.input}
-            value={model}
-            onChangeText={setModel}
-            placeholder="e.g. Z900"
-            placeholderTextColor="#BDBDBD"
-            maxLength={60}
-          />
-
-          <View style={styles.row}>
-            <View style={styles.halfCol}>
-              <Text style={styles.fieldLabel}>Year</Text>
-              <TextInput
-                style={styles.input}
-                value={year}
-                onChangeText={setYear}
-                placeholder="2022"
-                placeholderTextColor="#BDBDBD"
-                keyboardType="numeric"
-                maxLength={4}
-              />
-            </View>
-            <View style={styles.halfCol}>
-              <Text style={styles.fieldLabel}>Color</Text>
-              <TextInput
-                style={styles.input}
-                value={color}
-                onChangeText={setColor}
-                placeholder="Metallic Blue"
-                placeholderTextColor="#BDBDBD"
-                maxLength={40}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Save */}
         <TouchableOpacity
-          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.8}
+          style={styles.stage}
+          onPress={handlePickPhoto}
+          disabled={uploadingPhoto}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Change vehicle photo"
         >
-          {saving ? (
-            <ActivityIndicator color="#FFF" />
+          <View style={styles.stageLane} />
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.stagePhoto} resizeMode="contain" />
           ) : (
-            <>
-              <Text style={styles.saveBtnText}>{isEditing ? 'Save Changes' : 'Add Vehicle'}</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFF" />
-            </>
+            <View style={[styles.stagePhoto, { alignItems: 'center', justifyContent: 'center', gap: 6 }]}>
+              <Ionicons name="camera-outline" size={34} color="rgba(242,238,229,0.5)" />
+              <Text style={styles.stageHint}>Add a photo of your {typeLabel.toLowerCase()}</Text>
+            </View>
           )}
+          {uploadingPhoto && (
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }]}>
+              <ActivityIndicator color={AMBER} />
+            </View>
+          )}
+          <View style={styles.callIt}>
+            <Text style={styles.callItLabel}>Call it</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Bluebird"
+              placeholderTextColor="rgba(242,238,229,0.4)"
+              maxLength={60}
+              style={styles.callItInput}
+            />
+          </View>
         </TouchableOpacity>
+
+        <View style={styles.types} accessibilityRole="radiogroup">
+          {VEHICLE_TYPES.map((k) => {
+            const on = type === k.value;
+            return (
+              <TouchableOpacity
+                key={k.value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: on }}
+                onPress={() => setType(k.value)}
+                style={[
+                  styles.type,
+                  on
+                    ? { backgroundColor: d.amberTint, borderWidth: 2.5, borderColor: AMBER }
+                    : { backgroundColor: d.surface, borderWidth: 1, borderColor: d.line },
+                ]}
+              >
+                {'image' in k ? (
+                  <Image source={k.image} style={styles.typeImg} resizeMode="contain" />
+                ) : (
+                  <MaterialIcons name={k.icon as any} size={30} color={on ? AMBER : d.ink2} />
+                )}
+                <Text style={[styles.typeLabel, { color: d.ink }]} numberOfLines={1}>{k.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {field('Make', make, setMake, 'e.g. BMW')}
+        {field('Model', model, setModel, 'e.g. R 1250 RT')}
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>{field('Year', year, setYear, '2023', { keyboardType: 'numeric', maxLength: 4 })}</View>
+          <View style={{ flex: 1 }}>{field('Colour', color, setColor, 'Blue')}</View>
+        </View>
       </ScrollView>
+
+      <TouchableOpacity
+        onPress={handleSave}
+        disabled={saving}
+        accessibilityRole="button"
+        style={[styles.cta, { bottom: Math.max(30, insets.bottom + 10), opacity: saving ? 0.6 : 1 }]}
+      >
+        {saving ? (
+          <ActivityIndicator color={INK} />
+        ) : (
+          <>
+            <Icon name="nav" size={18} color={INK} fill />
+            <Text style={styles.ctaText}>{isOnboarding ? 'Start riding' : 'Save vehicle'}</Text>
+          </>
+        )}
+      </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#000', fontFamily: 'Space Grotesk' },
-  content: { padding: 20, paddingBottom: 60 },
-  onboardingHint: {
-    fontSize: 14,
-    color: '#757575',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 20,
-    fontFamily: 'Poppins',
-  },
-  photoContainer: {
-    alignSelf: 'center',
-    marginBottom: 32,
-    position: 'relative',
-  },
-  photo: { width: 140, height: 140, borderRadius: 70, backgroundColor: '#F5F5F5' },
-  photoPlaceholder: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#F9F9F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#F0F0F0',
-    borderStyle: 'dashed',
-    gap: 8,
-  },
-  photoPlaceholderText: { fontSize: 13, color: '#9E9E9E', fontWeight: '600', fontFamily: 'Space Grotesk' },
-  cameraButton: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F9A825',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  sectionLabel: { 
-    fontSize: 16, 
-    fontWeight: '700', 
-    color: '#000', 
-    marginBottom: 16, 
-    fontFamily: 'Space Grotesk' 
-  },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 32,
-  },
-  typeCard: {
-    width: '31%',
-    aspectRatio: 0.9,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  typeCardSelected: {
-    borderColor: '#F9A825',
-    backgroundColor: 'rgba(249, 168, 37, 0.04)',
-    borderWidth: 2,
-  },
-  typeIconContainer: {
-    width: 50,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  typeImage: {
-    width: '100%',
-    height: '100%',
-  },
-  typeLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#616161',
-    fontFamily: 'Space Grotesk',
-    textAlign: 'center',
-  },
-  typeLabelSelected: {
-    color: '#F9A825',
-  },
-  selectedBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-  },
-  formSection: {
-    gap: 16,
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#424242',
-    marginBottom: -8,
-    fontFamily: 'Space Grotesk',
-  },
-  input: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#000',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    fontFamily: 'Poppins',
-  },
-  row: { flexDirection: 'row', gap: 12 },
-  halfCol: { flex: 1, gap: 16 },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#000000',
-    borderRadius: 16,
-    paddingVertical: 18,
-    marginTop: 40,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', fontFamily: 'Space Grotesk' },
-  skipText: { fontSize: 15, fontWeight: '600', color: '#F9A825', fontFamily: 'Space Grotesk' },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  h1: { flex: 1, fontFamily: F.black, fontSize: 28, letterSpacing: -0.7 },
+  skip: { fontFamily: F.extra, fontSize: 14 },
+  stage: { height: 262, borderRadius: 32, backgroundColor: '#161513', overflow: 'hidden' },
+  stageLane: { position: 'absolute', left: 0, right: 0, top: 196, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.4)' },
+  stagePhoto: { position: 'absolute', left: 40, right: 40, top: 0, height: 210 },
+  stageHint: { fontFamily: F.bold, fontSize: 13, color: 'rgba(242,238,229,0.6)' },
+  callIt: { position: 'absolute', left: 14, right: 14, bottom: 14, height: 44, borderRadius: 22, backgroundColor: 'rgba(242,238,229,0.1)', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
+  callItLabel: { fontFamily: F.extra, fontSize: 12, color: '#A29B8D' },
+  callItInput: { flex: 1, fontFamily: F.extra, fontSize: 16, color: '#F2EEE5', padding: 0 },
+  types: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  type: { width: '23.2%', height: 82, borderRadius: 20, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8, gap: 2, overflow: 'hidden' },
+  typeImg: { width: 56, height: 42 },
+  typeLabel: { fontFamily: F.extra, fontSize: 12 },
+  field: { minHeight: 60, borderRadius: 18, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 8, justifyContent: 'center' },
+  fieldLabel: { fontFamily: F.extra, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  fieldInput: { fontFamily: F.bold, fontSize: 16, padding: 0 },
+  cta: { position: 'absolute', left: 16, right: 16, height: 56, borderRadius: 28, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  ctaText: { fontFamily: F.black, fontSize: 16, color: INK },
 });

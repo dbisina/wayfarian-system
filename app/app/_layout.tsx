@@ -6,6 +6,11 @@ import 'react-native-reanimated';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { useFonts } from 'expo-font';
+import {
+  Overpass_400Regular, Overpass_500Medium, Overpass_600SemiBold,
+  Overpass_700Bold, Overpass_800ExtraBold, Overpass_900Black,
+} from '@expo-google-fonts/overpass';
+import { OverpassMono_500Medium, OverpassMono_600SemiBold, OverpassMono_700Bold } from '@expo-google-fonts/overpass-mono';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -59,6 +64,15 @@ function RootLayoutContent() {
 
   const [fontsLoaded] = useFonts({
     'Digital Numbers': require('../assets/fonts/DigitalNumbers.ttf'),
+    Overpass_400Regular,
+    Overpass_500Medium,
+    Overpass_600SemiBold,
+    Overpass_700Bold,
+    Overpass_800ExtraBold,
+    Overpass_900Black,
+    OverpassMono_500Medium,
+    OverpassMono_600SemiBold,
+    OverpassMono_700Bold,
   });
 
   // Initialize Live Notification event handlers for Android actions
