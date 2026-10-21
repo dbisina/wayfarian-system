@@ -35,7 +35,16 @@ const assertId = (id, field = 'id') => {
   }
 };
 
-function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
+function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsChanged = async () => {} } = {}) {
+  // A failing side effect (cache invalidation) must never fail a committed write.
+  const safely = async (fn) => {
+    try {
+      await fn();
+    } catch (err) {
+      console.warn('[RideService] post-commit hook failed', err.message);
+    }
+  };
+
   async function ownedRide(db, userId, rideId) {
     const ride = await db.ride.findUnique({ where: { id: rideId } });
     if (!ride) throw new RideError('not_found', 404, 'Ride not found');
@@ -183,7 +192,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
    */
   async function finalize(userId, rideId) {
     assertId(rideId, 'rideId');
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       let ride = await ownedRide(tx, userId, rideId);
       if (ride.status === 'DELETED') throw new RideError('conflict', 409, 'Ride was deleted');
 
@@ -255,12 +264,14 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
 
       return { ...saved, newAchievements };
     });
+    await safely(onStatsChanged);
+    return result;
   }
 
   /** Removes a ride and reverses exactly what it contributed. Idempotent. */
   async function deleteRide(userId, rideId) {
     assertId(rideId, 'rideId');
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const ride = await ownedRide(tx, userId, rideId);
       if (ride.status === 'DELETED') return ride;
 
@@ -283,6 +294,8 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
       }
       return gone;
     });
+    await safely(onStatsChanged);
+    return result;
   }
 
   async function getRide(userId, rideId) {
@@ -342,4 +355,4 @@ function createRideService({ prisma = defaultPrisma, core = rideCore } = {}) {
   return { upsertRide, addPoints, addEvents, finalize, deleteRide, getRide, listRides, getSummary, getStreak };
 }
 
-module.exports = { createRideService, RideError, rideService: createRideService() };
+module.exports = { createRideService, RideError };

@@ -2,14 +2,14 @@
 // v2 API. Independent of the v1 routes. Envelope: { ok: true, data } or { ok: false, error: { code, message } }.
 
 const express = require('express');
-const { rideService, RideError } = require('../../services/RideService');
+const { rideService, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
     const data = await handler(req);
     res.json({ ok: true, data });
   } catch (err) {
-    if (err instanceof RideError) {
+    if (err instanceof RideError || err instanceof LeaderboardError) {
       return res.status(err.status).json({ ok: false, error: { code: err.code, message: err.message } });
     }
     console.error('[v2] unexpected error', err);
@@ -37,6 +37,8 @@ router.post('/rides/:id/finalize', wrap((req) => rideService.finalize(req.user.i
 router.delete('/rides/:id', wrap((req) => rideService.deleteRide(req.user.id, req.params.id)));
 router.get('/rides/:id', wrap((req) => rideService.getRide(req.user.id, req.params.id)));
 router.get('/rides', wrap((req) => rideService.listRides(req.user.id, { cursor: req.query.cursor, limit: req.query.limit })));
+router.get('/leaderboard', wrap((req) => leaderboards.top(req.query)));
+router.get('/leaderboard/me', wrap((req) => leaderboards.position(req.user.id, req.query)));
 router.get('/me/summary', wrap((req) => rideService.getSummary(req.user.id)));
 
 module.exports = { publicRouter, router };
