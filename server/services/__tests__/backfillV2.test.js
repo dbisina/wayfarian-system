@@ -39,6 +39,22 @@ describe('planRide', () => {
     expect(plan.stats.topSpeedMps * 3.6).toBeLessThan(60);
   });
 
+  test('a sparse trail is not recomputed (gaps would drop real distance)', () => {
+    const t0 = Date.parse('2026-01-01T00:00:00Z');
+    const sparse = Array.from({ length: 9 }, (_, i) => ({ lat: 6.45, lng: lng(i * 1500), timestamp: new Date(t0 + i * 500e3).toISOString() }));
+    const plan = planRide('journey', row({ totalDistance: 12, totalTime: 4000, topSpeed: 40, routePoints: sparse }));
+    expect(plan.mode).toBe('legacy');
+    expect(plan.stats.distanceM).toBe(12000);
+  });
+
+  test('a noisy hop cannot beat the top speed the device reported', () => {
+    const t0 = Date.parse('2026-01-01T00:00:00Z');
+    const jump = trail(t0, 10, 100, (p) => p).map((p, i) => (i === 50 ? { ...p, lng: p.lng + 0.0004 } : p)); // ~44 m sideways blip
+    const plan = planRide('journey', row({ totalDistance: 1, totalTime: 100, topSpeed: 40, routePoints: jump }));
+    expect(plan.mode).toBe('recomputed');
+    expect(plan.stats.topSpeedMps * 3.6).toBeLessThanOrEqual(40 + 1e-9);
+  });
+
   test('without a trail the stored totals are kept, with sane speeds', () => {
     const plan = planRide('instance', row({ id: 'inst9', totalDistance: 12, totalTime: 1800, topSpeed: 400 }));
     expect(plan.mode).toBe('legacy');

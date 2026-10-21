@@ -18,6 +18,17 @@ const MAX_LEGACY_AVG_MPS = 70; // same ceiling ride-core applies
 const BIG_CHANGE_PCT = 20; // flag users whose distance moves by more than this
 const POINT_BATCH = 1000;
 
+// v1 often stored only a handful of fixes per ride. Recomputing from those is worse than the
+// stored totals: gaps over ride-core's 300 s limit drop real distance, and one noisy hop
+// between far-apart fixes becomes the top speed. So only dense trails are recomputed.
+const MAX_AVG_FIX_INTERVAL_S = 20;
+
+function isDenseTrail(points) {
+  if (points.length < MIN_TRAIL_POINTS) return false;
+  const spanS = (points[points.length - 1].t - points[0].t) / 1000;
+  return spanS > 0 && spanS / (points.length - 1) <= MAX_AVG_FIX_INTERVAL_S;
+}
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Legacy routePoints come as {lat,lng,timestamp} (solo) or {latitude,longitude,timestamp} (group). */
@@ -54,8 +65,8 @@ function legacyTotals(row) {
 
 /**
  * Decides what one legacy row becomes. mode:
- *  recomputed  usable GPS trail, stats come from ride-core
- *  legacy      no usable trail, stored totals kept (flagged isLegacy)
+ *  recomputed  dense GPS trail, stats come from ride-core
+ *  legacy      no dense trail, stored totals kept (flagged isLegacy)
  *  skipped     stored totals are physically impossible and there is no trail to correct them
  */
 function planRide(kind, row, core = defaultCore) {
@@ -74,8 +85,11 @@ function planRide(kind, row, core = defaultCore) {
     legacy,
   };
 
-  if (points.length >= MIN_TRAIL_POINTS && points[points.length - 1].t > points[0].t) {
+  if (isDenseTrail(points)) {
     const s = core.computeRideStats([points]);
+    // The device's own top speed is the cross-check: a lone noisy hop in the trail must not
+    // become a record. Only ever lowers the recomputed value.
+    const topSpeedMps = legacy.topSpeedMps > 0 ? Math.min(s.topSpeedMps, legacy.topSpeedMps) : s.topSpeedMps;
     return {
       ...base,
       mode: 'recomputed',
@@ -84,7 +98,7 @@ function planRide(kind, row, core = defaultCore) {
         distanceM: s.distanceM,
         movingTimeS: Math.round(s.movingTimeS),
         elapsedTimeS: Math.round(s.elapsedTimeS),
-        topSpeedMps: s.topSpeedMps,
+        topSpeedMps,
         avgSpeedMps: s.avgSpeedMps,
       },
     };
