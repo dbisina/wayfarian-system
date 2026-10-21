@@ -201,7 +201,11 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
       if (ride.status === 'DELETED') throw new RideError('conflict', 409, 'Ride was deleted');
 
       const { segments, pointCount, lastAt } = await loadSegments(tx, rideId);
-      const stats = core.computeRideStats(segments);
+      // A backfilled ride with no usable GPS trail keeps the totals the backfill stored on it.
+      const keepStored = ride.isLegacy && pointCount === 0;
+      const stats = keepStored
+        ? { distanceM: ride.distanceM, movingTimeS: ride.movingTimeS, elapsedTimeS: ride.elapsedTimeS, topSpeedMps: ride.topSpeedMps, avgSpeedMps: ride.avgSpeedMps }
+        : core.computeRideStats(segments);
       const next = {
         distanceM: stats.distanceM,
         movingTimeS: Math.round(stats.movingTimeS),
