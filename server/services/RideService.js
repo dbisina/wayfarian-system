@@ -53,13 +53,16 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
   }
 
   /** Idempotent create. Re-sending the same id returns the stored ride unchanged. */
-  async function upsertRide(userId, rideId, input = {}) {
+  async function upsertRide(userId, rideId, input = {}, { groupRideId = null } = {}) {
     assertId(rideId, 'rideId');
     const startedAt = asDate(input.startedAt, 'startedAt');
 
     const existing = await prisma.ride.findUnique({ where: { id: rideId } });
     if (existing) {
       if (existing.userId !== userId) throw new RideError('forbidden', 403, 'Not your ride');
+      if (groupRideId && existing.groupRideId !== groupRideId) {
+        throw new RideError('conflict', 409, 'Ride already exists outside this group ride');
+      }
       return existing;
     }
 
@@ -75,6 +78,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
           userId,
           startedAt,
           vehicleId: input.vehicleId || null,
+          groupRideId,
           title: typeof input.title === 'string' ? input.title.slice(0, 120) : null,
           timezone: typeof input.timezone === 'string' ? input.timezone.slice(0, 64) : null,
         },

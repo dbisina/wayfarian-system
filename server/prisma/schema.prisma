@@ -47,6 +47,8 @@ model User {
   streak           UserStreak?
   vehicles         Vehicle[]
   rides            Ride[]
+  groupRidesLed    GroupRide[]            @relation("GroupRideLeader")
+  groupRideParts   GroupRideParticipant[]
   stats            UserStats?
   xpLedger         XpLedger[]
   rideAchievements RideAchievement[]
@@ -453,7 +455,7 @@ model Ride {
   id          String     @id // client-generated UUID
   userId      String
   vehicleId   String?
-  groupRideId String? // set in Phase 6
+  groupRideId String? // the group ride this solo-owned ride belongs to, if any
   title       String?
   status      RideStatus @default(RECORDING)
   startedAt   DateTime
@@ -479,10 +481,12 @@ model Ride {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  points RidePoint[]
-  events RideLifecycleEvent[]
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupRide GroupRide?           @relation(fields: [groupRideId], references: [id], onDelete: SetNull)
+  points    RidePoint[]
+  events    RideLifecycleEvent[]
 
+  @@index([groupRideId])
   @@index([userId, startedAt])
   @@index([userId, status])
   @@index([status, updatedAt])
@@ -515,6 +519,62 @@ model RideLifecycleEvent {
 
   @@index([rideId, at])
   @@map("ride_lifecycle_events")
+}
+
+// A group ride is only membership, a leader, an optional destination and a lifecycle.
+// Every rider records an ordinary Ride (Ride.groupRideId) and the group summary is computed
+// from those finalized rides on read, so there is no second copy of any stat to drift.
+enum GroupRideStatus {
+  PLANNED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum GroupRideRole {
+  LEADER
+  MEMBER
+}
+
+model GroupRide {
+  id              String          @id // client-generated UUID
+  leaderId        String
+  title           String
+  code            String          @unique // short invite code
+  status          GroupRideStatus @default(PLANNED)
+  maxParticipants Int             @default(20)
+  destinationName String?
+  destinationLat  Float?
+  destinationLng  Float?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  leader       User                   @relation("GroupRideLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  participants GroupRideParticipant[]
+  rides        Ride[]
+
+  @@index([leaderId])
+  @@index([status, updatedAt])
+  @@map("group_rides")
+}
+
+model GroupRideParticipant {
+  id          String        @id @default(cuid())
+  groupRideId String
+  userId      String
+  role        GroupRideRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+  leftAt      DateTime? // null while the rider is in the group
+
+  groupRide GroupRide @relation(fields: [groupRideId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupRideId, userId])
+  @@index([userId, leftAt])
+  @@map("group_ride_participants")
 }
 
 // Running totals, changed only inside RideService.finalize / reverse.
