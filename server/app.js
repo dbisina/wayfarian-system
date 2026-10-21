@@ -16,6 +16,7 @@ const sentryService = require('./services/SentryService');
 // Import routes
 const authRoutes = require('./routes/auth');
 const journeyRoutes = require('./routes/journey');
+const v2Routes = require('./routes/v2');
 const galleryRoutes = require('./routes/gallery');
 const leaderboardRoutes = require('./routes/leaderboard');
 const groupRoutes = require('./routes/group');
@@ -281,6 +282,10 @@ app.get('/api', (req, res) => {
 
 // Public routes (no authentication required)
 app.use('/api/auth', authRoutes);
+
+// v2 (independent of v1): config is public, everything else needs auth
+app.use('/api/v2', v2Routes.publicRouter);
+app.use('/api/v2', authMiddleware, v2Routes.router);
 
 // Protected routes with caching where appropriate
 app.use('/api/journey', authMiddleware, journeyRoutes);

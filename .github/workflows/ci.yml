@@ -30,6 +30,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Build ride-core (server depends on it)
+        run: npm install --no-audit --no-fund && npm run build
+        working-directory: packages/ride-core
       - run: npm install --no-audit --no-fund
       - run: npx prisma generate
       - run: npm test
