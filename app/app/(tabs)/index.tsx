@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { useV2UserData as useUserData } from '../../v2/legacyAdapters';
 import { useSettings } from '../../contexts/SettingsContext';
-import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 import Cut from '../../components/dw/Cut';
 import ClipCard from '../../components/dw/ClipCard';
 import Odometer from '../../components/dw/Odometer';
@@ -99,7 +98,6 @@ export default function HomeScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
-      <FloatingJourneyStatus homeOnly />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}

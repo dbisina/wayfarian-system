@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import DWTabBar from '@/components/dw/TabBar';
 import { useAuth } from '../../contexts/AuthContext';
 import ActivityModal from '../../scaf/ActivityModal';
+import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 
 export default function TabLayout() {
   const [rideMenuOpen, setRideMenuOpen] = useState(false);
@@ -36,6 +37,7 @@ export default function TabLayout() {
         <Tabs.Screen name="log" options={{ title: 'Log' }} />
         <Tabs.Screen name="leaderboard" options={{ title: 'Ranks' }} />
       </Tabs>
+      <FloatingJourneyStatus />
       <ActivityModal visible={rideMenuOpen} onClose={() => setRideMenuOpen(false)} />
       <DWTabBar active={active} onNavigate={navigate} open={rideMenuOpen} onCenter={() => setRideMenuOpen((v) => !v)} />
     </View>
