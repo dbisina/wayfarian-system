@@ -249,7 +249,9 @@ export default function LocationPicker({
             { backgroundColor: d.surface },
             suggestionsPosition === 'top' 
               ? { bottom: '100%', marginBottom: 8, shadowOffset: { width: 0, height: -4 } }
-              : { top: '100%', marginTop: 8, shadowOffset: { width: 0, height: 4 } }
+              // In the normal flow (not floating) so it can never be clipped by the sheet or sit
+              // outside the area that receives taps.
+              : { position: 'relative', left: undefined, right: undefined, top: undefined, marginTop: 8, shadowOffset: { width: 0, height: 4 } }
           ]}
         >
           {currentLocation && (
@@ -278,8 +280,8 @@ export default function LocationPicker({
               ]}
               onPress={() => handleSelectSuggestion(item)}
             >
-              <View style={[styles.suggestionIconContainer, { backgroundColor: '#F5F5F5' }]}>
-                <MaterialIcons name="location-on" size={20} color="#757575" />
+              <View style={[styles.suggestionIconContainer, { backgroundColor: d.surface2 }]}>
+                <MaterialIcons name="location-on" size={20} color={d.ink2} />
               </View>
               <Text numberOfLines={2} style={[styles.suggestionText, { color: d.ink }]}>
                 {item.description}

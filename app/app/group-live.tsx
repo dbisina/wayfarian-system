@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   topBar: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
   round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   status: { flex: 1, height: 44, borderRadius: 22, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  live: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E5484D' },
+  live: { width: 8, height: 8, borderRadius: 4, backgroundColor: AMBER },
   statusTitle: { flex: 1, fontFamily: F.extra, fontSize: 13 },
   mono: { fontFamily: F.monoBold, fontSize: 13 },
   pin: { width: 36, height: 36, borderRadius: 18, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },

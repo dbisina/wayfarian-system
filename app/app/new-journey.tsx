@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Keyboard, Platform, Alert, ActivityIndicator } from 'react-native';
 import TextInput from '../components/dw/DWTextInput';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import Svg, { Rect, Path, G, Circle } from 'react-native-svg';
@@ -26,6 +26,12 @@ interface LocationData {
 export default function NewJourneyScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const { startJourney, saveJourney } = useJourney();
   const { vehicle: savedVehicle, setVehicle: persistVehicle } = useSettings();
   const dispatch = useAppDispatch();
@@ -314,9 +320,15 @@ export default function NewJourneyScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.sheetWrap}
+      <View
+        style={[
+          styles.sheetWrap,
+          // With the keyboard up the sheet fills the space between the title and the keyboard, so
+          // both fields and their suggestions stay visible on iOS and Android.
+          kbHeight > 0
+            ? { bottom: kbHeight, top: Math.max(56, insets.top + 8) + 56, maxHeight: undefined }
+            : null,
+        ]}
         pointerEvents="box-none"
       >
         <ScrollView
@@ -337,7 +349,7 @@ export default function NewJourneyScreen() {
               onLocationSelect={setStartLocation}
               onLocationClear={() => setStartLocation(null)}
               currentLocation={currentLocation || undefined}
-              suggestionsPosition="top"
+              suggestionsPosition={kbHeight > 0 ? "bottom" : "top"}
             />
             <LocationPicker
               label="To"
@@ -348,7 +360,7 @@ export default function NewJourneyScreen() {
               onLocationSelect={setEndLocation}
               onLocationClear={() => setEndLocation(null)}
               currentLocation={currentLocation || undefined}
-              suggestionsPosition="top"
+              suggestionsPosition={kbHeight > 0 ? "bottom" : "top"}
             />
             {km !== null && (
               <Text style={[styles.mono, { color: d.ink2 }]}>about {km.toFixed(0)} km as the crow flies</Text>
@@ -446,7 +458,7 @@ export default function NewJourneyScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
