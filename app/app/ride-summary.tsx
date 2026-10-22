@@ -109,7 +109,7 @@ export default function RideSummaryScreen() {
           </View>
         )}
         <View style={[styles.top, { top: Math.max(56, insets.top + 8) }]}>
-          <TouchableOpacity onPress={() => router.replace('/(tabs)/log' as never)} accessibilityRole="button" accessibilityLabel="Done" style={[styles.round, { backgroundColor: d.surface }]}>
+          <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/log' as never))} accessibilityRole="button" accessibilityLabel="Back" style={[styles.round, { backgroundColor: d.surface }]}>
             <Icon name="back" size={20} color={d.ink} stroke={2} />
           </TouchableOpacity>
         </View>

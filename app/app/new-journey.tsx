@@ -106,13 +106,31 @@ export default function NewJourneyScreen() {
   const handleSaveAndStart = async () => {
     const trimmedJourneyName = journeyName.trim() || endLocation?.address?.split(',')[0]?.trim() || '';
 
+    // A solo ride runs on the v2 recorder and needs no destination: it is optional and only adds
+    // the "heading to" card on the live screen. A ride started for a group still uses the old flow.
+    if (!groupId) {
+      const type = selectedGarageVehicle ? String(selectedGarageVehicle.type) : String(vehicle);
+      router.replace({
+        pathname: '/ride',
+        params: {
+          ...(selectedGarageVehicle?.id ? { vehicleId: selectedGarageVehicle.id } : {}),
+          vehicleType: type,
+          ...(trimmedJourneyName ? { title: trimmedJourneyName } : {}),
+          ...(endLocation
+            ? { destName: endLocation.address, destLat: String(endLocation.latitude), destLng: String(endLocation.longitude) }
+            : {}),
+        },
+      } as never);
+      return;
+    }
+
     if (!trimmedJourneyName || !startLocation || !endLocation) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
       return;
     }
-    
+
     setIsStarting(true);
-    
+
     try {
       const success = await startJourney({
         title: trimmedJourneyName,
