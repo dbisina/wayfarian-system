@@ -43,10 +43,10 @@ describe('group ride presence', () => {
     await call(b, 'gr:join', { groupRideId: 'ride-1' });
     expect(await call(a, 'gr:pos', { groupRideId: 'ride-2', lat: 1, lng: 1 })).toEqual({ ok: false, error: 'not_joined' });
     expect(await call(a, 'gr:pos', { groupRideId: 'ride-1', lat: 99, lng: 1 })).toEqual({ ok: false, error: 'invalid_position' });
-    expect(await call(a, 'gr:pos', { groupRideId: 'ride-1', lat: 6.45, lng: 3.4, speedMps: 12 })).toEqual({ ok: true });
+    expect(await call(a, 'gr:pos', { groupRideId: 'ride-1', lat: 6.45, lng: 3.4, speedMps: 12, distanceM: 5400 })).toEqual({ ok: true });
     expect(b.emitted.filter(([e]) => e === 'gr:pos')).toHaveLength(1);
     expect(a.emitted.filter(([e]) => e === 'gr:pos')).toHaveLength(0);
-    expect(b.emitted.find(([e]) => e === 'gr:pos')[1]).toMatchObject({ userId: 'a', lat: 6.45, speedMps: 12 });
+    expect(b.emitted.find(([e]) => e === 'gr:pos')[1]).toMatchObject({ userId: 'a', lat: 6.45, speedMps: 12, distanceM: 5400 });
   });
 
   test('rate limited per rider', async () => {

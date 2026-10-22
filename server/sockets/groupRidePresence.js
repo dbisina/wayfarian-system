@@ -79,6 +79,8 @@ function createGroupRidePresence({ groupRides, now = Date.now }) {
         lng: data.lng,
         speedMps: finite(data.speedMps) && data.speedMps >= 0 ? data.speedMps : null,
         heading: finite(data.heading) ? data.heading : null,
+        // How far this rider has gone, so the group can show who is ahead and by how much.
+        distanceM: finite(data.distanceM) && data.distanceM >= 0 ? data.distanceM : null,
         t: finite(data.t) ? data.t : t, // device time, so clients can drop out-of-order updates
         receivedAt: t,
       };

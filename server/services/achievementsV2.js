@@ -37,6 +37,8 @@ const CATALOG = [
   { id: 'night_rider', type: 'nightRide' },
   { id: 'ace_of_friends', type: 'groupRides', threshold: 1 },
   { id: 'badge_hunter', type: 'groupRides', threshold: 10 },
+  { id: 'road_captain', type: 'ledGroups', threshold: 1 },
+  { id: 'convoy', type: 'convoy' },
 ].filter((a) => ACHIEVEMENT_XP[a.id]);
 
 const qualifies = (r) => r.distanceM >= QUALIFY_MIN_DISTANCE_M && r.movingTimeS >= QUALIFY_MIN_MOVING_S;
@@ -57,7 +59,7 @@ const isNightHour = (h) => h >= 22 || h < 5;
  * Which achievements the given totals have earned. `ctx.ride` is the ride that was just
  * finalized (used for the night rider check) and `ctx.groupRides` the user's finalized group rides.
  */
-function evaluate({ stats, qualifyingRides, groupRides = 0, ride }) {
+function evaluate({ stats, qualifyingRides, groupRides = 0, ledGroups = 0, convoySize = 0, ride }) {
   const earned = [];
   for (const a of CATALOG) {
     let ok = false;
@@ -67,6 +69,8 @@ function evaluate({ stats, qualifyingRides, groupRides = 0, ride }) {
       case 'speedKmh': ok = stats.topSpeedMps * 3.6 >= a.threshold; break;
       case 'movingHours': ok = stats.movingTimeS / 3600 >= a.threshold; break;
       case 'groupRides': ok = groupRides >= a.threshold; break;
+      case 'ledGroups': ok = ledGroups >= a.threshold; break;
+      case 'convoy': ok = convoySize >= 5; break;
       case 'nightRide':
         ok = !!ride && qualifies(ride) && isNightHour(localHour(new Date(ride.startedAt), ride.timezone));
         break;
@@ -82,7 +86,7 @@ function evaluate({ stats, qualifyingRides, groupRides = 0, ride }) {
  * Returns the ones that were new on this call (empty on every repeat).
  */
 async function awardForRide(tx, userId, ride) {
-  const [stats, qualifyingRides, groupRides, have] = await Promise.all([
+  const [stats, qualifyingRides, groupRides, have, ledGroups, convoySize] = await Promise.all([
     tx.userStats.findUnique({ where: { userId } }),
     tx.ride.count({
       where: { userId, status: 'FINALIZED', distanceM: { gte: QUALIFY_MIN_DISTANCE_M }, movingTimeS: { gte: QUALIFY_MIN_MOVING_S } },
@@ -91,11 +95,13 @@ async function awardForRide(tx, userId, ride) {
       where: { userId, status: 'FINALIZED', groupRideId: { not: null }, distanceM: { gte: QUALIFY_MIN_DISTANCE_M }, movingTimeS: { gte: QUALIFY_MIN_MOVING_S } },
     }),
     tx.rideAchievement.findMany({ where: { userId }, select: { achievementId: true } }),
+    tx.groupRide.count({ where: { leaderId: userId, status: 'ENDED' } }),
+    ride.groupRideId ? tx.groupRideParticipant.count({ where: { groupRideId: ride.groupRideId, leftAt: null } }) : Promise.resolve(0),
   ]);
   if (!stats) return [];
 
   const owned = new Set(have.map((h) => h.achievementId));
-  const fresh = evaluate({ stats, qualifyingRides, groupRides, ride }).filter((id) => !owned.has(id));
+  const fresh = evaluate({ stats, qualifyingRides, groupRides, ledGroups, convoySize, ride }).filter((id) => !owned.has(id));
   if (fresh.length === 0) return [];
 
   const awarded = [];
@@ -119,6 +125,31 @@ async function awardForRide(tx, userId, ride) {
     await tx.user.update({ where: { id: userId }, data: { xp, level: calculateLevel(xp) } });
   }
   return awarded;
+}
+
+/**
+ * Where the rider stands against every badge: { id, value, threshold, pct, earned }. Counted badges
+ * (rides, km, km/h, hours, group rides) show real progress; one-off badges are 0 or 100%.
+ */
+function progress({ stats, qualifyingRides, groupRides = 0, ledGroups = 0, earnedIds = [] }) {
+  const earned = new Set(earnedIds);
+  const valueOf = (a) => {
+    switch (a.type) {
+      case 'rides': return qualifyingRides;
+      case 'distanceKm': return stats.distanceM / 1000;
+      case 'speedKmh': return stats.topSpeedMps * 3.6;
+      case 'movingHours': return stats.movingTimeS / 3600;
+      case 'groupRides': return groupRides;
+      case 'ledGroups': return ledGroups;
+      default: return earned.has(a.id) ? 1 : 0;
+    }
+  };
+  return CATALOG.map((a) => {
+    const threshold = a.threshold || 1;
+    const value = valueOf(a);
+    const isEarned = earned.has(a.id) || value >= threshold;
+    return { id: a.id, type: a.type, value: Math.round(value * 100) / 100, threshold, pct: isEarned ? 100 : Math.max(0, Math.min(99, Math.floor((value / threshold) * 100))), earned: isEarned };
+  });
 }
 
 /**
@@ -160,6 +191,7 @@ module.exports = {
   QUALIFY_MIN_DISTANCE_M,
   QUALIFY_MIN_MOVING_S,
   evaluate,
+  progress,
   awardForRide,
   computeStreak,
   localHour,

@@ -37,21 +37,22 @@ model User {
   expoPushToken String? // Expo push token for notifications
 
   // Relationships
-  journeys         Journey[]
-  journeyInstances JourneyInstance[]
-  photos           Photo[]
-  groupMemberships GroupMember[]
-  createdGroups    Group[]           @relation("GroupCreator")
-  rideEvents       RideEvent[]
-  achievements     UserAchievement[]
-  streak           UserStreak?
-  vehicles         Vehicle[]
-  rides            Ride[]
-  groupRidesLed    GroupRide[]            @relation("GroupRideLeader")
-  groupRideParts   GroupRideParticipant[]
-  stats            UserStats?
-  xpLedger         XpLedger[]
-  rideAchievements RideAchievement[]
+  journeys           Journey[]
+  journeyInstances   JourneyInstance[]
+  photos             Photo[]
+  groupMemberships   GroupMember[]
+  createdGroups      Group[]                @relation("GroupCreator")
+  rideEvents         RideEvent[]
+  achievements       UserAchievement[]
+  streak             UserStreak?
+  vehicles           Vehicle[]
+  rides              Ride[]
+  groupRidesLed      GroupRide[]            @relation("GroupRideLeader")
+  groupRideParts     GroupRideParticipant[]
+  vehicleServiceLogs VehicleServiceLog[]
+  stats              UserStats?
+  xpLedger           XpLedger[]
+  rideAchievements   RideAchievement[]
 
   @@map("users")
 }
@@ -70,8 +71,9 @@ model Vehicle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  journeys Journey[] @relation("GarageVehicleJourneys")
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journeys    Journey[]           @relation("GarageVehicleJourneys")
+  serviceLogs VehicleServiceLog[]
 
   @@index([userId])
   @@index([userId, isDefault])
@@ -575,6 +577,27 @@ model GroupRideParticipant {
   @@unique([groupRideId, userId])
   @@index([userId, leftAt])
   @@map("group_ride_participants")
+}
+
+// A service the rider did on a vehicle. The odometer is the distance ridden on it in Wayfarian at
+// that moment, so "km to the next service" is derived from rides and never drifts.
+model VehicleServiceLog {
+  id         String   @id // client-generated UUID
+  userId     String
+  vehicleId  String
+  kind       String   @default("service") // service | oil | tyres | chain | other
+  doneAt     DateTime
+  odometerM  Float
+  intervalKm Int      @default(2500)
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, doneAt])
+  @@index([userId])
+  @@map("vehicle_service_logs")
 }
 
 // Running totals, changed only inside RideService.finalize / reverse.

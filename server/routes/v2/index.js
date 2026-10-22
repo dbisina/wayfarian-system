@@ -2,7 +2,7 @@
 // v2 API. Independent of the v1 routes. Envelope: { ok: true, data } or { ok: false, error: { code, message } }.
 
 const express = require('express');
-const { rideService, groupRides, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
+const { rideService, groupRides, profiles, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -50,6 +50,9 @@ router.post('/group-rides/:id/leave', wrap((req) => groupRides.leave(req.user.id
 router.post('/group-rides/:id/start', wrap((req) => groupRides.start(req.user.id, req.params.id)));
 router.post('/group-rides/:id/end', wrap((req) => groupRides.end(req.user.id, req.params.id)));
 router.put('/group-rides/:id/rides/:rideId', wrap((req) => groupRides.startRide(req.user.id, req.params.id, req.params.rideId, req.body)));
+router.get('/riders/:id', wrap((req) => profiles.getRider(req.user.id, req.params.id)));
+router.get('/vehicles/:id', wrap((req) => profiles.getVehicle(req.user.id, req.params.id)));
+router.put('/vehicles/:id/services/:serviceId', wrap((req) => profiles.logService(req.user.id, req.params.id, req.params.serviceId, req.body)));
 router.get('/me/summary', wrap((req) => rideService.getSummary(req.user.id)));
 
 module.exports = { publicRouter, router };

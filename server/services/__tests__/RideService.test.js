@@ -96,6 +96,9 @@ function fakePrisma() {
         return { count };
       },
     },
+    // Group rides are covered against a real database; solo tests have none.
+    groupRide: { count: async () => 0 },
+    groupRideParticipant: { count: async () => 0 },
     xpLedger: {
       findUnique: async ({ where }) => db.ledger.find((l) => l.userId === where.userId_source.userId && l.source === where.userId_source.source) || null,
       create: async ({ data }) => { const row = { id: String(db.ledger.length + 1), ...data }; db.ledger.push(row); return row; },

@@ -309,10 +309,28 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
     return result;
   }
 
+  /**
+   * One ride plus what it earned: XP, the badges it unlocked, and whether it crossed a level.
+   * The level change is only reported for the rider's newest finalized ride, so reopening an
+   * old ride never replays a level-up.
+   */
   async function getRide(userId, rideId) {
     const ride = await ownedRide(prisma, userId, rideId);
     if (ride.status === 'DELETED') throw new RideError('not_found', 404, 'Ride not found');
-    return ride;
+    if (ride.status !== 'FINALIZED') return { ...ride, xpEarned: 0, achievements: [], levelUp: null };
+
+    const [ledger, badges, user, newest] = await Promise.all([
+      prisma.xpLedger.findUnique({ where: { userId_source: { userId, source: `ride:${rideId}` } } }),
+      prisma.rideAchievement.findMany({ where: { userId, rideId }, select: { achievementId: true, xpAwarded: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { xp: true, level: true } }),
+      prisma.ride.findFirst({ where: { userId, status: 'FINALIZED' }, orderBy: [{ finalizedAt: 'desc' }, { id: 'desc' }], select: { id: true } }),
+    ]);
+    const xpEarned = (ledger ? ledger.amount : 0) + badges.reduce((n, b) => n + b.xpAwarded, 0);
+    const xp = user ? user.xp : 0;
+    const from = calculateLevel(Math.max(0, xp - xpEarned));
+    const to = user ? user.level : from;
+    const levelUp = newest && newest.id === rideId && to > from ? { from, to, xp } : null;
+    return { ...ride, xpEarned, achievements: badges, levelUp };
   }
 
   /** Rename a ride. The only user-editable field; stats are never editable. */
@@ -378,12 +396,20 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
   }
 
   async function getSummary(userId) {
-    const [stats, user, streak, earned] = await Promise.all([
+    const [stats, user, streak, earned, qualifyingRides, groupRides, ledGroups] = await Promise.all([
       prisma.userStats.findUnique({ where: { userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { xp: true, level: true } }),
       getStreak(userId),
       prisma.rideAchievement.findMany({ where: { userId }, orderBy: { earnedAt: 'desc' }, select: { achievementId: true, xpAwarded: true, earnedAt: true } }),
+      prisma.ride.count({ where: { userId, status: 'FINALIZED', distanceM: { gte: achievements.QUALIFY_MIN_DISTANCE_M }, movingTimeS: { gte: achievements.QUALIFY_MIN_MOVING_S } } }),
+      prisma.ride.count({ where: { userId, status: 'FINALIZED', groupRideId: { not: null }, distanceM: { gte: achievements.QUALIFY_MIN_DISTANCE_M }, movingTimeS: { gte: achievements.QUALIFY_MIN_MOVING_S } } }),
+      prisma.groupRide.count({ where: { leaderId: userId, status: 'ENDED' } }),
     ]);
+    const totals = {
+      distanceM: stats?.distanceM || 0,
+      movingTimeS: stats?.movingTimeS || 0,
+      topSpeedMps: stats?.topSpeedMps || 0,
+    };
     return {
       distanceM: stats?.distanceM || 0,
       movingTimeS: stats?.movingTimeS || 0,
@@ -394,6 +420,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
       level: user?.level || 1,
       streak,
       achievements: earned,
+      badgeProgress: achievements.progress({ stats: totals, qualifyingRides, groupRides, ledGroups, earnedIds: earned.map((e) => e.achievementId) }),
     };
   }
 
