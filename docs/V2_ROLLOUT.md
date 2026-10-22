@@ -20,6 +20,14 @@
 - The backfill ran: 17 users, 198 rides (47 recomputed from GPS, 151 kept legacy totals). Totals match the dry-run report for every user, the drift check reports zero, and the v1 tables/columns were not changed.
 - A full data export taken before the change is in `C:\Users\USER\wayfarian-backups\` (contains personal data, keep it private).
 
+## Where the deploy stands (22 October)
+
+- Both PRs are merged to `main`, but **the server is not deployed**: Railway has a platform incident with builds unavailable (status.railway.com). Neither the GitHub trigger nor `railway up` creates a deployment ("Paused temporarily"). The production server still runs the code from 18 October, so the 2.0.0 apps cannot reach `/api/v2` yet.
+- Railway's incident notice recommends rotating database credentials (Postgres and Redis) and, after their credential reset, reconnecting GitHub in the service settings. That reconnection is probably why pushes to `main` no longer deploy. Those are yours to do in the Railway dashboard. Rotating changes the live connection string, so do it when you can redeploy straight after.
+- When builds are back: reconnect GitHub if asked, then either re-run the last deploy or `railway up --service wayfarian-system` from a folder that contains `server/`. Check `GET /api/v2/config` on the production URL.
+- Until then the TestFlight build installs and signs in, but v2 screens that call the server will show errors or empty states, and offline recording still works and queues for upload.
+- The Android preview APK (2.0.0) is built: https://expo.dev/artifacts/eas/LvK4XZWqP1VbRBShHFNe5Z3FGwXBwx7ZkBJISWqiQQY.apk
+
 ## Deploy order
 
 1. Merge the PR. Railway builds from GitHub `main` with root directory `/server` (Railpack, Node 18), so the server must be self-contained: it uses a committed build of ride-core in `server/vendor/ride-core`. After changing `packages/ride-core`, run `scripts/sync-ride-core.sh` and commit; CI fails if the copy is stale. v1 keeps working; v2 is additive. If a push to `main` does not start a deployment, deploy by hand from the repo root with `railway up --service wayfarian-system`. A failed build leaves the old version running.
