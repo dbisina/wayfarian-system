@@ -8,13 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
 import { AMBER, F, useDW } from '../constants/design';
-import { useV2Summary } from '../v2/hooks';
+import { useServerV2, useV2Summary } from '../v2/hooks';
 import { ICON_PATHS, buildFamilies, type BadgeFamily } from '../v2/badges';
 
 export default function BadgesScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
   const summary = useV2Summary();
+  const serverV2 = useServerV2();
   const [selId, setSelId] = useState<string | null>(null);
 
   const families = useMemo(() => buildFamilies(summary.data?.badgeProgress ?? []), [summary.data]);
@@ -43,6 +44,11 @@ export default function BadgesScreen() {
         </View>
 
         {summary.isLoading && <ActivityIndicator color={AMBER} style={{ marginTop: 40 }} />}
+        {serverV2 === 'missing' && (
+          <Text style={{ color: d.ink2, fontFamily: F.medium, fontSize: 14, marginTop: 18, paddingHorizontal: 20 }}>
+            Your badges will appear here as soon as we finish upgrading our servers. Your rides are being saved on your phone in the meantime.
+          </Text>
+        )}
 
         {selected && (
           <View style={styles.feature}>
