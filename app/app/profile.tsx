@@ -9,6 +9,7 @@ import { selectDefaultVehicle, selectVehicles } from '../store/slices/vehicleSli
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
+import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { useSettings } from '../contexts/SettingsContext';
 import { useV2UserData as useUserData } from '../v2/legacyAdapters';
 import { getCurrentApiUrl, getAuthToken } from '../services/api';
@@ -249,8 +250,7 @@ export default function ProfileScreen() {
           <Text style={styles.dwBikeSub}>
             {u?.totalTrips ?? 0} rides · top {Math.round(u?.topSpeed || 0)} km/h
           </Text>
-          <View style={styles.dwBikeLane} />
-          {bike?.photoURL ? <Image source={{ uri: bike.photoURL }} style={styles.dwBikeImg} resizeMode="contain" /> : null}
+          {bike?.photoURL ? <VehiclePhoto uri={bike.photoURL} radius={18} style={styles.dwBikeImg} /> : <View style={styles.dwBikeLane} />}
         </TouchableOpacity>
 
         <View style={styles.dwLevelBlock}>
@@ -297,13 +297,13 @@ const styles = StyleSheet.create({
   dwLevelText: { fontFamily: F.monoBold, fontSize: 11, color: INK },
   dwName: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
   dwSub: { fontFamily: F.regular, fontSize: 13 },
-  dwBike: { marginHorizontal: 16, marginTop: 28, height: 176, borderRadius: 28, backgroundColor: '#161513', padding: 18, overflow: 'visible' },
+  dwBike: { marginHorizontal: 16, marginTop: 28, height: 176, borderRadius: 28, backgroundColor: '#161513', padding: 18, overflow: 'hidden' },
   dwBikeEyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: '#A29B8D' },
   dwBikeKm: { fontFamily: F.monoBold, fontSize: 38, lineHeight: 44, color: AMBER, letterSpacing: -0.8, marginTop: 4 },
   dwBikeUnit: { fontSize: 15, color: '#F2EEE5' },
   dwBikeSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
   dwBikeLane: { position: 'absolute', right: 12, bottom: 26, width: 190, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.5)' },
-  dwBikeImg: { position: 'absolute', right: -6, top: -58, width: 236, height: 236 },
+  dwBikeImg: { position: 'absolute', right: 14, top: 16, width: 158, height: 144 },
   dwLevelBlock: { marginHorizontal: 20, marginTop: 22, gap: 8 },
   dwLevelRow: { flexDirection: 'row', justifyContent: 'space-between' },
   dwLevelTitle: { fontFamily: F.extra, fontSize: 13 },

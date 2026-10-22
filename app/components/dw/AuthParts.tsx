@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInputProps, TouchableOpacity, View } from 'react-native';
+import TextInput from './DWTextInput';
 import Svg, { Path } from 'react-native-svg';
 import { F, useDW } from '../../constants/design';
 

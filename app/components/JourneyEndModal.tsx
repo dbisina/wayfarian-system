@@ -1,18 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Image,
-  Platform,
-  KeyboardAvoidingView,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Image, Platform, KeyboardAvoidingView } from 'react-native';
+import TextInput from './dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useJourney } from '../contexts/JourneyContext';

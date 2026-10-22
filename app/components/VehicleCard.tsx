@@ -2,7 +2,8 @@
 // Compact card for displaying a garage vehicle
 
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import VehiclePhoto from './dw/VehiclePhoto';
 import { Ionicons } from '@expo/vector-icons';
 import type { GarageVehicle } from '../services/api';
 
@@ -44,7 +45,7 @@ export default function VehicleCard({
         activeOpacity={0.7}
       >
         {vehicle.photoURL ? (
-          <Image source={{ uri: vehicle.photoURL }} style={styles.compactPhoto} />
+          <VehiclePhoto uri={vehicle.photoURL} radius={8} style={styles.compactPhoto} />
         ) : (
           <View style={[styles.compactPhotoPlaceholder, selected && styles.compactPhotoPlaceholderSelected]}>
             <Text style={styles.compactEmoji}>{emoji}</Text>
@@ -77,7 +78,7 @@ export default function VehicleCard({
     >
       {/* Photo / placeholder */}
       {vehicle.photoURL ? (
-        <Image source={{ uri: vehicle.photoURL }} style={styles.photo} />
+        <VehiclePhoto uri={vehicle.photoURL} radius={14} style={styles.photo} />
       ) : (
         <View style={styles.photoPlaceholder}>
           <Text style={styles.emoji}>{emoji}</Text>

@@ -19,6 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAlert } from '../../contexts/AlertContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import BrandMark from '../../components/dw/BrandMark';
 
 const RegisterScreen = () => {
   const d = useDW();
@@ -154,11 +155,7 @@ const RegisterScreen = () => {
           </View>
           <View style={styles.heroText}>
             <View style={styles.brandRow}>
-              <View style={styles.brandMark}>
-                <Svg width={13} height={13} viewBox="0 0 24 24">
-                  <Path d="M12 3 20 20 12 15.5 4 20z" fill={INK} />
-                </Svg>
-              </View>
+              <BrandMark size={28} />
               <Text style={styles.brandName}>Wayfarian</Text>
             </View>
             <Text style={styles.heroTitle}>Create your account</Text>

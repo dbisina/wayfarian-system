@@ -17,7 +17,8 @@
 
 import { useLiveRide } from '../../v2/hooks';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
+import TextInput from '../../components/dw/DWTextInput';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';

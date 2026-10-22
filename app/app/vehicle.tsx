@@ -13,6 +13,7 @@ import { useV2Vehicle } from '../v2/hooks';
 import { getRuntime } from '../v2/runtime';
 import { useSettings } from '../contexts/SettingsContext';
 import Icon from '../components/dw/Icon';
+import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { AMBER, F, INK, useDW } from '../constants/design';
 
 const RING_LEN = 2 * Math.PI * 60;
@@ -91,7 +92,7 @@ export default function VehicleScreen() {
       <View style={styles.stage}>
         <View style={styles.lane} />
         {vehicle.photoURL ? (
-          <Image source={{ uri: vehicle.photoURL }} style={styles.photo} resizeMode="contain" />
+          <VehiclePhoto uri={vehicle.photoURL} radius={26} style={styles.photo} />
         ) : (
           <View style={[styles.photo, { alignItems: 'center', justifyContent: 'center' }]}>
             <Icon name="route" size={96} color="rgba(245,165,36,0.5)" stroke={1.2} />
@@ -169,7 +170,7 @@ const styles = StyleSheet.create({
   sub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
   stage: { position: 'absolute', top: 104, left: 0, right: 0, height: 350 },
   lane: { position: 'absolute', left: 0, right: 0, top: 300, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.35)' },
-  photo: { position: 'absolute', left: 20, right: 20, top: 0, height: 350 },
+  photo: { position: 'absolute', left: 20, right: 20, top: 8, height: 300 },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 392, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 24 },
   ringRow: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   ringBox: { width: 140, height: 140 },

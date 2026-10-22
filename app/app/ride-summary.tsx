@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Polyline, Rect } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
+import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { AMBER, F, INK, useDW } from '../constants/design';
 import { useLiveRide, useSyncState, useV2Vehicle } from '../v2/hooks';
 import { getRuntime } from '../v2/runtime';
@@ -160,7 +161,7 @@ export default function RideSummaryScreen() {
             accessibilityRole="button"
             style={[styles.vehicle, { backgroundColor: d.panel }]}
           >
-            {vehicle.data.photoURL ? <Image source={{ uri: vehicle.data.photoURL }} style={styles.vehicleImg} resizeMode="contain" /> : <View style={styles.vehicleImg} />}
+            {vehicle.data.photoURL ? <VehiclePhoto uri={vehicle.data.photoURL} radius={10} style={styles.vehicleImg} /> : <View style={styles.vehicleImg} />}
             <View style={{ flex: 1 }}>
               <Text style={[styles.eyebrow, { color: d.panelMuted }]}>Ridden on</Text>
               <Text style={[styles.vehicleName, { color: d.panelText }]}>{vehicle.data.name}</Text>
