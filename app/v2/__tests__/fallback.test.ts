@@ -67,3 +67,13 @@ describe('server probe', () => {
     expect(onAvailable).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('leaderboard query string', () => {
+  test('does not send undefined options as the text "undefined"', async () => {
+    const seen: string[] = [];
+    const c = client(async (url: string) => { seen.push(url); return resp(200, { ok: true, data: { items: [] } }); });
+    await c.leaderboard({ metric: 'distance', period: 'allTime', limit: 50, scope: undefined });
+    expect(seen[0]).toContain('metric=distance');
+    expect(seen[0]).not.toContain('undefined');
+  });
+});

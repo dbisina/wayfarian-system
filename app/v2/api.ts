@@ -90,6 +90,9 @@ export function createV2Client(deps: V2ClientDeps) {
   }
 
   const enc = encodeURIComponent;
+  // Query string without the undefined/null values (they would be sent as the text "undefined").
+  const qs = (q: Record<string, unknown>) =>
+    new URLSearchParams(Object.entries(q).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])).toString();
   return {
     request,
     config: () => request<{ minAppVersion: string; serverTime: string }>('GET', '/config', undefined, { auth: false }),
@@ -117,8 +120,8 @@ export function createV2Client(deps: V2ClientDeps) {
     vehicle: (id: string) => request<any>('GET', `/vehicles/${enc(id)}`),
     logService: (vehicleId: string, serviceId: string, input: { kind?: string; intervalKm?: number; doneAt?: string; notes?: string } = {}) =>
       request<any>('PUT', `/vehicles/${enc(vehicleId)}/services/${enc(serviceId)}`, input),
-    leaderboard: (q: { metric?: string; period?: string; limit?: number; scope?: string } = {}) => request<any>('GET', `/leaderboard?${new URLSearchParams(q as Record<string, string>).toString()}`),
-    leaderboardMe: (q: { metric?: string; period?: string } = {}) => request<any>('GET', `/leaderboard/me?${new URLSearchParams(q as Record<string, string>).toString()}`),
+    leaderboard: (q: { metric?: string; period?: string; limit?: number; scope?: string } = {}) => request<any>('GET', `/leaderboard?${qs(q)}`),
+    leaderboardMe: (q: { metric?: string; period?: string } = {}) => request<any>('GET', `/leaderboard/me?${qs(q)}`),
     // group rides
     createGroupRide: (id: string, input: Record<string, unknown>) => request<any>('PUT', `/group-rides/${enc(id)}`, input),
     joinGroupRide: (code: string) => request<any>('POST', '/group-rides/join', { code }),

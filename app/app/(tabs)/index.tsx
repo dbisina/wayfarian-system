@@ -1,3 +1,4 @@
+import { detailRouteFor } from '../../v2/ids';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, Pressable, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -217,7 +218,11 @@ export default function HomeScreen(): React.JSX.Element {
             return (
               <Pressable
                 key={j.id}
-                onPress={() => router.push(`/journey-detail?journeyId=${j.id}`)}
+                onPress={() =>
+                  j.isV2
+                    ? router.push(detailRouteFor(j.id) as never)
+                    : router.push(`/journey-detail?journeyId=${j.id}`)
+                }
                 style={[styles.ride, { borderTopColor: t.line }]}
               >
                 <View style={[styles.thumb, { backgroundColor: t.surface2 }]}>

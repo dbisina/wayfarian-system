@@ -40,6 +40,7 @@ export function useV2UserData() {
         totalTime: r.movingTimeS,
         topSpeed: r.topSpeedMps * 3.6,
         avgSpeed: r.avgSpeedMps * 3.6,
+        isV2: true, // opens on the ride screen, not the old journey screen
       }));
     return {
       user: {
