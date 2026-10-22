@@ -77,3 +77,17 @@ jobs:
       - run: npm install --no-audit --no-fund --legacy-peer-deps --ignore-scripts
       # Sync engine, recorder, outbox, session wipe, presence, location adapter.
       - run: npx vitest run
+
+  cutout-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cutout-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # The model is downloaded at build time on Railway; tests use synthetic masks and need no model.
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: npm test

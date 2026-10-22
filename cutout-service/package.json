@@ -1,0 +1,19 @@
+{
+  "name": "wayfarian-cutout-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Removes the background from a vehicle photo. Free open-source model, runs on its own Railway service so it never uses the main server's compute.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "postinstall": "node scripts/fetch-model.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "onnxruntime-node": "1.20.1",
+    "sharp": "^0.33.2"
+  }
+}

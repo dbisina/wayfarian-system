@@ -60,3 +60,17 @@ Run on one iPhone and one Android, ideally side by side:
 - Rider profile, live-activity boards, XP banner and the speed chart from the design are not built.
 - Group achievements are not implemented.
 - The iOS store link in `V2Provider.tsx` now has the real App Store id; it ships with the next build.
+
+## Vehicle photo cut-out (free, own Railway service)
+
+Vehicle photos are turned into transparent cut-outs by `cutout-service/`, a separate Railway service
+(`wayfarian-cutout`) so the model never uses the main server's compute. It runs the free silueta
+(U2-Net) model with onnxruntime, one photo at a time, and sleeps when idle.
+
+- Deploy: `cd cutout-service && railway up --ci -s wayfarian-cutout -e production -p <project id>`.
+- Cutout service variables: `CUTOUT_SECRET` (shared secret), `PORT=3000`.
+- Main server variables: `CUTOUT_URL=http://wayfarian-cutout.railway.internal:3000` and the same
+  `CUTOUT_SECRET`. With `CUTOUT_URL` unset nothing changes: photos stay as uploaded.
+- The upload answers immediately with the normal photo; the cut-out replaces it a few seconds later
+  (the app re-checks at 6, 14 and 28 seconds). Any failure keeps the original photo.
+- Check locally: `cd cutout-service && node run-local.js some-photo.jpg` writes `some-photo.cutout.png`.

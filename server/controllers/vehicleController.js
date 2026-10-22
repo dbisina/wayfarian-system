@@ -230,6 +230,22 @@ const uploadVehiclePhoto = async (req, res) => {
     });
 
     res.json({ success: true, vehicle });
+
+    // Replace the photo with a transparent cut-out in the background. The upload has already been
+    // answered, and any failure just leaves the original photo.
+    if (process.env.CUTOUT_URL) {
+      const { applyCutout } = require('../services/vehicleCutout');
+      const { uploadToStorage: up, deleteFromStorage: remove } = getFirebase();
+      applyCutout({
+        prisma,
+        storage: { upload: up, remove },
+        vehicleId: id,
+        userId: req.user.id,
+        originalURL: photoURL,
+        jpeg: processed,
+        newId: uuidv4,
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error('[VehicleController] uploadVehiclePhoto error:', err);
     res.status(500).json({ error: 'Failed to upload vehicle photo' });

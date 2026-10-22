@@ -18,7 +18,8 @@ const initialState: VehicleState = {
 };
 
 // Thunks
-export const fetchVehicles = createAsyncThunk('vehicles/fetchAll', async (_, { rejectWithValue }) => {
+// `quiet` refetches in the background without showing a loading state (used to pick up a photo cut-out).
+export const fetchVehicles = createAsyncThunk('vehicles/fetchAll', async (_: { quiet?: boolean } | void, { rejectWithValue }) => {
   try {
     const res = await vehicleAPI.list();
     return res.vehicles;
@@ -77,9 +78,11 @@ export const setDefaultVehicle = createAsyncThunk(
 
 export const uploadVehiclePhoto = createAsyncThunk(
   'vehicles/uploadPhoto',
-  async ({ id, uri }: { id: string; uri: string }, { rejectWithValue }) => {
+  async ({ id, uri }: { id: string; uri: string }, { rejectWithValue, dispatch }) => {
     try {
       const res = await vehicleAPI.uploadPhoto(id, uri);
+      // The server swaps in a transparent cut-out of the vehicle a few seconds after the upload.
+      for (const ms of [6000, 14000, 28000]) setTimeout(() => dispatch(fetchVehicles({ quiet: true })), ms);
       return res.vehicle;
     } catch (err: any) {
       return rejectWithValue(err?.message ?? 'Failed to upload photo');
@@ -103,7 +106,7 @@ const vehicleSlice = createSlice({
   extraReducers: (builder) => {
     // fetchVehicles
     builder
-      .addCase(fetchVehicles.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(fetchVehicles.pending, (state, action) => { if (!action.meta.arg?.quiet) { state.loading = true; state.error = null; } })
       .addCase(fetchVehicles.fulfilled, (state, action) => {
         state.loading = false;
         state.vehicles = action.payload;
