@@ -55,3 +55,42 @@ export async function recoverRide(): Promise<boolean> {
   if (live.status === 'RECORDING') await startTracking();
   return true;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Photos
+// ---------------------------------------------------------------------------------------------
+
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Crypto from 'expo-crypto';
+
+export const PHOTO_DIR = `${FileSystem.documentDirectory ?? ''}ride-photos/`;
+
+export type PhotoResult = { ok: true; photoId: string } | { ok: false; reason: 'permission' | 'cancelled' | 'no_ride' };
+
+/**
+ * Opens the camera, keeps the picture in app storage (the camera's own cache can be cleared by the
+ * OS before the upload happens) and queues it for the current ride. Works with no connection.
+ */
+export async function takeRidePhoto(): Promise<PhotoResult> {
+  const rt = getRuntime();
+  const rideId = rt.recorder.currentRideId();
+  if (!rideId) return { ok: false, reason: 'no_ride' };
+
+  const perm = await ImagePicker.requestCameraPermissionsAsync();
+  if (!perm.granted) return { ok: false, reason: 'permission' };
+  const shot = await ImagePicker.launchCameraAsync({ quality: 0.7, exif: false });
+  if (shot.canceled || !shot.assets?.[0]?.uri) return { ok: false, reason: 'cancelled' };
+
+  const photoId = Crypto.randomUUID();
+  await FileSystem.makeDirectoryAsync(PHOTO_DIR, { intermediates: true }).catch(() => {});
+  const dest = `${PHOTO_DIR}${photoId}.jpg`;
+  await FileSystem.copyAsync({ from: shot.assets[0].uri, to: dest });
+  const queued = await rt.recorder.addPhoto(photoId, dest);
+  return queued ? { ok: true, photoId } : { ok: false, reason: 'no_ride' };
+}
+
+/** Delete photo files already uploaded or no longer needed. Used when the account changes. */
+export async function clearRidePhotos(): Promise<void> {
+  await FileSystem.deleteAsync(PHOTO_DIR, { idempotent: true }).catch(() => {});
+}

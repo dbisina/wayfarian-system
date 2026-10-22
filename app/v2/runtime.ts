@@ -68,7 +68,11 @@ function build() {
   const session = createSession({
     getOwner,
     setOwner,
-    wipeLocal: wipeAll,
+    wipeLocal: async () => {
+      await wipeAll();
+      const { clearRidePhotos } = await import('./rideController');
+      await clearRidePhotos();
+    },
     clearQueryCache: async () => {
       queryClient.clear();
       await persister.removeClient();

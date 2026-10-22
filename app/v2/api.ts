@@ -37,17 +37,18 @@ export function createV2Client(deps: V2ClientDeps) {
   const doFetch = deps.fetchImpl ?? fetch;
   const timeoutMs = deps.timeoutMs ?? 20000;
 
-  async function once(method: string, path: string, body: unknown, token: string | null): Promise<Response> {
+  async function once(method: string, path: string, body: unknown, token: string | null, isForm = false): Promise<Response> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       return await doFetch(`${deps.baseUrl}${path}`, {
         method,
         headers: {
-          'Content-Type': 'application/json',
+          // A multipart body must not set its own Content-Type: fetch adds the boundary.
+          ...(isForm ? {} : { 'Content-Type': 'application/json' }),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : isForm ? (body as never) : JSON.stringify(body),
         signal: ctrl.signal,
       });
     } catch (err) {
@@ -57,15 +58,16 @@ export function createV2Client(deps: V2ClientDeps) {
     }
   }
 
-  async function request<T>(method: string, path: string, body?: unknown, opts: { auth?: boolean } = {}): Promise<T> {
+  async function request<T>(method: string, path: string, body?: unknown, opts: { auth?: boolean; form?: boolean } = {}): Promise<T> {
     const needsAuth = opts.auth !== false;
+    const isForm = opts.form === true;
     let token = needsAuth ? await deps.getToken() : null;
-    let res = await once(method, path, body, token);
+    let res = await once(method, path, body, token, isForm);
 
     if (res.status === 401 && needsAuth) {
       token = await deps.refreshToken();
       if (!token) throw new ApiError(401, 'unauthenticated', 'Signed out', { retryable: false, authRequired: true });
-      res = await once(method, path, body, token);
+      res = await once(method, path, body, token, isForm);
       if (res.status === 401) throw new ApiError(401, 'unauthenticated', 'Session rejected', { retryable: false, authRequired: true });
     }
 
@@ -90,6 +92,16 @@ export function createV2Client(deps: V2ClientDeps) {
     finalizeRide: (id: string) => request<any>('POST', `/rides/${enc(id)}/finalize`),
     renameRide: (id: string, title: string) => request<any>('PATCH', `/rides/${enc(id)}`, { title }),
     rideRoute: (id: string, maxPoints = 1500) => request<{ total: number; points: { segment: number; lat: number; lng: number; t: number }[] }>('GET', `/rides/${enc(id)}/route?maxPoints=${maxPoints}`),
+    uploadPhoto: (rideId: string, photoId: string, p: { uri: string; takenAt?: string; latitude?: number | null; longitude?: number | null }) => {
+      const form = new FormData();
+      // React Native's FormData reads the file from the uri; the object shape is its convention.
+      form.append('file', { uri: p.uri, name: `${photoId}.jpg`, type: 'image/jpeg' } as never);
+      if (p.takenAt) form.append('takenAt', p.takenAt);
+      if (p.latitude != null) form.append('latitude', String(p.latitude));
+      if (p.longitude != null) form.append('longitude', String(p.longitude));
+      return request<any>('PUT', `/rides/${enc(rideId)}/photos/${enc(photoId)}`, form, { form: true });
+    },
+    ridePhotos: (rideId: string) => request<{ items: { id: string; takenAt: string; imageUrl: string; thumbnailUrl: string }[] }>('GET', `/rides/${enc(rideId)}/photos`),
     deleteRide: (id: string) => request('DELETE', `/rides/${enc(id)}`),
     getRide: (id: string) => request<any>('GET', `/rides/${enc(id)}`),
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),

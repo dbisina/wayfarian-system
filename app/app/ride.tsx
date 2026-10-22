@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AMBER, F, useDW } from '../constants/design';
 import { useLiveRide, useSyncState } from '../v2/hooks';
-import { endRide, pauseRide, resumeRide, startRide } from '../v2/rideController';
+import { endRide, pauseRide, resumeRide, startRide, takeRidePhoto } from '../v2/rideController';
 import { formatDistance, formatDuration, formatSpeed } from '../v2/format';
 
 export default function RideScreen() {
@@ -37,6 +37,13 @@ export default function RideScreen() {
     setBusy(true);
     try { live?.status === 'PAUSED' ? await resumeRide(vehicleType) : await pauseRide(); } finally { setBusy(false); }
   }, [live?.status, vehicleType]);
+
+  const onPhoto = useCallback(async () => {
+    const res = await takeRidePhoto();
+    if (!res.ok && res.reason === 'permission') {
+      Alert.alert('Camera needed', 'Allow camera access in Settings to add photos to your ride.');
+    }
+  }, []);
 
   const onEnd = useCallback(() => {
     Alert.alert('End ride?', 'Your ride will be saved and uploaded when you have a connection.', [
@@ -80,6 +87,9 @@ export default function RideScreen() {
       </View>
 
       <View style={styles.controls}>
+        <Pressable disabled={busy} onPress={onPhoto} accessibilityRole="button" accessibilityLabel="Take a photo" style={[styles.btn, { flex: 0, width: 64, backgroundColor: dw.surface, borderColor: dw.line2 }]}>
+          <Text style={[styles.btnText, { color: dw.ink, fontFamily: F.bold }]}>Photo</Text>
+        </Pressable>
         <Pressable disabled={busy} onPress={onPause} style={[styles.btn, { backgroundColor: dw.surface, borderColor: dw.line2 }]} accessibilityRole="button">
           <Text style={[styles.btnText, { color: dw.ink, fontFamily: F.bold }]}>{paused ? 'Resume' : 'Pause'}</Text>
         </Pressable>
