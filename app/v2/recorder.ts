@@ -65,7 +65,12 @@ export interface RecorderDeps {
   flushEveryMs?: number;
 }
 
-export interface LiveStats extends RideStats { status: LocalRideStatus; rideId: string }
+export interface LiveStats extends RideStats {
+  status: LocalRideStatus;
+  rideId: string;
+  /** Most recent accepted fix, for drawing the rider and sharing presence. */
+  lastFix: { lat: number; lng: number; t: number } | null;
+}
 
 const toWire = (p: LocalPoint): WirePoint => ({ seq: p.seq, segment: p.segment, lat: p.lat, lng: p.lng, t: new Date(p.t).toISOString(), accuracy: p.accuracy });
 const MAX_BATCH = 500; // server accepts 1000; smaller batches fail less on poor connections
@@ -80,6 +85,7 @@ export function createRecorder(deps: RecorderDeps) {
   let buffer: LocalPoint[] = [];
   let lastFlushAt = 0;
   let lastFixT = -Infinity;
+  let lastFix: { lat: number; lng: number; t: number } | null = null;
 
   const kick = () => { try { deps.kick?.(); } catch { /* never let sync break recording */ } };
 
@@ -100,7 +106,7 @@ export function createRecorder(deps: RecorderDeps) {
     kick();
   }
 
-  const snapshot = (): LiveStats => ({ ...acc.snapshot(), status: ride!.status, rideId: ride!.id });
+  const snapshot = (): LiveStats => ({ ...acc.snapshot(), status: ride!.status, rideId: ride!.id, lastFix });
 
   return {
     /** Begin a new ride. Throws if one is already in progress. */
@@ -112,6 +118,7 @@ export function createRecorder(deps: RecorderDeps) {
       acc.startSegment();
       buffer = [];
       lastFixT = -Infinity;
+      lastFix = null;
       await deps.local.putRide(ride);
       await deps.outbox.enqueue(ride.id, 'ride.upsert', {
         startedAt: new Date(startedAt).toISOString(),
@@ -138,6 +145,7 @@ export function createRecorder(deps: RecorderDeps) {
         if (p.segment !== seg) { acc.startSegment(); seg = p.segment; }
         acc.add(p);
         lastFixT = p.t;
+        lastFix = { lat: p.lat, lng: p.lng, t: p.t };
       }
       buffer = pts.filter((p) => p.seq > found.flushedSeq);
       lastFlushAt = now();
@@ -151,6 +159,7 @@ export function createRecorder(deps: RecorderDeps) {
       if (!ride || ride.status !== 'RECORDING') return null;
       if (!(fix.t > lastFixT)) return snapshot(); // duplicate or out-of-order delivery from the OS
       lastFixT = fix.t;
+      lastFix = { lat: fix.lat, lng: fix.lng, t: fix.t };
       const p: LocalPoint = { seq: ride.nextSeq++, segment: ride.segment, lat: fix.lat, lng: fix.lng, t: fix.t, accuracy: fix.accuracy ?? null };
       await deps.local.appendPoints(ride.id, [p]);
       acc.add(p);

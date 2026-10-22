@@ -98,7 +98,7 @@ export default function GroupsScreen(): React.JSX.Element {
         </TouchableOpacity>
         <Text style={[styles.h1, { color: d.ink }]}>{t('group.title')}</Text>
         <TouchableOpacity
-          onPress={() => router.push('/new-group')}
+          onPress={() => router.push('/group-ride' as never)}
           accessibilityRole="button"
           style={[styles.newBtn, { backgroundColor: d.ink }]}
         >
