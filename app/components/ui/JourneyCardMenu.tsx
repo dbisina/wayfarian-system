@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { journeyAPI } from '../../services/api';
+import { getRuntime } from '../../v2/runtime';
+import { qk } from '../../v2/hooks';
 import { useTranslation } from 'react-i18next';
 
 interface JourneyCardMenuProps {
@@ -67,7 +68,8 @@ const JourneyCardMenu: React.FC<JourneyCardMenuProps> = ({
           onPress: async () => {
             try {
               setLoading(true);
-              await journeyAPI.deleteJourney(journeyId);
+              await getRuntime().recorder.discard(journeyId);
+              getRuntime().queryClient.invalidateQueries({ queryKey: ['u'] });
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               onDelete?.();
             } catch (err: any) {
@@ -91,7 +93,8 @@ const JourneyCardMenu: React.FC<JourneyCardMenuProps> = ({
 
     try {
       setLoading(true);
-      await journeyAPI.updateJourneyPreferences(journeyId, { customTitle: trimmed });
+      await getRuntime().client.renameRide(journeyId, trimmed);
+      getRuntime().queryClient.invalidateQueries({ queryKey: ['u'] });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowRename(false);
       onRename?.(trimmed);

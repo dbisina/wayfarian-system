@@ -4,11 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useUserData } from '../../hooks/useUserData';
-import { userAPI, leaderboardAPI } from '../../services/api';
+import { useV2LeaderboardMe, useV2Rides } from '../../v2/hooks';
 import { useTranslation } from 'react-i18next';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Cut from '../../components/dw/Cut';
 import Icon from '../../components/dw/Icon';
 import { AMBER, F, INK, useDW } from '../../constants/design';
@@ -32,8 +30,6 @@ type JourneyItem = {
   }[];
 };
 
-const CACHE_KEY_LOG_DATA = 'wayfarian_log_screen_data';
-
 export default function RideLogScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const d = useDW();
@@ -42,87 +38,42 @@ export default function RideLogScreen(): React.JSX.Element {
   const { t, i18n } = useTranslation();
   const { convertDistance } = useSettings();
   
-  const { refreshData: refreshUserData } = useUserData();
-
+    const ridesQuery = useV2Rides();
+  const meQuery = useV2LeaderboardMe('distance', 'allTime');
   const [activeTab, setActiveTab] = useState('solo');
-  const [rank, setRank] = useState<number | null>(null);
-  const [nextBadge, setNextBadge] = useState<string>('');
-  const [soloJourneys, setSoloJourneys] = useState<JourneyItem[]>([]);
-  const [groupJourneys, setGroupJourneys] = useState<JourneyItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const processAndSetData = React.useCallback((positionRes: any, achievementsRes: any, historyRes: any) => {
-    // Server returns { success, user: { position, percentile, ... } }
-    // Older client code expected top-level position/rank — keep fallbacks for safety.
-    const position =
-      positionRes?.user?.position ??
-      positionRes?.position ??
-      positionRes?.rank ??
-      null;
-    if (typeof position === 'number') setRank(position);
-
-    let nextName = t('log.nextMilestone');
-    const ach = achievementsRes?.achievements || [];
-    for (const a of ach) {
-      const locked = (a.tiers || []).find((tier: any) => !tier.unlocked);
-      if (locked) { nextName = locked.name || a.name; break; }
-    }
-    setNextBadge(nextName);
-
-    const journeys: JourneyItem[] = historyRes?.journeys || [];
-    const solo = journeys.filter(j => !j.group);
-    const group = journeys.filter(j => !!j.group);
-    setSoloJourneys(solo);
-    setGroupJourneys(group);
-  }, [t]);
-
-  const loadData = React.useCallback(async (useCache = true) => {
-    if (!isAuthenticated) return;
-
-    if (useCache) {
-      try {
-        const cached = await AsyncStorage.getItem(CACHE_KEY_LOG_DATA);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          processAndSetData(parsed.positionRes, parsed.achievementsRes, parsed.historyRes);
-        }
-      } catch (e) {
-        console.warn('Failed to load log cache', e);
-      }
-    }
-
-    try {
-      if (!soloJourneys.length && !groupJourneys.length) {
-         setLoading(true);
-      }
-
-      const [positionRes, achievementsRes, historyRes] = await Promise.all([
-        leaderboardAPI.getUserPosition(),
-        userAPI.getAchievements(),
-        userAPI.getJourneyHistory({ limit: 40, sortBy: 'startTime', sortOrder: 'desc' }),
-      ]);
-
-      processAndSetData(positionRes, achievementsRes, historyRes);
-
-      AsyncStorage.setItem(CACHE_KEY_LOG_DATA, JSON.stringify({
-        positionRes,
-        achievementsRes,
-        historyRes,
-        timestamp: Date.now()
-      })).catch(e => console.warn('Failed to save log cache', e));
-
-    } catch (e) {
-      console.warn('Log screen data load failed', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, soloJourneys.length, groupJourneys.length, processAndSetData]);
+  // Rides come from the v2 cache: shown instantly from the last fetch (even offline), refreshed
+  // whenever the screen is focused and the data is older than 30 seconds.
+  const journeys: JourneyItem[] = useMemo(
+    () =>
+      (ridesQuery.data?.pages.flatMap((p) => p.items) ?? [])
+        .filter((r: any) => r.status === 'FINALIZED' && r.distanceM >= 100)
+        .map((r: any) => ({
+          id: r.id,
+          title: r.title ?? undefined,
+          customTitle: r.title ?? null,
+          startTime: r.startedAt,
+          endTime: r.endedAt ?? undefined,
+          totalDistance: r.distanceM / 1000,
+          totalTime: r.movingTimeS,
+          group: r.groupRideId ? { id: r.groupRideId, name: t('log.groupRide', { defaultValue: 'Group ride' }) } : null,
+          groupJourneyId: null,
+        })),
+    [ridesQuery.data, t]
+  );
+  const soloJourneys = useMemo(() => journeys.filter((j) => !j.group), [journeys]);
+  const groupJourneys = useMemo(() => journeys.filter((j) => !!j.group), [journeys]);
+  const rank: number | null = meQuery.data?.rank ?? null;
+  const nextBadge: string = t('log.nextMilestone');
+  const loading = ridesQuery.isLoading;
+  const loadData = useCallback(() => { void ridesQuery.refetch(); }, [ridesQuery]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData(true);
-      refreshUserData();
-    }, [loadData, refreshUserData])
+      void ridesQuery.refetch();
+      void meQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   const normalizeDistance = (value?: number) => {
@@ -204,11 +155,7 @@ export default function RideLogScreen(): React.JSX.Element {
 
 
   const openJourney = (j: JourneyItem) => {
-    if (j.groupJourneyId) {
-      router.push({ pathname: '/group-journey-detail', params: { groupJourneyId: j.groupJourneyId } } as any);
-    } else {
-      router.push({ pathname: '/journey-detail', params: { journeyId: j.id } });
-    }
+    router.push({ pathname: '/ride-detail', params: { rideId: j.id } } as any);
   };
 
   const renderRide = (journey: JourneyItem, last: boolean, showMenu: boolean) => {
@@ -247,7 +194,7 @@ export default function RideLogScreen(): React.JSX.Element {
             journeyId={journey.id}
             journeyTitle={displayTitle}
             onRename={() => loadData()}
-            onDelete={() => setSoloJourneys((prev) => prev.filter((j) => j.id !== journey.id))}
+            onDelete={loadData}
             iconColor={d.ink2}
             iconSize={18}
           />

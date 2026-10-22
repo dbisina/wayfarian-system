@@ -15,6 +15,7 @@
  *   is selected.
  */
 
+import { useLiveRide } from '../../v2/hooks';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -72,7 +73,9 @@ export default function MapScreen(): React.JSX.Element {
   const garageDefaultVehicle = useAppSelector(selectDefaultVehicle);
   const activeGarageVehicle = garageSelectedVehicle ?? garageDefaultVehicle;
   const effectiveVehicleType: Vehicle = ((activeGarageVehicle?.type as Vehicle | undefined) ?? settingsVehicle) || 'car';
-  const { isTracking, startJourney, currentLocation } = useJourney();
+  const { currentLocation } = useJourney();
+  const liveRide = useLiveRide();
+  const isTracking = !!liveRide && liveRide.status !== 'ENDED';
   const stats = useJourneyStats();
   const routePoints = useJourneyRoutePoints();
   const { t } = useTranslation();
@@ -359,30 +362,11 @@ export default function MapScreen(): React.JSX.Element {
       Alert.alert(t('map.authRequired'), t('map.loginToStart'));
       return;
     }
-    if (isTracking) {
-      setShowEndModal(true);
-      return;
-    }
-    if (isStartBusy) return;
-    setIsStartBusy(true);
-    try {
-      const success = await startJourney({
-        // Leave title undefined so the backend default ("My Journey") only
-        // appears when the user skips JourneyEndModal's name field.
-        vehicle: effectiveVehicleType,
-        vehicleId: activeGarageVehicle?.id,
-        vehicleName: activeGarageVehicle
-          ? `${activeGarageVehicle.name} (${activeGarageVehicle.make} ${activeGarageVehicle.model})`
-          : undefined,
-      });
-      if (success) {
-        router.push('/journey');
-      } else {
-        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
-      }
-    } finally {
-      setIsStartBusy(false);
-    }
+    // v2 recorder: the ride screen starts (or resumes) the ride itself, offline-capable.
+    router.push({
+      pathname: '/ride',
+      params: { vehicleId: activeGarageVehicle?.id, vehicleType: effectiveVehicleType },
+    } as never);
   };
 
   const handleStartJourneyToDestination = async () => {
@@ -390,27 +374,10 @@ export default function MapScreen(): React.JSX.Element {
       Alert.alert(t('map.authRequired'), t('map.loginToStart'));
       return;
     }
-    if (isStartBusy) return;
-    setIsStartBusy(true);
-    try {
-      const success = await startJourney({
-        vehicle: effectiveVehicleType,
-        vehicleId: activeGarageVehicle?.id,
-        vehicleName: activeGarageVehicle
-          ? `${activeGarageVehicle.name} (${activeGarageVehicle.make} ${activeGarageVehicle.model})`
-          : undefined,
-        endLocation: destination
-          ? { latitude: destination.latitude, longitude: destination.longitude, address: destination.name || 'Destination' }
-          : undefined,
-      });
-      if (success) {
-        router.push('/journey');
-      } else {
-        Alert.alert(t('alerts.error'), t('alerts.startJourneyError'));
-      }
-    } finally {
-      setIsStartBusy(false);
-    }
+    router.push({
+      pathname: '/ride',
+      params: { vehicleId: activeGarageVehicle?.id, vehicleType: effectiveVehicleType },
+    } as never);
   };
 
   const formatTime = (seconds: number): string => {

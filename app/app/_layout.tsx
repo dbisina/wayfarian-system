@@ -30,6 +30,8 @@ import { initI18n } from '../i18n';
 import { parseNotificationData } from '../services/notificationService';
 import OfflineQueueService from '../services/offlineQueueService';
 import LiveNotificationService from '../services/liveNotificationService';
+import '../v2/locationEngine'; // defines the background location task; must load at app start
+import { V2Provider } from '../v2/V2Provider';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
@@ -201,9 +203,11 @@ export default function RootLayout() {
           <AuthProvider>
               <AlertProvider>
                 <SettingsProvider>
-                  <JourneyProvider>
-                    <RootLayoutContent />
-                  </JourneyProvider>
+                  <V2Provider>
+                    <JourneyProvider>
+                      <RootLayoutContent />
+                    </JourneyProvider>
+                  </V2Provider>
                 </SettingsProvider>
               </AlertProvider>
           </AuthProvider>

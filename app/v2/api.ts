@@ -88,6 +88,8 @@ export function createV2Client(deps: V2ClientDeps) {
     addPoints: (id: string, points: WirePoint[]) => request<{ accepted: number; duplicates: number }>('POST', `/rides/${enc(id)}/points`, { points }),
     addEvents: (id: string, events: WireEvent[]) => request('POST', `/rides/${enc(id)}/events`, { events }),
     finalizeRide: (id: string) => request<any>('POST', `/rides/${enc(id)}/finalize`),
+    renameRide: (id: string, title: string) => request<any>('PATCH', `/rides/${enc(id)}`, { title }),
+    rideRoute: (id: string, maxPoints = 1500) => request<{ total: number; points: { segment: number; lat: number; lng: number; t: number }[] }>('GET', `/rides/${enc(id)}/route?maxPoints=${maxPoints}`),
     deleteRide: (id: string) => request('DELETE', `/rides/${enc(id)}`),
     getRide: (id: string) => request<any>('GET', `/rides/${enc(id)}`),
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Wayfarian",
     "slug": "wayfarian",
-    "version": "1.1.1",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icons/adaptive-icon.png",
     "description": "Wayfarian is your group journey companion. Track, share, and relive your adventures with friends.",
@@ -72,7 +72,8 @@
           "locationAlwaysAndWhenInUsePermission": "Wayfarian collects location data to enable journey tracking, distance and speed stats, real-time group ride sharing, and persistent live-activity notifications — even when the app is closed or not in use.",
           "locationWhenInUsePermission": "Wayfarian uses your location to track your journey and show your position on the map.",
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       [
@@ -96,7 +97,8 @@
       "./plugins/withWidgetXcodeFix",
       "./plugins/withPodfileFix",
       "./plugins/withNotificationIcon",
-      "./plugins/withLintFix"
+      "./plugins/withLintFix",
+      "expo-updates"
     ],
     "ios": {
       "supportsTablet": true,
@@ -112,6 +114,9 @@
               "com.googleusercontent.apps.65260446195-kkgnkq7joge7t0gks5bcr9km300o64af"
             ]
           }
+        ],
+        "UIBackgroundModes": [
+          "location"
         ]
       },
       "bundleIdentifier": "com.wayfarian.wayfarianadventures",
@@ -120,7 +125,8 @@
       "icon": {
         "light": "./assets/icons/ios-light.png",
         "dark": "./assets/icons/ios-dark.png"
-      }
+      },
+      "buildNumber": "20"
     },
     "android": {
       "adaptiveIcon": {
@@ -140,7 +146,7 @@
         "CAMERA"
       ],
       "package": "com.wayfarian.wayfarianadventures",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "config": {}
     },
@@ -169,6 +175,14 @@
         "projectId": "dc73caab-30e7-459f-8cd5-d62b3c6e6fc6"
       }
     },
-    "owner": "wayfarian"
+    "owner": "wayfarian",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dc73caab-30e7-459f-8cd5-d62b3c6e6fc6",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
