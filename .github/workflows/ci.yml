@@ -49,10 +49,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Build ride-core (server depends on it)
-        run: npm install --no-audit --no-fund && npm run build
-        working-directory: packages/ride-core
-      - run: npm install --no-audit --no-fund
+      # The server deploys from its own folder, so it uses a committed build of ride-core
+      # (server/vendor/ride-core). Rebuild it and fail if the committed copy is stale.
+      - name: Vendored ride-core is up to date
+        run: |
+          bash scripts/sync-ride-core.sh
+          git diff --exit-code -- server/vendor || (echo "server/vendor/ride-core is stale: run scripts/sync-ride-core.sh and commit" && exit 1)
+        working-directory: .
+      - run: npm ci --no-audit --no-fund
       - run: npx prisma generate
       # The migrations must apply cleanly to an empty database and match the schema.
       - name: Apply v2 migrations to a scratch database

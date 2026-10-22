@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.kmhToMps = exports.mToMiles = exports.mToKm = exports.mpsToMph = exports.mpsToKmh = void 0;
+const mpsToKmh = (mps) => mps * 3.6;
+exports.mpsToKmh = mpsToKmh;
+const mpsToMph = (mps) => mps * 2.2369362921;
+exports.mpsToMph = mpsToMph;
+const mToKm = (m) => m / 1000;
+exports.mToKm = mToKm;
+const mToMiles = (m) => m / 1609.344;
+exports.mToMiles = mToMiles;
+const kmhToMps = (kmh) => kmh / 3.6;
+exports.kmhToMps = kmhToMps;

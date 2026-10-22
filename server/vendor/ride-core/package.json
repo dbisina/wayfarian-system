@@ -1,0 +1,10 @@
+{
+  "name": "@wayfarian/ride-core",
+  "version": "0.1.0",
+  "description": "Shared ride statistics engine. The app uses it for live stats and the server uses it as the authority.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ]
+}
