@@ -216,11 +216,15 @@ test('a pause is not counted: points in a new segment start fresh', async () => 
   expect(ride.distanceM).toBeLessThan(6_100);
 });
 
-test('tiny rides are stored but not counted in totals or XP', async () => {
+test('a ride under 100 m is rejected as invalid: nothing credited, same answer on a retry', async () => {
   await svc.addPoints(USER, 'ride-0001', track(0, T0, 1, 10)); // ~10 m
-  await svc.finalize(USER, 'ride-0001');
-  expect(prisma.db.stats.get(USER).rides).toBe(0);
-  expect(prisma.db.stats.get(USER).distanceM).toBe(0);
+  const ride = await svc.finalize(USER, 'ride-0001');
+  expect(ride.invalid).toBe(true);
+  expect(ride.status).toBe('DELETED');
+  expect((await svc.finalize(USER, 'ride-0001')).invalid).toBe(true); // a retried finalize is not an error
+  const stats = prisma.db.stats.get(USER);
+  expect(stats?.rides ?? 0).toBe(0);
+  expect(stats?.distanceM ?? 0).toBe(0);
   expect(prisma.db.users.get(USER).xp).toBe(0);
 });
 
