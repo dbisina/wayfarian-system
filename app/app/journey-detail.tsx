@@ -11,6 +11,7 @@ import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentApiUrl, journeyAPI, galleryAPI } from '../services/api';
+import { legacyJourneyIdOf } from '../v2/ids';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -52,6 +53,15 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const router = useRouter();
   const params = useLocalSearchParams<{ journeyId: string | string[] }>();
   const journeyId = Array.isArray(params.journeyId) ? params.journeyId[0] : params.journeyId;
+  // A ride carried over from the old system arrives as "lj_<old id>". This screen looks journeys up
+  // by the old id, so strip the prefix; a group-ride id ("li_...") has no journey here, so it goes
+  // to the ride screen.
+  const carriedOverId = legacyJourneyIdOf(journeyId);
+  const isGroupCarriedOver = !!journeyId && /^li_/.test(journeyId);
+  useEffect(() => {
+    if (carriedOverId) router.replace({ pathname: '/journey-detail', params: { journeyId: carriedOverId } } as never);
+    else if (isGroupCarriedOver) router.replace({ pathname: '/ride-detail', params: { rideId: journeyId } } as never);
+  }, [carriedOverId, isGroupCarriedOver, journeyId, router]);
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const d = useDW();

@@ -1,3 +1,4 @@
+import { detailRouteFor } from '../../v2/ids';
 import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -183,7 +184,7 @@ export default function RideLogScreen(): React.JSX.Element {
       else router.push({ pathname: '/journey-detail', params: { journeyId: j.id } } as any);
       return;
     }
-    router.push({ pathname: '/ride-detail', params: { rideId: j.id } } as any);
+    router.push(detailRouteFor(j.id) as any);
   };
 
   const renderRide = (journey: JourneyItem, last: boolean, showMenu: boolean) => {

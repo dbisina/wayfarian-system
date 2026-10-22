@@ -15,6 +15,8 @@
  *   is selected.
  */
 
+import * as Localization from 'expo-localization';
+import { fallbackRegion } from '../../v2/countryRegion';
 import { useLiveRide } from '../../v2/hooks';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
@@ -65,7 +67,7 @@ interface MapJourney {
 }
 
 export default function MapScreen(): React.JSX.Element {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { mapType, vehicle: settingsVehicle } = useSettings();
   const dispatch = useAppDispatch();
   // VehiclePicker writes only to the Redux garage slice (not SettingsContext), so
@@ -212,6 +214,10 @@ export default function MapScreen(): React.JSX.Element {
     }
   };
 
+  // Where to open the map when there is no GPS fix: the profile country, then the phone's region.
+  const getFallbackRegion = () =>
+    fallbackRegion({ profileCountryCode: user?.countryCode, deviceRegionCode: Localization.getLocales()[0]?.regionCode });
+
   /**
    * Resolves the device's current location.
    * @param promptIfMissing - When true, requests foreground permission if not
@@ -227,18 +233,16 @@ export default function MapScreen(): React.JSX.Element {
 
       if (status !== 'granted') {
         setError(t('map.locationPermDenied'));
-        // Show the map at a default region so the UI isn't a blank screen.
-        setInitialRegion({
-          latitude: 37.78825,
-          longitude: -122.4324,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
+        // No location: open on the rider's own country (profile, then phone region), not an arbitrary city.
+        setInitialRegion((prev) => prev ?? getFallbackRegion());
         return;
       }
 
       // Show cached position immediately, then refine with a fresh fix.
       const lastKnown = await Location.getLastKnownPositionAsync();
+      // Nothing cached yet (first launch): open on the rider's country right away instead of a
+      // blank screen, and fly to them as soon as the first fix arrives.
+      if (!lastKnown) setInitialRegion((prev) => prev ?? getFallbackRegion());
       if (lastKnown) {
         setLocation(lastKnown);
         const region = {
@@ -265,6 +269,7 @@ export default function MapScreen(): React.JSX.Element {
 
       if (!lastKnown) {
         setInitialRegion(freshRegion);
+        animateToRegion(freshRegion); // the map may already be showing the country view
       }
 
       if (promptIfMissing) {
@@ -272,14 +277,7 @@ export default function MapScreen(): React.JSX.Element {
       }
     } catch (error: any) {
       console.error('Location error:', error);
-      if (!initialRegion) {
-        setInitialRegion({
-          latitude: 37.78825,
-          longitude: -122.4324,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
-      }
+      setInitialRegion((prev) => prev ?? getFallbackRegion());
     }
   };
 
