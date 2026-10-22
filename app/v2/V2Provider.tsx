@@ -45,10 +45,16 @@ export function V2Provider({ children }: { children: React.ReactNode }) {
   // Version gate: only a definite "too old" answer blocks. Offline or a server error lets the app run.
   useEffect(() => {
     let cancelled = false;
-    rt.client.config()
-      .then((c) => { if (!cancelled) setGate(isUpdateRequired(APP_VERSION, c.minAppVersion) ? 'update' : 'ok'); })
-      .catch(() => { if (!cancelled) setGate('ok'); });
+    rt.probeServer().then((c) => {
+      if (!cancelled) setGate(c && isUpdateRequired(APP_VERSION, c.minAppVersion) ? 'update' : 'ok');
+    });
     return () => { cancelled = true; };
+  }, [rt]);
+
+  // While the server has no v2 API (not deployed yet), keep checking so the app switches over by itself.
+  useEffect(() => {
+    const timer = setInterval(() => { if (rt.probe.state !== 'available') void rt.probeServer(); }, 60_000);
+    return () => clearInterval(timer);
   }, [rt]);
 
   // Tie the on-device data to the signed-in account.

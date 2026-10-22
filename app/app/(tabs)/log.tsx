@@ -4,7 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useV2LeaderboardMe, useV2Rides } from '../../v2/hooks';
+import { useQuery } from '@tanstack/react-query';
+import { useServerV2, useV2LeaderboardMe, useV2Rides } from '../../v2/hooks';
+import { leaderboardAPI, userAPI } from '../../services/api';
 import { useTranslation } from 'react-i18next';
 import JourneyCardMenu from '../../components/ui/JourneyCardMenu';
 import Cut from '../../components/dw/Cut';
@@ -38,15 +40,32 @@ export default function RideLogScreen(): React.JSX.Element {
   const { t, i18n } = useTranslation();
   const { convertDistance } = useSettings();
   
-    const ridesQuery = useV2Rides();
+  const ridesQuery = useV2Rides();
   const meQuery = useV2LeaderboardMe('distance', 'allTime');
   const [activeTab, setActiveTab] = useState('solo');
+
+  // Until the server has the v2 API, show the history the older API still holds.
+  const serverV2 = useServerV2();
+  const legacyMode = serverV2 === 'missing';
+  const legacy = useQuery({
+    queryKey: ['v1-log'],
+    enabled: legacyMode && isAuthenticated,
+    queryFn: async () => {
+      const [pos, hist] = await Promise.all([
+        leaderboardAPI.getUserPosition().catch(() => null),
+        userAPI.getJourneyHistory({ limit: 40, sortBy: 'startTime', sortOrder: 'desc' }),
+      ]);
+      return { pos, hist };
+    },
+  });
 
   // Rides come from the v2 cache: shown instantly from the last fetch (even offline), refreshed
   // whenever the screen is focused and the data is older than 30 seconds.
   const journeys: JourneyItem[] = useMemo(
     () =>
-      (ridesQuery.data?.pages.flatMap((p) => p.items) ?? [])
+      legacyMode
+        ? ((legacy.data?.hist as any)?.journeys ?? [])
+        : (ridesQuery.data?.pages.flatMap((p) => p.items) ?? [])
         .filter((r: any) => r.status === 'FINALIZED' && r.distanceM >= 100)
         .map((r: any) => ({
           id: r.id,
@@ -59,17 +78,20 @@ export default function RideLogScreen(): React.JSX.Element {
           group: r.groupRideId ? { id: r.groupRideId, name: t('log.groupRide', { defaultValue: 'Group ride' }) } : null,
           groupJourneyId: null,
         })),
-    [ridesQuery.data, t]
+    [ridesQuery.data, legacy.data, legacyMode, t]
   );
   const soloJourneys = useMemo(() => journeys.filter((j) => !j.group), [journeys]);
   const groupJourneys = useMemo(() => journeys.filter((j) => !!j.group), [journeys]);
-  const rank: number | null = meQuery.data?.rank ?? null;
+  const rank: number | null = legacyMode
+    ? ((legacy.data?.pos as any)?.user?.position ?? (legacy.data?.pos as any)?.position ?? null)
+    : (meQuery.data?.rank ?? null);
   const nextBadge: string = t('log.nextMilestone');
-  const loading = ridesQuery.isLoading;
-  const loadData = useCallback(() => { void ridesQuery.refetch(); }, [ridesQuery]);
+  const loading = legacyMode ? legacy.isLoading : ridesQuery.isLoading;
+  const loadData = useCallback(() => { void (legacyMode ? legacy.refetch() : ridesQuery.refetch()); }, [ridesQuery, legacy, legacyMode]);
 
   useFocusEffect(
     useCallback(() => {
+      if (legacyMode) { void legacy.refetch(); return; }
       void ridesQuery.refetch();
       void meQuery.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,6 +177,12 @@ export default function RideLogScreen(): React.JSX.Element {
 
 
   const openJourney = (j: JourneyItem) => {
+    if (legacyMode) {
+      // Older history lives behind the older screens until the server has v2.
+      if (j.groupJourneyId) router.push({ pathname: '/group-journey-detail', params: { groupJourneyId: j.groupJourneyId } } as any);
+      else router.push({ pathname: '/journey-detail', params: { journeyId: j.id } } as any);
+      return;
+    }
     router.push({ pathname: '/ride-detail', params: { rideId: j.id } } as any);
   };
 
@@ -189,7 +217,7 @@ export default function RideLogScreen(): React.JSX.Element {
             )}
           </View>
         </Pressable>
-        {showMenu && (
+        {showMenu && !legacyMode && (
           <JourneyCardMenu
             journeyId={journey.id}
             journeyTitle={displayTitle}

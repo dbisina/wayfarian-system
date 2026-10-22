@@ -13,7 +13,8 @@ import { getAuth } from 'firebase/auth';
 import { QueryClient } from '@tanstack/react-query';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { API_URL, getAuthToken, setAuthToken } from '../services/api';
-import { createV2Client } from './api';
+import { ApiError, createV2Client } from './api';
+import { createProbe } from './serverProbe';
 import { createSyncEngine, type SyncState } from './outbox';
 import { createRecorder, type LiveStats } from './recorder';
 import { createSession } from './session';
@@ -88,7 +89,26 @@ function build() {
     },
   });
 
-  return { client, outbox, local, engine, recorder, queryClient, persister, session, syncListeners, liveListeners, emitLive };
+  // Does the server have the v2 API yet? When it first appears, anything an older run parked as
+  // failed is retried and every cached screen refetches.
+  const probe = createProbe({
+    onAvailable: () => {
+      void outbox.retryDead().then(() => engine.drain()).catch(() => {});
+      void queryClient.invalidateQueries();
+    },
+  });
+  async function probeServer() {
+    try {
+      const cfg = await client.config();
+      probe.record({ ok: true });
+      return cfg;
+    } catch (err) {
+      probe.record({ ok: false, status: err instanceof ApiError ? err.status : undefined });
+      return null;
+    }
+  }
+
+  return { client, outbox, local, engine, recorder, queryClient, persister, session, syncListeners, liveListeners, emitLive, probe, probeServer };
 }
 
 type Runtime = ReturnType<typeof build>;
