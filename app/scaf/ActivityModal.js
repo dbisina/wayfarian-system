@@ -72,7 +72,7 @@ const ActivityModal = ({ visible, onClose }) => {
         </View>
 
         <View style={styles.tiles}>
-          <Pressable style={{ flex: 1.25 }} onPress={() => go('/ride')} accessibilityRole="button">
+          <Pressable style={{ flex: 1.25 }} onPress={() => go('/new-journey')} accessibilityRole="button">
             <ClipCard color={AMBER} corner={20} radius={20} style={styles.tile}>
               <Icon name="nav" size={28} color={INK} fill />
               <View>
