@@ -22,7 +22,7 @@
 
 ## Deploy order
 
-1. Merge the PR. Railway deploys the server. v1 keeps working; v2 is additive.
+1. Merge the PR. Railway builds from GitHub `main` with root directory `/server` (Railpack, Node 18), so the server must be self-contained: it uses a committed build of ride-core in `server/vendor/ride-core`. After changing `packages/ride-core`, run `scripts/sync-ride-core.sh` and commit; CI fails if the copy is stale. v1 keeps working; v2 is additive. If a push to `main` does not start a deployment, deploy by hand from the repo root with `railway up --service wayfarian-system`. A failed build leaves the old version running.
 2. Set `MIN_APP_VERSION=0.0.0` for now. Check `GET /api/v2/config`.
 3. Optional: set `REDIS_URL` and `V2_JOBS=1` on the server so the stale-ride finalizer and nightly drift check run.
 4. Build and submit the store apps (`eas build`, version 2.0.0). Test on a physical iPhone and Android first (checklist below).
