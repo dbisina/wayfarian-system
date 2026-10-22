@@ -277,6 +277,10 @@ function createGroupRideService({ prisma = defaultPrisma, rideService } = {}) {
       select: { id: true, displayName: true },
     });
     const nameOf = new Map(users.map((u) => [u.id, u.displayName]));
+    // XP the crew earned from this ride (distance XP; badges are personal and not counted here).
+    const ledger = rides.length
+      ? await prisma.xpLedger.findMany({ where: { source: { in: rides.map((r) => 'ride:' + r.id) } }, select: { amount: true } })
+      : [];
 
     const riders = rides
       .map((r) => ({
@@ -297,6 +301,7 @@ function createGroupRideService({ prisma = defaultPrisma, rideService } = {}) {
       groupRideId,
       status: group.status,
       riderCount: riders.length,
+      crewXp: ledger.reduce((s, l) => s + l.amount, 0),
       totalDistanceM: riders.reduce((s, r) => s + r.distanceM, 0),
       totalMovingTimeS: riders.reduce((s, r) => s + r.movingTimeS, 0),
       topSpeedMps: riders.reduce((m, r) => Math.max(m, r.topSpeedMps), 0),

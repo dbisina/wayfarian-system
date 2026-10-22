@@ -129,6 +129,9 @@ function Detail({ id }: { id: string }) {
             {summary.data.riders.map((r: any) => (
               <Text key={r.userId} style={{ color: dw.ink2, fontFamily: F.medium }}>{r.rank}. {r.displayName || 'Rider'} — {formatDistance(r.distanceM)}</Text>
             ))}
+            <Pressable onPress={() => router.push({ pathname: '/group-ride-summary', params: { id } } as never)} style={[styles.btn, { backgroundColor: AMBER, marginTop: 8 }]}>
+              <Text style={[styles.btnText, { fontFamily: F.black }]}>View recap</Text>
+            </Pressable>
           </>
         )}
 

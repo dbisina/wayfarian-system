@@ -108,6 +108,7 @@ suite('GroupRideService (real database)', () => {
 
     const sum = await groups.summary(b.id, GID);
     expect(sum.riderCount).toBe(2);
+    expect(sum.crewXp).toBeGreaterThan(0);
     expect(sum.riders.map((r) => r.userId)).toEqual([a.id, b.id]);
     expect(sum.riders[0].rank).toBe(1);
     expect(sum.totalDistanceM).toBeCloseTo(sum.riders[0].distanceM + sum.riders[1].distanceM, 5);

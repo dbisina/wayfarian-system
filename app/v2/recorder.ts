@@ -68,6 +68,8 @@ export interface RecorderDeps {
 export interface LiveStats extends RideStats {
   status: LocalRideStatus;
   rideId: string;
+  /** Epoch ms when the ride started. */
+  startedAt: number;
   /** Most recent accepted fix, for drawing the rider and sharing presence. */
   lastFix: { lat: number; lng: number; t: number; speedMps: number | null } | null;
 }
@@ -106,7 +108,7 @@ export function createRecorder(deps: RecorderDeps) {
     kick();
   }
 
-  const snapshot = (): LiveStats => ({ ...acc.snapshot(), status: ride!.status, rideId: ride!.id, lastFix });
+  const snapshot = (): LiveStats => ({ ...acc.snapshot(), status: ride!.status, rideId: ride!.id, startedAt: ride!.startedAt, lastFix });
 
   return {
     /** Begin a new ride. Throws if one is already in progress. */

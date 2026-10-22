@@ -117,3 +117,18 @@ describe('live board', () => {
     expect(rows.map((r) => r.userId)).toEqual(['a', 'new']);
   });
 });
+
+import { crewAwards } from '../awards';
+describe('crew awards', () => {
+  const r = (userId: string, name: string, distanceM: number, topSpeedMps: number, avgSpeedMps: number) => ({ userId, displayName: name, distanceM, movingTimeS: 100, topSpeedMps, avgSpeedMps });
+  test('picks fastest, furthest and steadiest', () => {
+    const a = crewAwards([r('1', 'Ada', 30000, 30, 12), r('2', 'Bo', 45000, 28, 11), r('3', 'Cy', 20000, 25, 14)]);
+    expect(a.map((x) => [x.award, x.name])).toEqual([['Fastest', 'Ada'], ['Furthest', 'Bo'], ['Steadiest', 'Cy']]);
+    expect(a[0].value).toBe('108 km/h');
+    expect(a[1].value).toBe('45.0 km');
+  });
+  test('works for a single rider and for nobody', () => {
+    expect(crewAwards([r('1', 'Ada', 1000, 5, 3)])).toHaveLength(3);
+    expect(crewAwards([])).toEqual([]);
+  });
+});

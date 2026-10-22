@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getRuntime, startSyncTriggers } from './runtime';
 import { recoverRide } from './rideController';
 import { isUpdateRequired } from './version';
+import { startLiveActivityBridge } from './liveActivity';
 
 const STORE_URL = Platform.select({
   ios: 'https://apps.apple.com/app/wayfarian/id0000000000',
@@ -67,6 +68,7 @@ export function V2Provider({ children }: { children: React.ReactNode }) {
   }, [user?.id, rt]);
 
   useEffect(() => (user?.id && bound ? startSyncTriggers() : undefined), [user?.id, bound]);
+  useEffect(() => (user?.id && bound ? startLiveActivityBridge() : undefined), [user?.id, bound]);
 
   if (gate === 'checking') return <View style={styles.block}><ActivityIndicator /></View>;
   if (gate === 'update') return <UpdateRequired />;
