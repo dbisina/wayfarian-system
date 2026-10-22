@@ -79,7 +79,14 @@ export function createV2Client(deps: V2ClientDeps) {
     }
     if (res.ok && json && json.ok === true) return json.data as T;
     if (res.ok) throw new ApiError(res.status, 'bad_response', 'Unexpected response from server', { retryable: true });
-    throw new ApiError(res.status, json?.error?.code || 'http_error', json?.error?.message || `HTTP ${res.status}`);
+    // A 404/405 that does not use our { ok:false } envelope did not come from the v2 API at all: the
+    // server simply has not been upgraded yet (or a proxy answered). That is temporary, so it must
+    // be retried later, never parked as a permanent failure.
+    const fromV2 = !!json && json.ok === false;
+    const serverLacksV2 = !fromV2 && (res.status === 404 || res.status === 405);
+    throw new ApiError(res.status, json?.error?.code || (serverLacksV2 ? 'server_unavailable' : 'http_error'), json?.error?.message || `HTTP ${res.status}`, {
+      retryable: serverLacksV2 ? true : undefined,
+    });
   }
 
   const enc = encodeURIComponent;

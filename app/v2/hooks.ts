@@ -3,6 +3,7 @@
 // cached data can never be shown to a different account.
 
 import { useEffect, useState } from 'react';
+import type { ProbeState } from './serverProbe';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { getRuntime } from './runtime';
@@ -113,6 +114,17 @@ export function useSyncState(): SyncState {
     rt.syncListeners.add(setState);
     rt.engine.state().then(setState).catch(() => {});
     return () => { rt.syncListeners.delete(setState); };
+  }, []);
+  return state;
+}
+
+/** Whether the server has the v2 API: unknown until the first check, then available or missing. */
+export function useServerV2(): ProbeState {
+  const [state, setState] = useState<ProbeState>(() => getRuntime().probe.state);
+  useEffect(() => {
+    const probe = getRuntime().probe;
+    setState(probe.state);
+    return probe.subscribe(setState);
   }, []);
   return state;
 }

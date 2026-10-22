@@ -10,11 +10,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { getRuntime } from './runtime';
 import { asLegacyAchievements, buildFamilies } from './badges';
-import { useV2Rides, useV2Summary } from './hooks';
+import { useV2Rides, useV2Summary, useServerV2 } from './hooks';
+import { useUserData as useV1UserData } from '../hooks/useUserData';
+import { useLeaderboard as useV1Leaderboard } from '../hooks/useLeaderboard';
 
 /** Drop-in for useUserData(): { dashboardData, achievements, loading, refreshData }. */
 export function useV2UserData() {
   const { user } = useAuth();
+  const serverV2 = useServerV2();
+  // While the server has no v2 API yet, show what the older API still provides.
+  const v1 = useV1UserData();
   const qc = useQueryClient();
   const summary = useV2Summary();
   const rides = useV2Rides();
@@ -61,6 +66,7 @@ export function useV2UserData() {
     await qc.invalidateQueries({ queryKey: ['u', user?.id ?? 'none'] });
   }, [qc, user?.id]);
 
+  if (serverV2 === 'missing') return v1;
   return { dashboardData, achievements, loading: summary.isLoading, refreshData };
 }
 
@@ -72,6 +78,8 @@ type Tab = 'friends' | 'global';
  */
 export function useV2LeaderboardView(period: string = 'allTime') {
   const { user } = useAuth();
+  const serverV2 = useServerV2();
+  const v1 = useV1Leaderboard();
   const uid = user?.id ?? 'none';
   const qc = useQueryClient();
   const load = (scope: Tab) => async () => {
@@ -111,6 +119,7 @@ export function useV2LeaderboardView(period: string = 'allTime') {
     [qc, uid, period]
   );
 
+  if (serverV2 === 'missing') return v1;
   return {
     friendsData: friends.data ?? null,
     globalData: global.data ?? null,
