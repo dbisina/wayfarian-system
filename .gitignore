@@ -72,3 +72,5 @@ coverage/
 # Google service files (sensitive credentials)
 
 /.claude
+# Vendored build of packages/ride-core, deployed with the server (see scripts/sync-ride-core.sh)
+!server/vendor/ride-core/dist/
