@@ -2,7 +2,8 @@
 // v2 API. Independent of the v1 routes. Envelope: { ok: true, data } or { ok: false, error: { code, message } }.
 
 const express = require('express');
-const { rideService, groupRides, profiles, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
+const multer = require('multer');
+const { rideService, groupRides, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -36,6 +37,9 @@ router.post('/rides/:id/events', wrap((req) => rideService.addEvents(req.user.id
 router.post('/rides/:id/finalize', wrap((req) => rideService.finalize(req.user.id, req.params.id)));
 router.delete('/rides/:id', wrap((req) => rideService.deleteRide(req.user.id, req.params.id)));
 router.patch('/rides/:id', wrap((req) => rideService.updateRide(req.user.id, req.params.id, req.body)));
+const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('file');
+router.put('/rides/:id/photos/:photoId', (req, res, next) => uploadPhoto(req, res, (err) => (err ? res.status(400).json({ ok: false, error: { code: 'invalid_input', message: err.message } }) : next())), wrap((req) => photos().putPhoto(req.user.id, req.params.id, req.params.photoId, req.file, req.body)));
+router.get('/rides/:id/photos', wrap((req) => photos().listPhotos(req.user.id, req.params.id)));
 router.get('/rides/:id/route', wrap((req) => rideService.getRoute(req.user.id, req.params.id, { maxPoints: req.query.maxPoints })));
 router.get('/rides/:id', wrap((req) => rideService.getRide(req.user.id, req.params.id)));
 router.get('/rides', wrap((req) => rideService.listRides(req.user.id, { cursor: req.query.cursor, limit: req.query.limit })));

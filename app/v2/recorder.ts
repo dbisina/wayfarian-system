@@ -208,6 +208,25 @@ export function createRecorder(deps: RecorderDeps) {
       return snapshot();
     },
 
+    /**
+     * Queue a photo taken during the ride. `uri` must already be a file that survives the app
+     * being closed (the controller copies it into app storage first). Tagged with where the
+     * rider was at that moment.
+     */
+    async addPhoto(photoId: string, uri: string): Promise<boolean> {
+      if (!ride || ride.status === 'ENDED') return false;
+      const t = now();
+      await deps.outbox.enqueue(ride.id, 'ride.photo', {
+        photoId,
+        uri,
+        takenAt: new Date(t).toISOString(),
+        latitude: lastFix?.lat ?? null,
+        longitude: lastFix?.lng ?? null,
+      }, t);
+      kick();
+      return true;
+    },
+
     /** Discard a ride the server may already know about. Queued after its uploads so order is kept. */
     async discard(rideId: string): Promise<void> {
       await deps.outbox.enqueue(rideId, 'ride.delete', {}, now());

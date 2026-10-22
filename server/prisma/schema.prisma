@@ -487,6 +487,7 @@ model Ride {
   groupRide GroupRide?           @relation(fields: [groupRideId], references: [id], onDelete: SetNull)
   points    RidePoint[]
   events    RideLifecycleEvent[]
+  photos    RidePhoto[]
 
   @@index([groupRideId])
   @@index([userId, startedAt])
@@ -577,6 +578,25 @@ model GroupRideParticipant {
   @@unique([groupRideId, userId])
   @@index([userId, leftAt])
   @@map("group_ride_participants")
+}
+
+// A photo taken during a ride. The id is generated on the device so the upload can be retried.
+model RidePhoto {
+  id        String   @id // client-generated UUID
+  rideId    String
+  userId    String
+  path      String // storage path or full URL of the image
+  thumbPath String
+  takenAt   DateTime
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@index([rideId, takenAt])
+  @@index([userId])
+  @@map("ride_photos")
 }
 
 // A service the rider did on a vehicle. The odometer is the distance ridden on it in Wayfarian at

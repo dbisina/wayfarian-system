@@ -42,6 +42,13 @@ export default function RideSummaryScreen() {
     staleTime: Infinity,
   });
   const vehicle = useV2Vehicle(ride.data?.vehicleId || undefined);
+  const photos = useQuery({
+    queryKey: ['ride-photos', rideId],
+    queryFn: () => getRuntime().client.ridePhotos(rideId!),
+    enabled: !!rideId && ride.data?.status === 'FINALIZED',
+    staleTime: 60_000,
+  });
+  const moments = photos.data?.items ?? [];
 
   const server = ride.data?.status === 'FINALIZED' ? ride.data : null;
   const local = live && live.rideId === rideId ? live : null;
@@ -165,6 +172,23 @@ export default function RideSummaryScreen() {
           </TouchableOpacity>
         )}
 
+        {moments.length > 0 && (
+          <View style={{ gap: 10 }}>
+            <View style={styles.stripHead}>
+              <Text style={[styles.momentsTitle, { color: d.ink }]}>Moments</Text>
+              <Text style={{ color: d.ink2, fontFamily: F.bold, fontSize: 13 }}>{moments.length} photo{moments.length === 1 ? '' : 's'}</Text>
+            </View>
+            <View style={styles.momentsGrid}>
+              {moments.slice(0, 3).map((m, i) => (
+                <View key={m.id} style={[styles.moment, i === 0 && { flex: 1.4 }]}>
+                  <Image source={{ uri: m.thumbnailUrl || m.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel="Ride photo" />
+                  <Text style={styles.momentTime}>{clock(new Date(m.takenAt))}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {strip.bars.length > 0 && (
           <View style={{ gap: 8 }}>
             <View style={styles.stripHead}>
@@ -208,5 +232,9 @@ const styles = StyleSheet.create({
   eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase' },
   vehicleName: { fontFamily: F.black, fontSize: 16 },
   stripHead: { flexDirection: 'row', justifyContent: 'space-between' },
+  momentsTitle: { fontFamily: F.black, fontSize: 18 },
+  momentsGrid: { flexDirection: 'row', gap: 8 },
+  moment: { flex: 1, height: 66, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(128,128,128,0.2)' },
+  momentTime: { position: 'absolute', left: 8, bottom: 8, color: '#FFFDF8', fontFamily: F.monoBold, fontSize: 11, backgroundColor: 'rgba(26,24,20,0.55)', borderRadius: 6, paddingHorizontal: 6, paddingTop: 2, paddingBottom: 1 },
   strip: { height: 36, flexDirection: 'row', alignItems: 'flex-end', gap: 3 },
 });

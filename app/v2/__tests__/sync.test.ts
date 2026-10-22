@@ -242,3 +242,45 @@ describe('api client', () => {
     expect(auth).toBeUndefined();
   });
 });
+
+describe('ride photos', () => {
+  test('a photo taken offline is queued with the rider position and uploaded before the ride is finalized', async () => {
+    const s = setup();
+    const uploaded: any[] = [];
+    (s.server.client as any).uploadPhoto = async (rideId: string, photoId: string, p: any) => { uploaded.push({ rideId, photoId, ...p }); };
+    s.server.setOnline(false);
+    const t0 = s.now();
+    const id = await s.recorder.start();
+    for (let i = 1; i <= 5; i++) { s.tick(1000); await s.recorder.addFix(fixAt(t0, i)); }
+    expect(await s.recorder.addPhoto('photo-uuid-0001', 'file:///docs/ride-photos/photo-uuid-0001.jpg')).toBe(true);
+    await s.recorder.end();
+    await s.engine.drain();
+    expect(uploaded).toHaveLength(0);
+
+    s.server.setOnline(true);
+    s.tick(10 * 60 * 1000);
+    await s.engine.drain();
+    expect(uploaded).toHaveLength(1);
+    expect(uploaded[0]).toMatchObject({ rideId: id, photoId: 'photo-uuid-0001', uri: 'file:///docs/ride-photos/photo-uuid-0001.jpg' });
+    expect(uploaded[0].latitude).toBeCloseTo(6.45, 5);
+    const order = s.server.log.filter((l) => l.includes(id));
+    expect(order[order.length - 1]).toBe(`finalize:${id}`);
+  });
+
+  test('no photo can be added when there is no ride or it has ended', async () => {
+    const s = setup();
+    expect(await s.recorder.addPhoto('photo-uuid-0002', 'file:///x.jpg')).toBe(false);
+    await s.recorder.start();
+    await s.recorder.end();
+    expect(await s.recorder.addPhoto('photo-uuid-0003', 'file:///x.jpg')).toBe(false);
+  });
+
+  test('a photo for a ride deleted on the server is dropped, not retried forever', async () => {
+    const s = setup();
+    (s.server.client as any).uploadPhoto = async () => { throw new ApiError(409, 'conflict', 'Ride was deleted'); };
+    await s.outbox.enqueue('ride-00000001', 'ride.photo', { photoId: 'photo-uuid-0004', uri: 'file:///x.jpg' }, s.now());
+    const state = await s.engine.drain();
+    expect(state.pending).toBe(0);
+    expect(state.dead).toBe(0);
+  });
+});

@@ -10,7 +10,7 @@
 
 import { ApiError, V2Client, WireEvent, WirePoint } from './api';
 
-export type OutboxKind = 'ride.upsert' | 'ride.points' | 'ride.events' | 'ride.finalize' | 'ride.delete';
+export type OutboxKind = 'ride.upsert' | 'ride.points' | 'ride.events' | 'ride.finalize' | 'ride.delete' | 'ride.photo';
 
 export interface OutboxItem {
   id: number;
@@ -84,7 +84,7 @@ export class MemoryOutboxStore implements OutboxStore {
 
 export interface SyncEngineDeps {
   store: OutboxStore;
-  client: Pick<V2Client, 'upsertRide' | 'addPoints' | 'addEvents' | 'finalizeRide' | 'deleteRide' | 'startGroupMemberRide'>;
+  client: Pick<V2Client, 'upsertRide' | 'addPoints' | 'addEvents' | 'finalizeRide' | 'deleteRide' | 'startGroupMemberRide' | 'uploadPhoto'>;
   now?: () => number;
   /** Called after every drain with the queue size, for the UI ("3 rides waiting to upload"). */
   onChange?: (state: SyncState) => void;
@@ -95,7 +95,7 @@ export interface SyncState { pending: number; dead: number; authRequired: boolea
 
 /** Server errors that mean "this was already dealt with", so the queued item is simply dropped. */
 const isAlreadyHandled = (item: OutboxItem, err: ApiError) =>
-  (err.code === 'conflict' && (item.kind === 'ride.points' || item.kind === 'ride.events' || item.kind === 'ride.finalize')) ||
+  (err.code === 'conflict' && (item.kind === 'ride.points' || item.kind === 'ride.events' || item.kind === 'ride.finalize' || item.kind === 'ride.photo')) ||
   (err.status === 404 && item.kind === 'ride.delete');
 
 export function backoffMs(attempts: number, max = 5 * 60 * 1000): number {
@@ -120,6 +120,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       case 'ride.events': return c.addEvents(item.rideId, item.payload as WireEvent[]);
       case 'ride.finalize': return c.finalizeRide(item.rideId);
       case 'ride.delete': return c.deleteRide(item.rideId);
+      case 'ride.photo': return c.uploadPhoto(item.rideId, item.payload.photoId, item.payload);
     }
   }
 

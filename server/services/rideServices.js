@@ -4,6 +4,7 @@
 const { createRideService, RideError } = require('./RideService');
 const { createGroupRideService } = require('./GroupRideService');
 const { createProfileServices } = require('./ProfileServicesV2');
+const { createRidePhotoService, defaultDeps: photoDeps } = require('./RidePhotoService');
 const { createLeaderboardService, LeaderboardError } = require('./LeaderboardServiceV2');
 const { getRedis } = require('./redisV2');
 
@@ -12,5 +13,8 @@ const rideService = createRideService({ onStatsChanged: () => leaderboards.inval
 
 const groupRides = createGroupRideService({ rideService });
 const profiles = createProfileServices({ rideService, leaderboards });
+// sharp and the storage client load lazily so a server without them still boots
+let photoService = null;
+const photos = () => (photoService ||= createRidePhotoService(photoDeps()));
 
-module.exports = { rideService, groupRides, profiles, leaderboards, RideError, LeaderboardError };
+module.exports = { rideService, groupRides, profiles, photos, leaderboards, RideError, LeaderboardError };
