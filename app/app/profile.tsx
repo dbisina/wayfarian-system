@@ -1,16 +1,32 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
+import { useAppSelector } from '../store/hooks';
+import { selectDefaultVehicle, selectVehicles } from '../store/slices/vehicleSlice';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
-import { useUserData } from '../hooks/useUserData';
+import { useV2UserData as useUserData } from '../v2/legacyAdapters';
 import { getCurrentApiUrl, getAuthToken } from '../services/api';
 import { testApiConnection, printDiagnostics } from '../utils/apiDiagnostics';
 
+const LEVEL_THRESHOLDS = [
+  0, 100, 400, 900, 1600, 2500, 3600, 4900, 6400, 8100,
+  10000, 12100, 14400, 16900, 19600, 22500, 25600, 28900, 32400, 36100,
+  40000, 44100, 48400, 52900, 57600, 62500, 67600, 72900, 78400, 84100,
+  90000, 96100, 102400, 108900, 115600, 122500, 129600, 136900, 144400, 152100,
+  160000, 168100, 176400, 184900, 193600, 202500, 211600, 220900, 230400, 240100,
+];
+
 export default function ProfileScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
+  const defaultVehicle = useAppSelector(selectDefaultVehicle);
+  const vehicles = useAppSelector(selectVehicles);
   const { user, refreshUser } = useAuth();
   const { dashboardData, achievements, refreshData } = useUserData();
   const { convertDistance } = useSettings();
@@ -143,159 +159,158 @@ export default function ProfileScreen() {
     }
   };
 
+  const u = dashboardData?.user;
+  const name = u?.displayName || user?.displayName || 'Rider';
+  const photo = u?.photoURL || user?.photoURL;
+  const level = u?.level || 1;
+  const xp = u?.xp || 0;
+  const prev = LEVEL_THRESHOLDS[level - 1] || 0;
+  const next = LEVEL_THRESHOLDS[level] || LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
+  const pct = next > prev ? Math.max(0, Math.min(1, (xp - prev) / (next - prev))) : 1;
+  const unlockedCount = achievements.filter(
+    (a: any) => a.unlocked === true || (Array.isArray(a.tiers) && a.tiers.some((x: any) => x.unlocked === true))
+  ).length;
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]!.toUpperCase()).join('') || 'W';
+  const bike = defaultVehicle;
+  const rows = [
+    { label: 'Ride history', meta: String(u?.totalTrips ?? ''), href: '/(tabs)/log' },
+    { label: 'Gallery', meta: '', href: '/gallery' },
+    { label: 'Badges', meta: `${unlockedCount} of ${achievements.length}`, href: '/badges' },
+    { label: 'Garage', meta: String(vehicles.length), href: '/manage-vehicles' },
+    { label: 'Settings', meta: '', href: '/settings' },
+  ];
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Image source={require('../assets/images/2025-09-26/Q6avvC9L6S.png')} style={styles.headerIcon} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('profile.myProfile')}</Text>
-        <TouchableOpacity onPress={() => router.push('/settings')} style={styles.headerButton}>
-          <Image source={require('../assets/images/2025-09-26/itjep5JQ04.png')} style={styles.headerIcon} />
-        </TouchableOpacity>
-      </View>
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: Math.max(56, insets.top + 8), paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.dwTop}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
+          >
+            <Icon name="back" size={20} color={d.ink} stroke={2} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/edit-profile')}
+            accessibilityRole="button"
+            style={[styles.dwPill, shadow(d, 8), { backgroundColor: d.surface }]}
+          >
+            <Text style={[styles.dwPillText, { color: d.ink }]}>Edit profile</Text>
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
-        {/* Avatar + Name */}
-        <View style={styles.profileTop}>
-          <View style={styles.avatarContainer}>
-            <Image
-              source={
-                dashboardData?.user?.photoURL || user?.photoURL
-                  ? { uri: dashboardData?.user?.photoURL || user?.photoURL }
-                  : require('../assets/images/2025-09-26/i2yG8AHX5c.png')
-              }
-              style={styles.avatar}
-            />
-            <TouchableOpacity 
-              style={styles.changePhotoButton} 
-              onPress={handleChangePhoto}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <MaterialIcons name="camera-alt" size={20} color="#FFFFFF" />
-              )}
-            </TouchableOpacity>
+        <View style={styles.dwHeader}>
+          <TouchableOpacity
+            onPress={handleChangePhoto}
+            disabled={uploading}
+            accessibilityRole="button"
+            accessibilityLabel="Change photo"
+            style={styles.dwAvatar}
+          >
+            {photo ? (
+              <Image source={{ uri: photo }} style={styles.dwAvatarImg} />
+            ) : (
+              <Text style={styles.dwAvatarText}>{initials}</Text>
+            )}
+            {uploading && (
+              <View style={styles.dwUploading}>
+                <ActivityIndicator color={AMBER} />
+              </View>
+            )}
+            <View style={[styles.dwLevel, { borderColor: d.bg }]}>
+              <Text style={styles.dwLevelText}>Lv {level}</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.dwName, { color: d.ink }]} numberOfLines={2}>{name}</Text>
+            <Text style={[styles.dwSub, { color: d.ink2 }]}>
+              {t('home.explorerRank')}
+              {(user as any)?.country ? ` · ${(user as any).country}` : ''}
+            </Text>
           </View>
-          <Text style={styles.name}>
-            {dashboardData?.user?.displayName || user?.displayName || 'User'}
+        </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/manage-vehicles')}
+          accessibilityRole="button"
+          accessibilityLabel="Your vehicle"
+          style={styles.dwBike}
+        >
+          <Text style={styles.dwBikeEyebrow}>{bike ? `On ${bike.name || bike.model}` : 'Your garage'}</Text>
+          <Text style={styles.dwBikeKm}>
+            {Math.round(u?.totalDistance || 0).toLocaleString()}
+            <Text style={styles.dwBikeUnit}> km</Text>
           </Text>
-          <Text style={styles.rank}>{t('home.explorerRank')}</Text>
+          <Text style={styles.dwBikeSub}>
+            {u?.totalTrips ?? 0} rides · top {Math.round(u?.topSpeed || 0)} km/h
+          </Text>
+          <View style={styles.dwBikeLane} />
+          {bike?.photoURL ? <Image source={{ uri: bike.photoURL }} style={styles.dwBikeImg} resizeMode="contain" /> : null}
+        </TouchableOpacity>
 
-          <View style={styles.editRow}>
-            <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/settings')}>
-              <Text style={styles.editBtnText}>{t('profile.edit')}</Text>
+        <View style={styles.dwLevelBlock}>
+          <View style={styles.dwLevelRow}>
+            <Text style={[styles.dwLevelTitle, { color: d.ink }]}>Level {level}</Text>
+            <Text style={[styles.dwMono, { color: d.ink2 }]}>{Math.max(0, next - xp).toLocaleString()} XP to go</Text>
+          </View>
+          <View style={[styles.dwTrack, { backgroundColor: d.surface2 }]}>
+            <View style={[styles.dwFill, { width: `${pct * 100}%` }]} />
+          </View>
+        </View>
+
+        <View style={styles.dwRows}>
+          {rows.map((r) => (
+            <TouchableOpacity
+              key={r.label}
+              onPress={() => router.push(r.href as never)}
+              accessibilityRole="button"
+              style={[styles.dwRow, { borderTopColor: d.line }]}
+            >
+              <Text style={[styles.dwRowLabel, { color: d.ink }]}>{r.label}</Text>
+              <Text style={[styles.dwMono, { color: d.ink2 }]}>{r.meta}</Text>
+              <Icon name="chevron" size={18} color={d.ink2} stroke={2} />
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>{t('common.distance')}</Text>
-            <Text style={styles.statValue}>{formatDistance(dashboardData?.user?.totalDistance || 0)}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>{t('common.time')}</Text>
-            <Text style={styles.statValue}>{formatTime(dashboardData?.user?.totalTime || 0)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
-            <Text style={styles.statValue}>{(dashboardData?.user?.topSpeed || 0).toFixed(0)} {t('units.kmh')}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>{t('home.badges')}</Text>
-            <Text style={styles.statValue}>{(achievements || []).filter(a => a.unlocked).length}</Text>
-          </View>
-        </View>
-
-        {/* Actions */}
-        <View style={{ marginTop: 24, gap: 12 }}>
-          {/* Debug: API Connection Test */}
-          {__DEV__ && (
-            <TouchableOpacity style={[styles.actionItem, { backgroundColor: '#FFF3CD', borderColor: '#FFC107' }]} onPress={runDiagnostics}>
-              <Text style={[styles.actionTitle, { color: '#856404' }]}>🔧 {t('profile.diagnostics.testApi')}</Text>
-              <Text style={[styles.actionSubtitle, { color: '#856404' }]}>{t('profile.diagnostics.debugSub')}</Text>
-            </TouchableOpacity>
-          )}
-          
-          <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/(tabs)/log')}>
-            <Text style={styles.actionTitle}>{t('profile.rideHistory')}</Text>
-            <Text style={styles.actionSubtitle}>{t('profile.rideHistorySub')}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/(tabs)/leaderboard')}>
-            <Text style={styles.actionTitle}>{t('leaderboard.title')}</Text>
-            <Text style={styles.actionSubtitle}>{t('profile.leaderboardSub')}</Text>
-          </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 27, paddingBottom: 11,
-  },
-  headerButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  headerIcon: { width: 34, height: 34 },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: 'Space Grotesk', fontSize: 18, fontWeight: '700', color: '#000', marginRight: 34 },
-  profileTop: { alignItems: 'center', paddingVertical: 8 },
-  avatarContainer: { position: 'relative' },
-  avatar: { width: 120, height: 120, borderRadius: 60 },
-  changePhotoButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F9A825',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  name: { marginTop: 12, fontFamily: 'Space Grotesk', fontSize: 22, fontWeight: '700', color: '#000' },
-  rank: { marginTop: 4, fontFamily: 'Space Grotesk', fontSize: 14, color: '#757575' },
-  editRow: { marginTop: 12, flexDirection: 'row', gap: 12 },
-  editBtn: { backgroundColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  editBtnText: { fontFamily: 'Inter', color: '#374151', fontWeight: '600' },
-  statsRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  statCard: {
-    flex: 1,
-    backgroundColor: Platform.OS === 'android' ? '#FFFFFF' : 'rgba(255,255,255,0.9)',
-    borderRadius: 12,
-    padding: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 1, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 4,
-        shadowColor: '#000',
-      },
-    }),
-  },
-  statLabel: { fontFamily: 'Space Grotesk', fontSize: 12, color: '#000', marginBottom: 8 },
-  statValue: { fontFamily: 'Digital Numbers', fontSize: 20, color: '#000' },
-  actionItem: { backgroundColor: '#F6F6F6', borderRadius: 12, padding: 16 },
-  actionTitle: { fontFamily: 'Space Grotesk', fontSize: 16, fontWeight: '600', color: '#000' },
-  actionSubtitle: { fontFamily: 'Space Grotesk', fontSize: 12, color: '#666', marginTop: 4 },
+  container: { flex: 1 },
+  dwTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16 },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwPill: { height: 44, paddingHorizontal: 16, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwPillText: { fontFamily: F.extra, fontSize: 14 },
+  dwHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 20, marginTop: 20 },
+  dwAvatar: { width: 80, height: 80, borderRadius: 28, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' },
+  dwAvatarImg: { width: 80, height: 80, borderRadius: 28 },
+  dwAvatarText: { fontFamily: F.black, fontSize: 28, color: AMBER },
+  dwUploading: { ...StyleSheet.absoluteFillObject, borderRadius: 28, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  dwLevel: { position: 'absolute', right: -8, bottom: -6, height: 24, paddingHorizontal: 7, borderRadius: 12, backgroundColor: AMBER, borderWidth: 3, justifyContent: 'center' },
+  dwLevelText: { fontFamily: F.monoBold, fontSize: 11, color: INK },
+  dwName: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
+  dwSub: { fontFamily: F.regular, fontSize: 13 },
+  dwBike: { marginHorizontal: 16, marginTop: 28, height: 176, borderRadius: 28, backgroundColor: '#161513', padding: 18, overflow: 'visible' },
+  dwBikeEyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: '#A29B8D' },
+  dwBikeKm: { fontFamily: F.monoBold, fontSize: 38, lineHeight: 44, color: AMBER, letterSpacing: -0.8, marginTop: 4 },
+  dwBikeUnit: { fontSize: 15, color: '#F2EEE5' },
+  dwBikeSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
+  dwBikeLane: { position: 'absolute', right: 12, bottom: 26, width: 190, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.5)' },
+  dwBikeImg: { position: 'absolute', right: -6, top: -58, width: 236, height: 236 },
+  dwLevelBlock: { marginHorizontal: 20, marginTop: 22, gap: 8 },
+  dwLevelRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  dwLevelTitle: { fontFamily: F.extra, fontSize: 13 },
+  dwMono: { fontFamily: F.monoSemi, fontSize: 13 },
+  dwTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  dwFill: { height: 8, backgroundColor: AMBER },
+  dwRows: { marginHorizontal: 20, marginTop: 20 },
+  dwRow: { flexDirection: 'row', alignItems: 'center', gap: 14, height: 50, borderTopWidth: 1 },
+  dwRowLabel: { flex: 1, fontFamily: F.extra, fontSize: 16 },
 });

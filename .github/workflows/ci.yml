@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ride-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ride-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  server:
+    runs-on: ubuntu-latest
+    # A real Postgres, so the finalize transaction, the leaderboard SQL, group rides and the
+    # backfill are tested against the database they run on, not a stand-in.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: wf
+          POSTGRES_PASSWORD: wf
+          POSTGRES_DB: wf_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wf"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://wf:wf@localhost:5432/wf_test?sslmode=disable
+      DIRECT_URL: postgresql://wf:wf@localhost:5432/wf_test?sslmode=disable
+      TEST_DATABASE_URL: postgresql://wf:wf@localhost:5432/wf_test?sslmode=disable
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build ride-core (server depends on it)
+        run: npm install --no-audit --no-fund && npm run build
+        working-directory: packages/ride-core
+      - run: npm install --no-audit --no-fund
+      - run: npx prisma generate
+      # The migrations must apply cleanly to an empty database and match the schema.
+      - name: Apply v2 migrations to a scratch database
+        run: |
+          npx prisma db push --skip-generate --accept-data-loss
+      - run: npm test
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --legacy-peer-deps --ignore-scripts
+      # Sync engine, recorder, outbox, session wipe, presence, location adapter.
+      - run: npx vitest run

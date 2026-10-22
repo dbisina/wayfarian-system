@@ -1,49 +1,48 @@
-import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  Alert,
-  Image,
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { groupAPI } from '../services/api';
 import * as ImagePicker from 'expo-image-picker';
+import { groupAPI } from '../services/api';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
+
+const RIDE_STYLES = ['Long distance', 'Weekend runs', 'Night rides', 'Off-road', 'Commutes'];
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || 'G';
 
 export default function NewGroupScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const [groupName, setGroupName] = useState('');
-  const [groupDescription, setGroupDescription] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [styles_, setStyles] = useState<string[]>([]);
+  const [isPrivate, setIsPrivate] = useState(true);
   const [coverUri, setCoverUri] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const toggleStyle = (s: string) =>
+    setStyles((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
 
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       Alert.alert('Error', 'Please enter a group name');
       return;
     }
-
+    setBusy(true);
     try {
       const result = await groupAPI.createGroup({
         name: groupName.trim(),
-        description: groupDescription.trim() || undefined,
+        description: styles_.length ? styles_.join(' · ') : undefined,
         isPrivate,
       });
 
       const groupId = result?.group?.id || result?.id;
-      if (!groupId) {
-        throw new Error('No group id returned');
-      }
+      if (!groupId) throw new Error('No group id returned');
 
-      // If a cover image was selected, upload it now
       if (coverUri) {
         try {
-          console.log('[Group Cover] Uploading cover image:', coverUri);
-          const result = await groupAPI.uploadGroupCover(groupId, coverUri);
-          console.log('[Group Cover] Upload successful:', result?.imageUrl);
+          await groupAPI.uploadGroupCover(groupId, coverUri);
         } catch (e: any) {
           console.error('[Group Cover] Upload failed:', e?.message || e);
           Alert.alert(
@@ -51,35 +50,30 @@ export default function NewGroupScreen() {
             'The group was created successfully, but the cover photo failed to upload. You can try uploading it again from the group settings.',
             [{ text: 'OK' }]
           );
-          // Don't block group creation if cover upload fails
         }
       }
 
-      // Navigate to group details first (leader can then start a journey)
       router.replace(`/group-detail?groupId=${groupId}`);
     } catch (e: any) {
       console.error('Create group failed:', e);
       Alert.alert('Error', e?.message || 'Failed to create group');
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleUploadPhoto = async () => {
     try {
       // Small delay to ensure ActivityResultLauncher is registered (Android fix)
-      await new Promise(resolve => setTimeout(resolve, 100));
-
+      await new Promise((resolve) => setTimeout(resolve, 100));
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
         base64: false,
       });
-      
-      if (!result.canceled && result.assets?.length) {
-        setCoverUri(result.assets[0].uri);
-      }
+      if (!result.canceled && result.assets?.length) setCoverUri(result.assets[0].uri);
     } catch (e: any) {
       console.error('[New Group] Photo selection failed:', e);
-      // Handle ActivityResultLauncher error specifically
       if (e?.message?.includes('ActivityResultLauncher') || e?.message?.includes('unregistered')) {
         Alert.alert('Error', 'Please try again. If the issue persists, restart the app.');
       } else {
@@ -88,306 +82,157 @@ export default function NewGroupScreen() {
     }
   };
 
+  const name = groupName.trim();
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Group</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <ScrollView 
-        style={styles.scrollView}
+    <View style={[styles.root, { backgroundColor: d.bg }]}>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: Math.max(56, insets.top + 8), paddingHorizontal: 16, paddingBottom: 120, gap: 18 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.content}>
-          {/* Group Name Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Group Name"
-              placeholderTextColor="#999999"
-              value={groupName}
-              onChangeText={setGroupName}
-              maxLength={50}
-            />
-          </View>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={[styles.round, shadow(d, 8), { backgroundColor: d.surface }]}
+          >
+            <Icon name="close" size={18} color={d.ink} stroke={2.4} />
+          </TouchableOpacity>
+          <Text style={[styles.h1, { color: d.ink }]}>New group</Text>
+        </View>
 
-          {/* Group Description Input */}
-          <View style={styles.descriptionContainer}>
-            <TextInput
-              style={styles.descriptionInput}
-              placeholder="Group Description (Optional)"
-              placeholderTextColor="#999999"
-              value={groupDescription}
-              onChangeText={setGroupDescription}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              maxLength={200}
-            />
+        <View style={[styles.preview, { backgroundColor: d.surface2 }]}>
+          {coverUri ? <Image source={{ uri: coverUri }} style={StyleSheet.absoluteFill} /> : null}
+          <View style={styles.previewShade} />
+          <View style={styles.previewChip}>
+            <Text style={styles.previewChipText}>Preview</Text>
           </View>
+          <View style={styles.previewRow}>
+            <View style={styles.previewMark}>
+              <Text style={styles.previewMarkText}>{initials(name || 'Group')}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.previewName} numberOfLines={1}>{name || 'Your group'}</Text>
+              <Text style={styles.previewSub}>Just you so far · invite by code</Text>
+            </View>
+          </View>
+        </View>
 
-          {/* Private Group Toggle */}
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Private Group</Text>
+        <View style={{ gap: 8 }}>
+          <Text style={[styles.label, { color: d.ink }]}>Cover</Text>
+          <View style={styles.coverRow}>
             <TouchableOpacity
-              style={[styles.toggle, isPrivate && styles.toggleActive]}
-              onPress={() => setIsPrivate(!isPrivate)}
+              onPress={handleUploadPhoto}
+              accessibilityRole="button"
+              accessibilityLabel="Upload a cover"
+              style={[styles.coverBtn, { borderColor: d.line2 }]}
             >
-              <View style={[styles.toggleThumb, isPrivate && styles.toggleThumbActive]} />
+              {coverUri ? (
+                <Image source={{ uri: coverUri }} style={styles.coverThumb} />
+              ) : (
+                <Icon name="plus" size={18} color={d.ink2} stroke={2.4} />
+              )}
             </TouchableOpacity>
           </View>
+        </View>
 
-          {/* Group Cover Photo Section */}
-          <View style={styles.photoSection}>
-            <Text style={styles.photoSectionTitle}>Group Cover Photo</Text>
-            
-            {coverUri ? (
-              <View style={styles.previewContainer}>
-                <Image source={{ uri: coverUri }} style={styles.coverPreview} />
-                <TouchableOpacity 
-                  style={styles.changePhotoButton} 
-                  onPress={handleUploadPhoto}
-                >
-                  <MaterialIcons name="edit" size={20} color="#FFFFFF" />
-                  <Text style={styles.changePhotoText}>Change Photo</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.uploadContainer}>
-                <View style={styles.uploadArea}>
-                  <MaterialIcons name="add-photo-alternate" size={48} color="#007AFF" />
-                  <Text style={styles.uploadTitle}>Upload Cover Photo</Text>
-                  <Text style={styles.uploadSubtitle}>Add a cover photo to your group</Text>
-                  
-                  <TouchableOpacity style={styles.uploadButton} onPress={handleUploadPhoto}>
-                    <Text style={styles.uploadButtonText}>Choose Photo</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+        <View style={{ gap: 6 }}>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, { color: d.ink }]}>Group name</Text>
+            <Text style={[styles.counter, { color: d.ink2 }]}>{groupName.length}/32</Text>
           </View>
+          <TextInput
+            value={groupName}
+            onChangeText={setGroupName}
+            maxLength={32}
+            placeholder="Name your crew"
+            placeholderTextColor={d.ink2}
+            accessibilityLabel="Group name"
+            style={[styles.input, { backgroundColor: d.surface, color: d.ink }]}
+          />
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <Text style={[styles.label, { color: d.ink }]}>How you ride</Text>
+          <View style={styles.chips}>
+            {RIDE_STYLES.map((s) => {
+              const on = styles_.includes(s);
+              return (
+                <TouchableOpacity
+                  key={s}
+                  onPress={() => toggleStyle(s)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.chip, on ? { backgroundColor: d.ink } : { borderWidth: 1.5, borderColor: d.line2 }]}
+                >
+                  <Text style={[styles.chipText, { color: on ? d.bg : d.ink }]}>{s}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.seg, { backgroundColor: d.surface2 }]} accessibilityRole="radiogroup">
+          {[
+            { label: 'Invite by code', value: true },
+            { label: 'Open to nearby', value: false },
+          ].map((o) => {
+            const on = isPrivate === o.value;
+            return (
+              <TouchableOpacity
+                key={o.label}
+                onPress={() => setIsPrivate(o.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: on }}
+                style={[styles.segItem, on && { backgroundColor: d.surface }]}
+              >
+                <Text style={{ fontFamily: on ? F.black : F.extra, fontSize: 13, color: on ? d.ink : d.ink2 }}>{o.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
 
-      {/* Create Group Button */}
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity 
-          style={[styles.createButton, !groupName.trim() && styles.createButtonDisabled]}
-          onPress={handleCreateGroup}
-          disabled={!groupName.trim()}
-        >
-          <Text style={[styles.createButtonText, !groupName.trim() && styles.createButtonTextDisabled]}>
-            Create Group
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        onPress={handleCreateGroup}
+        disabled={busy}
+        accessibilityRole="button"
+        style={[styles.create, { bottom: Math.max(30, insets.bottom + 10), opacity: busy ? 0.6 : 1 }]}
+      >
+        <Text style={styles.createText}>{busy ? 'Creating…' : 'Create group'}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F6F6F6',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-    backgroundColor: '#F6F6F6',
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  placeholder: {
-    width: 32,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  content: {
-    paddingHorizontal: 20,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  textInput: {
-    backgroundColor: '#C4C4C4',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  descriptionContainer: {
-    marginBottom: 30,
-  },
-  descriptionInput: {
-    backgroundColor: '#C4C4C4',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: '#000000',
-    fontFamily: 'Poppins',
-    minHeight: 120,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 40,
-  },
-  toggleLabel: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  toggle: {
-    width: 60,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E0E0E0',
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-  },
-  toggleActive: {
-    backgroundColor: '#007AFF',
-  },
-  toggleThumb: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  toggleThumbActive: {
-    transform: [{translateX: 28}],
-  },
-  photoSection: {
-    marginBottom: 40,
-  },
-  photoSectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    marginBottom: 20,
-  },
-  uploadContainer: {
-    borderWidth: 2,
-    borderColor: '#007AFF',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 40,
-  },
-  uploadArea: {
-    alignItems: 'center',
-  },
-  uploadTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    marginBottom: 8,
-    marginTop: 12,
-  },
-  uploadSubtitle: {
-    fontSize: 14,
-    color: '#666666',
-    fontFamily: 'Poppins',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  uploadButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  uploadButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#FFFFFF',
-    fontFamily: 'Poppins',
-  },
-  previewContainer: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  coverPreview: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-  },
-  changePhotoButton: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  changePhotoText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
-    fontFamily: 'Poppins',
-    marginLeft: 6,
-  },
-  bottomContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: '#F6F6F6',
-  },
-  createButton: {
-    backgroundColor: '#4A5568',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createButtonDisabled: {
-    backgroundColor: '#C4C4C4',
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'Poppins',
-  },
-  createButtonTextDisabled: {
-    color: '#999999',
-  },
+  root: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  h1: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
+  preview: { height: 200, borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end' },
+  previewShade: { ...StyleSheet.absoluteFillObject, top: 80, backgroundColor: 'rgba(17,16,14,0.55)' },
+  previewChip: { position: 'absolute', left: 14, top: 14, height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
+  previewChipText: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase', color: '#FFFDF8' },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  previewMark: { width: 52, height: 52, borderRadius: 17, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  previewMarkText: { fontFamily: F.black, fontSize: 18, color: INK },
+  previewName: { fontFamily: F.black, fontSize: 22, letterSpacing: -0.4, color: '#FFFDF8' },
+  previewSub: { fontFamily: F.regular, fontSize: 12, color: 'rgba(255,253,248,0.8)' },
+  label: { fontFamily: F.extra, fontSize: 13 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  counter: { fontFamily: F.monoSemi, fontSize: 13 },
+  coverRow: { flexDirection: 'row', gap: 8 },
+  coverBtn: { width: 58, height: 58, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  coverThumb: { width: 58, height: 58 },
+  input: { height: 52, borderRadius: 16, borderWidth: 2, borderColor: AMBER, paddingHorizontal: 16, fontFamily: F.extra, fontSize: 17 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { height: 36, paddingHorizontal: 14, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  chipText: { fontFamily: F.extra, fontSize: 13 },
+  seg: { flexDirection: 'row', padding: 4, borderRadius: 16 },
+  segItem: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  create: { position: 'absolute', left: 16, right: 16, height: 56, borderRadius: 28, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  createText: { fontFamily: F.black, fontSize: 16, color: INK },
 });

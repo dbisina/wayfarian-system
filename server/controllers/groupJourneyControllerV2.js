@@ -807,10 +807,17 @@ const completeInstance = async (req, res) => {
     const { endLatitude, endLongitude, totalDistance: clientDistance, totalTime: clientTime, avgSpeed: clientAvgSpeed, topSpeed: clientTopSpeed } = req.body;
 
     // Calculate final stats — use max of server-tracked and client-reported distance
-    const duration = clientTime ?? (instance.startTime
-      ? Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000)
-      : 0);
-    const finalDistance = Math.max(instance.totalDistance ?? 0, clientDistance ?? 0);
+    // Client values are untrusted: time cannot exceed wall-clock since start (+1 min slack)
+    // and distance cannot imply more than 250 km/h.
+    const wallSeconds = instance.startTime
+      ? Math.max(0, Math.floor((Date.now() - new Date(instance.startTime).getTime()) / 1000))
+      : 0;
+    const requestedTime = Number.isFinite(clientTime) && clientTime >= 0 ? clientTime : wallSeconds;
+    const duration = instance.startTime ? Math.min(requestedTime, wallSeconds + 60) : requestedTime;
+    const maxDistanceKm = (duration / 3600) * 250;
+    const safeClientDistance = Number.isFinite(clientDistance) && clientDistance >= 0 ? clientDistance : 0;
+    const finalDistance = Math.min(Math.max(instance.totalDistance ?? 0, safeClientDistance), maxDistanceKm || Infinity);
+    const sanitizeSpeed = (v) => (Number.isFinite(v) && v >= 0 ? Math.min(v, 250) : 0);
 
     // Wrap instance completion + journey record creation in a transaction
     // to prevent inconsistent state if any step fails mid-way
@@ -833,8 +840,19 @@ const completeInstance = async (req, res) => {
 
       const txResult = await prisma.$transaction(async (tx) => {
         // Use client-reported speed stats as fallback if server-tracked values are missing
-        const finalAvgSpeed = instance.avgSpeed ?? clientAvgSpeed ?? 0;
-        const finalTopSpeed = instance.topSpeed ?? clientTopSpeed ?? 0;
+        const finalTopSpeed = Math.max(sanitizeSpeed(instance.topSpeed), sanitizeSpeed(clientTopSpeed));
+        const rawAvg = instance.avgSpeed ?? clientAvgSpeed ?? 0;
+        const finalAvgSpeed = Math.min(sanitizeSpeed(rawAvg), finalTopSpeed || 250);
+
+        // Claim the instance inside the transaction so a concurrent/retried
+        // completion cannot credit the user twice.
+        const claimed = await tx.journeyInstance.updateMany({
+          where: { id: instanceId, status: { not: 'COMPLETED' } },
+          data: { status: 'COMPLETED' },
+        });
+        if (claimed.count === 0) {
+          return null;
+        }
 
         const completed = await tx.journeyInstance.update({
           where: { id: instanceId },
@@ -877,24 +895,33 @@ const completeInstance = async (req, res) => {
           },
         });
 
-        // totalDistance is already in km (consistent with solo journey handler)
+        // totalDistance is already in km (consistent with solo journey handler).
+        // Personal top speed is a record: it can only go up.
+        const owner = await tx.user.findUnique({ where: { id: instance.userId }, select: { topSpeed: true } });
         await tx.user.update({
           where: { id: instance.userId },
           data: {
             totalDistance: { increment: completed.totalDistance ?? 0 },
             totalTime: { increment: duration },
             totalTrips: { increment: 1 },
-            topSpeed: completed.topSpeed && completed.topSpeed > 0
-              ? { set: Math.max(completed.topSpeed, 0) }
-              : undefined,
+            topSpeed: Math.max(owner?.topSpeed || 0, completed.topSpeed || 0),
           },
         });
 
         return completed;
       });
 
+      if (!txResult) {
+        // Lost the race: someone else already completed it. Return the stored result.
+        const existing = await prisma.journeyInstance.findUnique({
+          where: { id: instanceId },
+          include: { user: { select: { id: true, displayName: true, photoURL: true } } },
+        });
+        return res.json({ success: true, message: 'Already completed', instance: existing });
+      }
+
       updatedInstance = txResult;
-      logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}m, Duration: ${duration}s`);
+      logger.info(`[Instance] Completed: ${instanceId} - Distance: ${updatedInstance.totalDistance}km, Duration: ${duration}s`);
     } else {
       // No group context - just complete the instance without journey record
       updatedInstance = await prisma.journeyInstance.update({

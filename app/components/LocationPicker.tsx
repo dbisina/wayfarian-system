@@ -11,6 +11,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Skeleton } from './Skeleton';
 import { placesAPI } from '../services/api';
 import { useTranslation } from 'react-i18next';
+import { AMBER, F, useDW } from '../constants/design';
 
 interface LocationSuggestion {
   id: string;
@@ -33,6 +34,12 @@ interface LocationPickerProps {
   currentLocation?: { latitude: number; longitude: number };
   style?: any;
   suggestionsPosition?: 'bottom' | 'top';
+  /** Small caption above the input (design: From / To). */
+  label?: string;
+  /** Amber outline on the field. */
+  active?: boolean;
+  /** Leading marker rendered before the field (dot or diamond). */
+  marker?: React.ReactNode;
 }
 
 export default function LocationPicker({
@@ -43,8 +50,12 @@ export default function LocationPicker({
   currentLocation,
   style,
   suggestionsPosition = 'bottom',
+  label,
+  active,
+  marker,
 }: LocationPickerProps) {
   const { t } = useTranslation();
+  const d = useDW();
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -206,17 +217,21 @@ export default function LocationPicker({
 
   return (
     <View style={[styles.container, style]}>
-      <View style={styles.inputWrapper}>
+      <View style={[styles.inputWrapper, styles.dwWrapper, { backgroundColor: d.surface2 }, active && { borderColor: AMBER, borderWidth: 2 }]}>
+        {marker}
+        <View style={{ flex: 1 }}>
+        {label ? <Text style={[styles.dwLabel, { color: d.ink2 }]}>{label}</Text> : null}
         <TextInput
-          style={styles.input}
+          style={[styles.input, styles.dwInput, { color: d.ink }]}
           placeholder={placeholder}
           value={query}
           onChangeText={handleTextChange}
           onSubmitEditing={handleSubmit}
           onFocus={() => setShowSuggestions(!!currentLocation)}
-          placeholderTextColor="#999999"
+          placeholderTextColor={d.ink2}
           returnKeyType="search"
         />
+        </View>
         
         {loading && (
           <Skeleton width={16} height={16} borderRadius={8} style={styles.loadingIndicator} />
@@ -224,12 +239,12 @@ export default function LocationPicker({
         
         {query.length > 0 && !loading && (
           <TouchableOpacity onPress={clearInput} style={styles.clearButton}>
-            <MaterialIcons name="clear" size={20} color="#999999" />
+            <MaterialIcons name="clear" size={20} color={d.ink2} />
           </TouchableOpacity>
         )}
         
         <TouchableOpacity onPress={handleSubmit} style={styles.searchButton}>
-          <MaterialIcons name="search" size={20} color="#000000" />
+          <MaterialIcons name="search" size={20} color={d.ink} />
         </TouchableOpacity>
       </View>
 
@@ -237,6 +252,7 @@ export default function LocationPicker({
         <View 
           style={[
             styles.suggestionsContainer,
+            { backgroundColor: d.surface },
             suggestionsPosition === 'top' 
               ? { bottom: '100%', marginBottom: 8, shadowOffset: { width: 0, height: -4 } }
               : { top: '100%', marginTop: 8, shadowOffset: { width: 0, height: 4 } }
@@ -271,7 +287,7 @@ export default function LocationPicker({
               <View style={[styles.suggestionIconContainer, { backgroundColor: '#F5F5F5' }]}>
                 <MaterialIcons name="location-on" size={20} color="#757575" />
               </View>
-              <Text numberOfLines={2} style={styles.suggestionText}>
+              <Text numberOfLines={2} style={[styles.suggestionText, { color: d.ink }]}>
                 {item.description}
               </Text>
             </TouchableOpacity>
@@ -283,6 +299,9 @@ export default function LocationPicker({
 }
 
 const styles = StyleSheet.create({
+  dwWrapper: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 0, height: 52, gap: 14, shadowOpacity: 0, elevation: 0 },
+  dwLabel: { fontFamily: F.bold, fontSize: 11 },
+  dwInput: { fontFamily: F.bold, fontSize: 15, padding: 0 },
   container: {
     position: 'relative',
     zIndex: 10000,
@@ -356,7 +375,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: '#1A1A1A',
-    fontFamily: 'Space Grotesk',
+    fontFamily: F.semi,
     lineHeight: 20,
     fontWeight: '500',
   },

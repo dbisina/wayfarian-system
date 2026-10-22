@@ -2,6 +2,7 @@
 // server/controllers/leaderboardController.js
 
 const prisma = require('../prisma/client');
+const { Prisma } = require('@prisma/client');
 
 /**
  * Get global leaderboard
@@ -28,10 +29,9 @@ const getGlobalLeaderboard = async (req, res) => {
     const sortField = validSortOptions[sortBy] || 'totalDistance';
     
     // Get time frame filter
-    let timeFilter = {};
+    let startDate = null;
     if (timeFrame !== 'allTime') {
       const now = new Date();
-      let startDate;
       
       switch (timeFrame) {
         case 'week':
@@ -47,18 +47,11 @@ const getGlobalLeaderboard = async (req, res) => {
           startDate = null;
       }
       
-      if (startDate) {
-        timeFilter = {
-          updatedAt: {
-            gte: startDate,
-          },
-        };
-      }
     }
     
     // Get users with stats, filtered by time if needed
     let users;
-    if (timeFrame === 'allTime') {
+    if (!startDate) {
       users = await prisma.user.findMany({
         select: {
           id: true,
@@ -105,7 +98,7 @@ const getGlobalLeaderboard = async (req, res) => {
           AND j.status = 'COMPLETED'
         GROUP BY u.id, u."displayName", u."photoURL"
         HAVING COALESCE(SUM(j."totalDistance"), 0) > 0
-        ORDER BY ${sortField} DESC
+        ORDER BY ${Prisma.raw(`"${sortField}"`)} DESC, u.id ASC
         LIMIT ${parseInt(limit)} OFFSET ${parseInt(skip)}
       `;
     }

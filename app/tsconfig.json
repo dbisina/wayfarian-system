@@ -11,6 +11,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@wayfarian/ride-core": [
+        "../packages/ride-core/src"
       ]
     }
   },

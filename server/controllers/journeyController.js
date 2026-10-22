@@ -387,44 +387,55 @@ const endJourney = async (req, res) => {
 
     console.log(`[Journey ${journeyId}] Final distance: ${totalDistance.toFixed(2)}km (source: ${distanceSource}, calculated: ${calculatedDistance.toFixed(2)}km)`);
 
-    const avgSpeed = clientAvgSpeed ?? calculateAverageSpeed(totalDistance, totalTime);
+    // Speeds come from the client, so bound them: nothing above MAX_PLAUSIBLE_SPEED_KMH,
+    // and an average can never exceed the top speed.
+    const MAX_PLAUSIBLE_SPEED_KMH = 250;
+    const sane = (v) => (Number.isFinite(v) && v >= 0 ? Math.min(v, MAX_PLAUSIBLE_SPEED_KMH) : 0);
+    const finalTopSpeed = Math.max(sane(journey.topSpeed), sane(clientTopSpeed));
+    const computedAvg = calculateAverageSpeed(totalDistance, totalTime);
+    const avgSpeed = Number.isFinite(clientAvgSpeed) && clientAvgSpeed > 0
+      ? Math.min(sane(clientAvgSpeed), finalTopSpeed || MAX_PLAUSIBLE_SPEED_KMH)
+      : Math.min(computedAvg, finalTopSpeed || MAX_PLAUSIBLE_SPEED_KMH);
 
-    // Use the best topSpeed: max of server-tracked and client-reported
-    const finalTopSpeed = Math.max(journey.topSpeed ?? 0, clientTopSpeed ?? 0);
+    // End the journey and credit the user's totals atomically. The status guard in
+    // the WHERE clause means a concurrent or retried request cannot credit twice.
+    const endedAt = new Date();
+    const outcome = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.journey.updateMany({
+        where: { id: journeyId, userId, status: 'ACTIVE' },
+        data: {
+          status: 'COMPLETED',
+          endTime: endedAt,
+          endLatitude: latitude,
+          endLongitude: longitude,
+          totalDistance,
+          totalTime,
+          avgSpeed,
+          topSpeed: finalTopSpeed,
+        },
+      });
+      if (claimed.count === 0) return { alreadyCompleted: true };
 
-    // End journey
-    const completedJourney = await prisma.journey.update({
-      where: { id: journeyId },
-      data: {
-        status: 'COMPLETED',
-        endTime: new Date(),
-        endLatitude: latitude,
-        endLongitude: longitude,
-        totalDistance,
-        totalTime,
-        avgSpeed,
-        topSpeed: finalTopSpeed,
-      },
+      const owner = await tx.user.findUnique({ where: { id: userId }, select: { topSpeed: true } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          totalDistance: { increment: totalDistance },
+          totalTime: { increment: totalTime },
+          // Records only ever go up.
+          topSpeed: Math.max(owner?.topSpeed || 0, finalTopSpeed),
+          totalTrips: { increment: 1 },
+        },
+      });
+      return { alreadyCompleted: false };
     });
 
-    // Update user total stats
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        totalDistance: {
-          increment: totalDistance,
-        },
-        totalTime: {
-          increment: totalTime,
-        },
-        topSpeed: {
-          set: Math.max(req.user.topSpeed || 0, finalTopSpeed),
-        },
-        totalTrips: {
-          increment: 1,
-        },
-      },
-    });
+    if (outcome.alreadyCompleted) {
+      const existing = await prisma.journey.findUnique({ where: { id: journeyId } });
+      return res.json({ success: true, message: 'Journey already completed', journey: existing });
+    }
+
+    const completedJourney = await prisma.journey.findUnique({ where: { id: journeyId } });
 
     // Check achievements and update streak (fire-and-forget)
     try {

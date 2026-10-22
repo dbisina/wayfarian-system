@@ -17,6 +17,9 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Rect, Path, G, Circle } from 'react-native-svg';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentApiUrl, journeyAPI, galleryAPI } from '../services/api';
@@ -63,6 +66,7 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const journeyId = Array.isArray(params.journeyId) ? params.journeyId[0] : params.journeyId;
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const d = useDW();
   
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -330,178 +334,151 @@ const JourneyDetailScreen = (): React.JSX.Element => {
   const displayTitle = journey.customTitle || journey.title || t('journeyDetail.untitled');
   const isCompletedOrCancelled = journey.status === 'COMPLETED' || journey.status === 'CANCELLED' || !journey.status;
 
+  const mapC = d.dark
+    ? { bg: '#161513', block: '#1E1C19', road: '#2A2723' }
+    : { bg: '#ECE6D9', block: '#E2DBCB', road: '#FFFDF8' };
+  const hm = (iso?: string) =>
+    iso ? new Date(iso).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  const dayLine = `${new Date(journey.startTime)
+    .toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' })
+    .toUpperCase()} · ${hm(journey.startTime)}${journey.endTime ? ` to ${hm(journey.endTime)}` : ''}`;
+  const dur = liveTime !== null ? liveTime : journey.totalTime;
+  const durText = `${Math.floor(dur / 3600)}h ${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}m`;
+  const statCells = [
+    { label: t('journeyDetail.distance'), value: formatDistance(journey.totalDistance) },
+    { label: t('journeyDetail.duration'), value: durText },
+    { label: t('journeyDetail.avgSpeed'), value: journey.avgSpeed > 0 ? String(convertSpeed(journey.avgSpeed)) : '–' },
+    { label: t('journeyDetail.topSpeed'), value: String(convertSpeed(journey.topSpeed)) },
+  ];
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      
-      {/* Header */}
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: d.surface }]}>
+      <StatusBar barStyle={d.dark ? 'light-content' : 'dark-content'} />
+
+      <Svg width="100%" height={290} viewBox="0 0 390 290" preserveAspectRatio="xMidYMin slice" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <Rect width={390} height={290} fill={mapC.bg} />
+        {[[20, 120, 90, 60], [150, 100, 70, 90], [260, 130, 100, 70], [40, 200, 120, 50]].map(([x, y, w, h], i) => (
+          <Rect key={i} x={x} y={y} width={w} height={h} rx={10} fill={mapC.block} />
+        ))}
+        <G fill="none" stroke={mapC.road} strokeWidth={8} strokeLinecap="round">
+          <Path d="M0 190 L390 200" />
+          <Path d="M130 0 L136 290" />
+          <Path d="M240 0 L246 290" />
+        </G>
+        <Path d="M40 262 C90 230 110 170 170 160 S260 130 290 90 S340 60 356 110" fill="none" stroke={AMBER} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+        <Circle cx={40} cy={262} r={8} fill={d.ink} stroke="#FFFDF8" strokeWidth={3} />
+        <Rect x={348} y={102} width={16} height={16} rx={4} transform="rotate(45 356 110)" fill={AMBER} stroke={INK} strokeWidth={2.5} />
+      </Svg>
+
+      <View style={[styles.dwTop, { top: Math.max(56, insets.top + 8) }]}>
         <TouchableOpacity
-          style={styles.backButton}
           onPress={() => router.back()}
-          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
         >
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Icon name="back" size={20} color={d.ink} stroke={2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {displayTitle}
-        </Text>
         <TouchableOpacity
-          style={styles.menuButton}
           onPress={() => setShowOptionsMenu(true)}
-          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="More options"
+          style={[styles.dwRound, shadow(d, 8), { backgroundColor: d.surface }]}
         >
-          <Ionicons name="ellipsis-vertical" size={24} color="#000" />
+          <Ionicons name="ellipsis-horizontal" size={20} color={d.ink} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Journey Info Card */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoHeader}>
-            <Text style={styles.journeyTitle}>
-              {displayTitle}
-            </Text>
-            <Text style={styles.journeyDate}>{formatDate(journey.startTime)}</Text>
-          </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: 246, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.dwSheet, { backgroundColor: d.surface }]}>
+          <Text style={[styles.dwMono, { color: d.ink2 }]}>{dayLine}</Text>
+          <Text style={[styles.dwTitle, { color: d.ink }]}>{displayTitle}</Text>
 
-          {/* Stats Grid */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCell}>
-              <Text style={styles.statValue}>{formatDistance(journey.totalDistance)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.distance')}</Text>
-            </View>
-            <View style={styles.statCell}>
-              <Text style={styles.statValue}>{formatTime(liveTime !== null ? liveTime : journey.totalTime)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.duration')}</Text>
-            </View>
-            {journey.avgSpeed > 0 && (
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>{convertSpeed(journey.avgSpeed)}</Text>
-                <Text style={styles.statLabel}>{t('journeyDetail.avgSpeed')}</Text>
+          <View style={[styles.dwStats, { borderTopColor: d.line }]}>
+            {statCells.map((s, i) => (
+              <View
+                key={s.label}
+                style={[
+                  styles.dwStat,
+                  { borderBottomColor: d.line },
+                  i % 2 === 1 && { borderLeftWidth: 1, borderLeftColor: d.line, paddingLeft: 16 },
+                ]}
+              >
+                <Text style={[styles.dwStatLabel, { color: d.ink2 }]}>{s.label}</Text>
+                <Text style={[styles.dwStatValue, { color: d.ink }]}>{s.value}</Text>
               </View>
-            )}
-            <View style={styles.statCell}>
-              <Text style={styles.statValue}>{convertSpeed(journey.topSpeed)}</Text>
-              <Text style={styles.statLabel}>{t('journeyDetail.topSpeed')}</Text>
-            </View>
+            ))}
           </View>
 
           {(journey.vehicleName || journey.vehicle) && (
-            <Text style={styles.vehicleName}>
-              {journey.vehicleName ?? journey.vehicle}
-            </Text>
-          )}
-        </View>
-
-        {/* Add Photos Button for Completed Journeys */}
-        {isCompletedOrCancelled && (
-          <View style={styles.addPhotosSection}>
-            <TouchableOpacity
-              style={styles.addPhotosButton}
-              onPress={handleAddPhotos}
-              disabled={uploadingPhoto}
-            >
-              {uploadingPhoto ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="images" size={20} color="#fff" />
-                  <Text style={styles.addPhotosButtonText}>{t('journeyDetail.addPhotos')}</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.takePhotoButton}
-              onPress={handleTakePhoto}
-              disabled={uploadingPhoto}
-            >
-              <Ionicons name="camera" size={20} color="#F9A825" />
-              <Text style={styles.takePhotoButtonText}>{t('journeyDetail.takePhoto')}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Photo Timeline */}
-        {journeyPhotos.length > 0 && (
-          <View style={styles.timelineSection}>
-            <View style={styles.timelineSectionHeader}>
-              <Text style={styles.sectionTitle}>{t('journeyDetail.journeyTimeline')}</Text>
-              <Text style={styles.photoCount}>{journeyPhotos.length} {t('journeyDetail.moments')}</Text>
+            <View style={[styles.dwBike, { backgroundColor: d.panel }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dwBikeEyebrow, { color: d.panelMuted }]}>Ridden on</Text>
+                <Text style={[styles.dwBikeName, { color: d.panelText }]} numberOfLines={1}>
+                  {journey.vehicleName ?? journey.vehicle}
+                </Text>
+              </View>
+              <Icon name="route" size={26} color={AMBER} stroke={2} />
             </View>
-            <View style={styles.timeline}>
-              {journeyPhotos.map((photo, index) => {
-                const photoDate = new Date(photo.takenAt);
-                const timeDisplay = photoDate.toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-                const hasLocation = photo.latitude && photo.longitude;
-                const isLast = index >= journeyPhotos.length - 1;
+          )}
 
-                const photoUri =
-                  getFirebaseDownloadUrl(photo.imageUrl || photo.firebasePath) ||
-                  photo.imageUrl ||
-                  photo.firebasePath;
-
+          <View style={styles.dwMomentsHead}>
+            <Text style={[styles.dwH2, { color: d.ink }]}>Moments</Text>
+            <Text style={[styles.dwCount, { color: d.ink2 }]}>
+              {journeyPhotos.length} {journeyPhotos.length === 1 ? 'photo' : 'photos'}
+            </Text>
+          </View>
+          {journeyPhotos.length > 0 ? (
+            <View style={styles.dwMoments}>
+              {journeyPhotos.slice(0, 6).map((photo, index) => {
+                const uri =
+                  getFirebaseDownloadUrl(photo.imageUrl || photo.firebasePath) || photo.imageUrl || photo.firebasePath;
                 return (
-                  <View key={photo.id} style={styles.timelineItem}>
-                    <View style={styles.timelineMarker}>
-                      <View style={[styles.timelineDot, index === 0 && styles.firstDot]} />
-                      {!isLast && <View style={styles.timelineLine} />}
+                  <TouchableOpacity
+                    key={photo.id}
+                    onPress={() => openPhotoViewer(index)}
+                    activeOpacity={0.85}
+                    style={[styles.dwMoment, { width: index === 0 ? '100%' : '48.5%', height: index === 0 ? 150 : 96, backgroundColor: d.surface2 }]}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`Photo at ${hm(photo.takenAt)}`}
+                  >
+                    {uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} /> : null}
+                    <View style={styles.dwMomentTime}>
+                      <Text style={styles.dwMomentTimeText}>{hm(photo.takenAt)}</Text>
                     </View>
-
-                    <View style={styles.timelineContent}>
-                      <Text style={styles.timelineTime}>{timeDisplay}</Text>
-                      <TouchableOpacity
-                        style={styles.timelinePhoto}
-                        activeOpacity={0.8}
-                        onPress={() => openPhotoViewer(index)}
-                      >
-                        {photoUri && (
-                          <Image 
-                            source={{ uri: photoUri }} 
-                            style={styles.timelinePhotoImage}
-                            contentFit="cover"
-                            transition={200}
-                            onError={() => console.warn('Failed to load timeline photo')}
-                          />
-                        )}
-                        {index === 0 && (
-                          <View style={styles.coverBadge}>
-                             <Text style={styles.coverBadgeText}>{t('journeyDetail.cover')}</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                      {hasLocation && (
-                        <View style={styles.timelineLocation}>
-                          <Ionicons name="location" size={12} color="#757575" />
-                          <Text style={styles.locationText}>
-                            {photo.latitude?.toFixed(4)}, {photo.longitude?.toFixed(4)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
-          </View>
-        )}
+          ) : (
+            <Text style={[styles.dwCount, { color: d.ink2 }]}>{t('journeyDetail.noPhotos')}</Text>
+          )}
 
-        {/* Empty state for no photos */}
-        {journeyPhotos.length === 0 && (
-          <View style={styles.emptyPhotos}>
-            <Ionicons name="camera-outline" size={48} color="#BDBDBD" />
-            <Text style={styles.emptyPhotosText}>{t('journeyDetail.noPhotos')}</Text>
-            {isCompletedOrCancelled && (
-              <Text style={styles.emptyPhotosSubtext}>{t('journeyDetail.addMemories')}</Text>
-            )}
-          </View>
-        )}
-
-        {/* Bottom spacing */}
-        <View style={{ height: 40 }} />
+          {isCompletedOrCancelled && (
+            <View style={styles.dwPhotoActions}>
+              <TouchableOpacity
+                style={[styles.dwBtn, { backgroundColor: AMBER }]}
+                onPress={handleAddPhotos}
+                disabled={uploadingPhoto}
+                accessibilityRole="button"
+              >
+                {uploadingPhoto ? <ActivityIndicator color={INK} /> : <Text style={[styles.dwBtnText, { color: INK }]}>{t('journeyDetail.addPhotos')}</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dwBtn, { borderWidth: 1.5, borderColor: d.line2 }]}
+                onPress={handleTakePhoto}
+                disabled={uploadingPhoto}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.dwBtnText, { color: d.ink }]}>{t('journeyDetail.takePhoto')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Options Menu Modal */}
@@ -695,6 +672,28 @@ const JourneyDetailScreen = (): React.JSX.Element => {
 };
 
 const styles = StyleSheet.create({
+  dwTop: { position: 'absolute', left: 16, right: 16, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between' },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 18, gap: 12, minHeight: 600 },
+  dwMono: { fontFamily: F.monoSemi, fontSize: 12 },
+  dwTitle: { fontFamily: F.black, fontSize: 28, lineHeight: 32, letterSpacing: -0.6 },
+  dwStats: { flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1 },
+  dwStat: { width: '50%', paddingVertical: 12, borderBottomWidth: 1, gap: 2 },
+  dwStatLabel: { fontFamily: F.bold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase' },
+  dwStatValue: { fontFamily: F.monoBold, fontSize: 22 },
+  dwBike: { height: 72, borderRadius: 20, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  dwBikeEyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase' },
+  dwBikeName: { fontFamily: F.black, fontSize: 16 },
+  dwMomentsHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 },
+  dwH2: { fontFamily: F.black, fontSize: 18 },
+  dwCount: { fontFamily: F.bold, fontSize: 13 },
+  dwMoments: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  dwMoment: { borderRadius: 16, overflow: 'hidden' },
+  dwMomentTime: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(26,24,20,0.55)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  dwMomentTimeText: { fontFamily: F.monoBold, fontSize: 11, color: '#FFFDF8' },
+  dwPhotoActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  dwBtn: { flex: 1, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  dwBtnText: { fontFamily: F.extra, fontSize: 14 },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',

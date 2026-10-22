@@ -33,6 +33,8 @@ const ACHIEVEMENT_XP = {
 
   // Special Achievements
   night_rider: 100,
+  road_captain: 120, // led a group ride to the end
+  convoy: 150, // rode in a group of five or more
   drift_master: 200,
   rhythm_cruise: 120,
   street_sprinter: 150,

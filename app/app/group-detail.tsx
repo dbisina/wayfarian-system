@@ -16,7 +16,9 @@ import {
   TextInput,
 } from 'react-native';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, useDW } from '../constants/design';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -62,6 +64,8 @@ interface GroupData {
 }
 
 export default function GroupDetailScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -814,219 +818,214 @@ export default function GroupDetailScreen() {
   const isCreator = userMembership?.role === 'CREATOR' || group.creator.id === user?.id;
   const isAdmin = userMembership?.role === 'ADMIN' || isCreator;
 
+  const initialsOf = (n: string) =>
+    n.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
+  const glass = {
+    backgroundColor: 'rgba(26,24,20,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  } as const;
+  const primaryAction = activeGroupJourneyId
+    ? !activeSoloJourney
+      ? { label: 'Join the ride', busy: isStartingRiding, onPress: handleStartRiding }
+      : null
+    : isAdmin
+      ? { label: 'Start group ride', busy: isStartingJourney, onPress: handleStartGroupJourney }
+      : null;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={[]} style={[styles.container, { backgroundColor: d.bg }]}>
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentInsetAdjustmentBehavior="automatic"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={AMBER} />}
+        contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Header with Cover Photo Background */}
-        <View style={styles.headerContainer}>
-          {/* Background: Cover Photo or Gradient */}
+        <View style={{ height: 316 }}>
           {group.coverPhotoURL ? (
-            <Image
-              source={{ uri: group.coverPhotoURL }}
-              style={styles.coverPhoto}
-              resizeMode="cover"
-            />
+            <Image source={{ uri: group.coverPhotoURL }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           ) : (
-            <LinearGradient
-              colors={['#4A5568', '#2D3748']}
-              style={styles.coverPhoto}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#2B2924' }]} />
           )}
-          
-          {/* Overlay with Gradient for Text Readability */}
           <LinearGradient
-            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.6)']}
-            style={styles.headerOverlay}
-          >
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            
-            <View style={styles.headerContent}>
-              <Text style={styles.groupTitle}>{group.name}</Text>
-              <View style={styles.groupMeta}>
-                <MaterialIcons name="people" size={16} color="rgba(255,255,255,0.9)" />
-                <Text style={styles.memberCount}>{group._count.members} / {group.maxMembers} members</Text>
-              </View>
-            </View>
+            colors={['rgba(17,16,14,0.45)', 'rgba(17,16,14,0)', 'rgba(17,16,14,0.8)']}
+            locations={[0, 0.35, 1]}
+            style={StyleSheet.absoluteFill}
+          />
 
-            <View style={styles.headerActions}>
-              {isAdmin && (
-                <>
-                  <TouchableOpacity style={styles.editCoverButton} onPress={handleUploadCoverPhoto}>
-                    <MaterialIcons name="edit" size={20} color="#FFFFFF" />
-                    <Text style={styles.editCoverText}>Edit Cover</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.shareButton} onPress={handleShareCode}>
-                    <MaterialIcons name="share" size={24} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </>
-              )}
+          <View style={[styles.dwTop, { top: Math.max(56, insets.top + 8) }]}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={[styles.dwRound, glass]}
+            >
+              <Icon name="back" size={20} color="#FFFDF8" stroke={2} />
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
               {isCreator && (
-                <TouchableOpacity style={styles.optionsButton} onPress={() => setShowOptionsMenu(true)}>
-                  <MaterialIcons name="more-vert" size={24} color="#FFFFFF" />
+                <TouchableOpacity
+                  onPress={() => setShowOptionsMenu(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Group options"
+                  style={[styles.dwRound, glass]}
+                >
+                  <MaterialIcons name="more-horiz" size={22} color="#FFFDF8" />
                 </TouchableOpacity>
               )}
-            </View>
-          </LinearGradient>
-        </View>
-
-        <View style={styles.content}>
-          
-
-          {/* Description */}
-          {group.description && (
-            <View style={styles.descriptionCard}>
-              <Text style={styles.sectionTitle}>About</Text>
-              <Text style={styles.description}>{group.description}</Text>
-            </View>
-          )}
-
-          {/* Members Section */}
-          <View style={styles.membersSection}>
-            <Text style={styles.sectionTitle}>Members ({group._count.members})</Text>
-            <View style={styles.membersList}>
-              {group.members.slice(0, 10).map((member) => (
-                <View key={member.id} style={styles.memberItem}>
-                  <Image
-                    source={{ uri: member.user.photoURL || 'https://via.placeholder.com/40' }}
-                    style={styles.memberAvatar}
-                  />
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>
-                      {member.user.displayName || 'Wayfarian User'}
-                      {member.userId === user?.id && ' (You)'}
-                    </Text>
-                    {member.role === 'CREATOR' && (
-                      <Text style={styles.memberRole}>Creator</Text>
-                    )}
-                    {member.role === 'ADMIN' && (
-                      <Text style={styles.memberRole}>Admin</Text>
-                    )}
-                  </View>
-                </View>
-              ))}
-              {group._count.members > 10 && (
-                <Text style={styles.moreMembers}>+{group._count.members - 10} more</Text>
-              )}
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/group-events', params: { groupId: String(groupId), groupJourneyId: activeGroupJourneyId || undefined } } as never)}
+                accessibilityRole="button"
+                style={[styles.dwPill, glass]}
+              >
+                <Text style={styles.dwPillText}>Activity</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Recent Activity */}
-          {groupId && (
-            <RecentEventsPanel groupId={String(groupId)} groupJourneyId={activeGroupJourneyId || undefined} />
-          )}
-
-          {/* Group Code Card - polished */}
-          {isAdmin && (
-            <View style={styles.codeCardEnhanced}>
-              <View style={styles.codeHeaderRow}>
-                <Text style={styles.sectionTitle}>Invite Members</Text>
-                <TouchableOpacity onPress={handleShareCode} style={styles.copyCodeButton}>
-                  <MaterialIcons name="share" size={18} color="#111827" />
-                  <Text style={styles.copyCodeText}>Share</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.codeValueRow}>
-                <Text style={styles.codeBig}>{group.code}</Text>
-                <TouchableOpacity onPress={() => Share.share({ message: group.code })} style={styles.copyOnlyButton}>
-                  <MaterialIcons name="content-copy" size={18} color="#4B5563" />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.codeHint}>Use this code to join the group</Text>
+          <View style={styles.dwHeader}>
+            <View style={styles.dwMark}>
+              <Text style={styles.dwMarkText}>{initialsOf(group.name)}</Text>
             </View>
-          )}
-
-          
-
-          {/* Active Journey Card - Shows active journey info */}
-          {activeGroupJourneyId && isAdmin && (
-            <View style={styles.activeJourneyCard}>
-              <View style={styles.activeJourneyHeader}>
-                <MaterialIcons name="directions-bike" size={24} color="#10B981" />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.activeJourneyTitle}>Active Group Journey</Text>
-                </View>
-              </View>
-              <Text style={styles.activeJourneyHint}>
-                Journey is active. Members can start riding.
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.dwName} numberOfLines={2}>{group.name}</Text>
+              <Text style={styles.dwSub}>
+                {group._count.members} {group._count.members === 1 ? 'rider' : 'riders'}
+                {group._count.journeys ? ` · ${group._count.journeys} rides together` : ''}
               </Text>
+            </View>
+            {isAdmin && (
               <TouchableOpacity
-                style={styles.endJourneyButton}
-                onPress={handleAdminEndJourney}
+                onPress={handleUploadCoverPhoto}
+                accessibilityRole="button"
+                accessibilityLabel="Edit cover"
+                style={[styles.dwRound, glass, { width: 40, height: 40, borderRadius: 20 }]}
               >
-                <MaterialIcons name="stop-circle" size={18} color="#FFFFFF" />
-                <Text style={styles.endJourneyText}>End Journey</Text>
+                <MaterialIcons name="edit" size={18} color="#FFFDF8" />
               </TouchableOpacity>
-            </View>
-          )}
+            )}
+          </View>
+        </View>
 
-          {/* Start Journey Button - Only for creators/admins when no active journey */}
-          {isAdmin && !activeGroupJourneyId && (
-            <TouchableOpacity 
-              style={[styles.startJourneyButton, isStartingJourney && styles.buttonDisabled]} 
-              onPress={handleStartGroupJourney}
-              disabled={isStartingJourney}
+        <View style={{ paddingHorizontal: 16, gap: 16, marginTop: 14 }}>
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() => Share.share({ message: group.code })}
+              accessibilityRole="button"
+              accessibilityLabel={`Share invite code ${group.code}`}
+              style={[styles.dwCode, { borderColor: d.line2 }]}
             >
-              {isStartingJourney ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <MaterialIcons name="navigation" size={24} color="#FFFFFF" />
-                  <Text style={styles.startJourneyText}>Start Group Journey</Text>
-                </>
-              )}
+              <Text style={[styles.dwCodeLabel, { color: d.ink2 }]}>Invite code</Text>
+              <Text style={[styles.dwCodeValue, { color: d.ink }]}>{group.code}</Text>
+              <Text style={[styles.dwCodeAction, { color: d.ink }]}>Share</Text>
             </TouchableOpacity>
           )}
 
-          {/* Active Solo Journey Warning */}
-          {activeSoloJourney && (
-            <View style={styles.warningCard}>
-              <MaterialIcons name="warning" size={20} color="#f59e0b" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.warningText}>
-                  You have an active solo journey. Complete it before starting a group journey.
-                </Text>
+          {activeGroupJourneyId ? (
+            <View style={[styles.dwPanel, { backgroundColor: d.panel }]}>
+              <View style={styles.dwPanelHead}>
+                <View>
+                  <View style={styles.dwLiveRow}>
+                    <View style={styles.dwLiveDot} />
+                    <Text style={styles.dwLiveText}>Ride in progress</Text>
+                  </View>
+                  <Text style={[styles.dwPanelTitle, { color: d.panelText }]}>Group ride</Text>
+                </View>
+                <Text style={[styles.dwPanelMeta, { color: d.panelMuted }]}>{group._count.members} riders</Text>
               </View>
-              <TouchableOpacity onPress={() => router.push('/journey')} style={styles.viewJourneyLink}>
-                <Text style={styles.viewJourneyText}>View</Text>
+              <View style={styles.dwPanelBtns}>
+                {isAdmin && (
+                  <TouchableOpacity
+                    onPress={handleAdminEndJourney}
+                    accessibilityRole="button"
+                    style={[styles.dwBtn, { flex: 1, backgroundColor: 'rgba(244,241,233,0.1)' }]}
+                  >
+                    <Text style={[styles.dwBtnText, { color: d.panelText }]}>End ride</Text>
+                  </TouchableOpacity>
+                )}
+                {primaryAction && (
+                  <TouchableOpacity
+                    onPress={primaryAction.onPress}
+                    disabled={primaryAction.busy}
+                    accessibilityRole="button"
+                    style={[styles.dwBtn, { flex: 1.4, backgroundColor: AMBER, opacity: primaryAction.busy ? 0.6 : 1 }]}
+                  >
+                    {primaryAction.busy ? (
+                      <ActivityIndicator color={INK} />
+                    ) : (
+                      <Text style={[styles.dwBtnText, { color: INK, fontFamily: F.black }]}>{primaryAction.label}</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ) : primaryAction ? (
+            <TouchableOpacity
+              onPress={primaryAction.onPress}
+              disabled={primaryAction.busy}
+              accessibilityRole="button"
+              style={[styles.dwStart, { opacity: primaryAction.busy ? 0.6 : 1 }]}
+            >
+              {primaryAction.busy ? (
+                <ActivityIndicator color={INK} />
+              ) : (
+                <>
+                  <Icon name="nav" size={18} color={INK} fill />
+                  <Text style={styles.dwStartText}>{primaryAction.label}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <Text style={[styles.dwNote, { color: d.ink2 }]}>
+              The group ride hasn&apos;t started yet. You&apos;ll be able to join as soon as an admin starts it.
+            </Text>
+          )}
+
+          {activeSoloJourney && (
+            <View style={[styles.dwWarn, { backgroundColor: d.amberTint }]}>
+              <Text style={[styles.dwWarnText, { color: d.ink }]}>
+                You have an active solo ride. Finish it before joining a group ride.
+              </Text>
+              <TouchableOpacity onPress={() => router.push('/journey')} accessibilityRole="button">
+                <Text style={[styles.dwCodeAction, { color: d.ink }]}>View</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Start Riding Button - For ALL members (including creator) when active journey exists */}
-          {activeGroupJourneyId && !activeSoloJourney && (
-            <TouchableOpacity 
-              style={[styles.startJourneyButton, isStartingRiding && styles.buttonDisabled]} 
-              onPress={handleStartRiding}
-              disabled={isStartingRiding}
-            >
-              {isStartingRiding ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <MaterialIcons name="directions-bike" size={24} color="#FFFFFF" />
-                  <Text style={styles.startJourneyText}>Start Riding</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          {group.description ? (
+            <Text style={[styles.dwNote, { color: d.ink2 }]}>{group.description}</Text>
+          ) : null}
 
-          {/* Info for when no active journey */}
-          {!activeGroupJourneyId && !isAdmin && (
-            <View style={styles.infoCard}>
-              <MaterialIcons name="info-outline" size={20} color="#6366f1" />
-              <Text style={styles.infoText}>
-                The group journey hasn&apos;t started yet. You&apos;ll be able to start riding as soon as the admin creates it.
-              </Text>
+          <View>
+            <View style={styles.dwSectionHead}>
+              <Text style={[styles.dwH2, { color: d.ink }]}>Members</Text>
+              <Text style={[styles.dwCount, { color: d.ink2 }]}>{group._count.members}</Text>
             </View>
-          )}
+            {group.members.slice(0, 10).map((member) => {
+              const you = member.userId === user?.id;
+              const name = member.user.displayName || 'Wayfarian User';
+              const role = you ? 'You' : member.role === 'CREATOR' ? 'Creator' : member.role === 'ADMIN' ? 'Admin' : 'Rider';
+              return (
+                <View key={member.id} style={[styles.dwMember, { borderTopColor: d.line }]}>
+                  <View style={[styles.dwAvatar, { backgroundColor: you ? INK : d.surface2 }]}>
+                    {member.user.photoURL ? (
+                      <Image source={{ uri: member.user.photoURL }} style={styles.dwAvatar} />
+                    ) : (
+                      <Text style={{ fontFamily: F.black, fontSize: 11, color: you ? AMBER : d.ink }}>{initialsOf(name)}</Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dwMemberName, { color: d.ink }]} numberOfLines={1}>{name}</Text>
+                    <Text style={[styles.dwMemberRole, { color: d.ink2 }]}>{role}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            {group._count.members > 10 && (
+              <Text style={[styles.dwCount, { color: d.ink2, paddingVertical: 10 }]}>+{group._count.members - 10} more</Text>
+            )}
+          </View>
         </View>
       </ScrollView>
 
@@ -1195,6 +1194,41 @@ export default function GroupDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  dwTop: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  dwRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwPill: { height: 44, paddingHorizontal: 16, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  dwPillText: { fontFamily: F.extra, fontSize: 13, color: '#FFFDF8' },
+  dwHeader: { position: 'absolute', left: 20, right: 20, bottom: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 14 },
+  dwMark: { width: 64, height: 64, borderRadius: 21, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  dwMarkText: { fontFamily: F.black, fontSize: 22, color: INK },
+  dwName: { fontFamily: F.black, fontSize: 26, lineHeight: 28, letterSpacing: -0.5, color: '#FFFDF8' },
+  dwSub: { fontFamily: F.regular, fontSize: 13, color: 'rgba(255,253,248,0.82)' },
+  dwCode: { height: 52, borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  dwCodeLabel: { fontFamily: F.bold, fontSize: 13 },
+  dwCodeValue: { flex: 1, fontFamily: F.monoBold, fontSize: 17, letterSpacing: 2 },
+  dwCodeAction: { fontFamily: F.black, fontSize: 13 },
+  dwPanel: { borderRadius: 24, padding: 16, gap: 14 },
+  dwPanelHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  dwLiveRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dwLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4CD38F' },
+  dwLiveText: { fontFamily: F.extra, fontSize: 12, color: '#4CD38F' },
+  dwPanelTitle: { fontFamily: F.black, fontSize: 19 },
+  dwPanelMeta: { fontFamily: F.monoBold, fontSize: 13 },
+  dwPanelBtns: { flexDirection: 'row', gap: 8 },
+  dwBtn: { height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  dwBtnText: { fontFamily: F.extra, fontSize: 14 },
+  dwStart: { height: 56, borderRadius: 28, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  dwStartText: { fontFamily: F.black, fontSize: 16, color: INK },
+  dwNote: { fontFamily: F.regular, fontSize: 14, lineHeight: 20 },
+  dwWarn: { borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dwWarnText: { flex: 1, fontFamily: F.medium, fontSize: 13 },
+  dwSectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  dwH2: { fontFamily: F.black, fontSize: 18 },
+  dwCount: { fontFamily: F.extra, fontSize: 13 },
+  dwMember: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 54, borderTopWidth: 1 },
+  dwAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dwMemberName: { fontFamily: F.extra, fontSize: 15 },
+  dwMemberRole: { fontFamily: F.regular, fontSize: 12 },
   container: {
     flex: 1,
     backgroundColor: '#F6F6F6',

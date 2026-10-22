@@ -16,6 +16,8 @@ const sentryService = require('./services/SentryService');
 // Import routes
 const authRoutes = require('./routes/auth');
 const journeyRoutes = require('./routes/journey');
+const v2Routes = require('./routes/v2');
+const { v1Sunset } = require('./middleware/v1Sunset');
 const galleryRoutes = require('./routes/gallery');
 const leaderboardRoutes = require('./routes/leaderboard');
 const groupRoutes = require('./routes/group');
@@ -282,12 +284,18 @@ app.get('/api', (req, res) => {
 // Public routes (no authentication required)
 app.use('/api/auth', authRoutes);
 
+// v2 (independent of v1): config is public, everything else needs auth
+app.use('/api/v2', v2Routes.publicRouter);
+app.use('/api/v2', authMiddleware, v2Routes.router);
+
 // Protected routes with caching where appropriate
-app.use('/api/journey', authMiddleware, journeyRoutes);
-app.use('/api/group-journey', authMiddleware, groupJourneyRoutes);
+// v1 ride data can be retired with V1_SUNSET=writes|all (off by default); see middleware/v1Sunset.js
+const sunset = v1Sunset();
+app.use('/api/journey', sunset, authMiddleware, journeyRoutes);
+app.use('/api/group-journey', sunset, authMiddleware, groupJourneyRoutes);
 app.use('/api/gallery', authMiddleware, galleryRoutes);
 app.use('/api/leaderboard', authMiddleware, cacheLeaderboard(600), leaderboardRoutes);
-app.use('/api/group', authMiddleware, groupRoutes);
+app.use('/api/group', sunset, authMiddleware, groupRoutes);
 app.use('/api/user', authMiddleware, userRoutes);
 app.use('/api/vehicles', authMiddleware, vehicleRoutes);
 

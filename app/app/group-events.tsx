@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, RefreshControl, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getEvents, RecentEvent, relativeTime } from '../utils/recentEvents';
 import { groupJourneyAPI } from '../services/api';
-import { MaterialIcons } from '@expo/vector-icons';
 
 export default function GroupEventsScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const { groupId, groupJourneyId } = useLocalSearchParams<{ groupId?: string; groupJourneyId?: string }>();
   const [events, setEvents] = useState<RecentEvent[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,41 +69,64 @@ export default function GroupEventsScreen() {
     setRefreshing(false);
   }, [load]);
 
+  const initialsOf = (n?: string | null) =>
+    (n || '?').split(/s+/).filter(Boolean).slice(0, 2).map((x) => x[0]!.toUpperCase()).join('');
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={22} color="#111827" />
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
+      <View style={[styles.header, { paddingTop: Math.max(56, insets.top + 8) }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.round, shadow(d, 8), { backgroundColor: d.surface }]}
+        >
+          <Icon name="back" size={20} color={d.ink} stroke={2} />
         </TouchableOpacity>
-        <Text style={styles.title}>All Activity</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.title, { color: d.ink }]}>Activity</Text>
+          <Text style={[styles.sub, { color: d.ink2 }]}>{events.length} {events.length === 1 ? 'update' : 'updates'}</Text>
+        </View>
       </View>
       <FlatList
         contentContainerStyle={styles.listContent}
         data={events}
         keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            {item.userPhotoURL ? (
-              <Image source={{ uri: item.userPhotoURL }} style={styles.avatar} />
-            ) : (
-              <MaterialIcons name={iconFor(item)} size={22} color={colorFor(item)} style={{ marginRight: 8 }} />
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowText}>{item.message || fallbackMessage(item)}</Text>
-              <Text style={styles.timeText}>{relativeTime(item.ts)}</Text>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={AMBER} />}
+        renderItem={({ item }) => {
+          const mine = item.type === 'journey_started' && !!groupJourneyId;
+          return (
+            <View style={[styles.row, { borderBottomColor: d.line }]}>
+              <View style={[styles.avatar, { backgroundColor: d.surface2 }]}>
+                {item.userPhotoURL ? (
+                  <Image source={{ uri: item.userPhotoURL }} style={styles.avatar} />
+                ) : (
+                  <Text style={{ fontFamily: F.black, fontSize: 11, color: d.ink }}>{initialsOf(item.userName)}</Text>
+                )}
+              </View>
+              <View style={{ flex: 1, gap: 8 }}>
+                <Text style={[styles.rowText, { color: d.ink }]}>{item.message || fallbackMessage(item)}</Text>
+                {mine && (
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/group-journey', params: { groupJourneyId: String(groupJourneyId), groupId: String(groupId) } } as never)}
+                    accessibilityRole="button"
+                    style={styles.join}
+                  >
+                    <Text style={styles.joinText}>Join</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={[styles.time, { color: d.ink2 }]}>{relativeTime(item.ts)}</Text>
             </View>
-          </View>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
+          );
+        }}
         ListEmptyComponent={() => (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>No recent events yet.</Text>
+            <Text style={[styles.emptyText, { color: d.ink2 }]}>No recent events yet.</Text>
           </View>
         )}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -128,72 +154,19 @@ function fallbackMessage(e: RecentEvent) {
   }
 }
 
-function iconFor(e: RecentEvent) {
-  switch (e.type) {
-    case 'member_joined':
-      return 'person-add';
-    case 'member_left':
-      return 'person-remove';
-    case 'journey_started':
-      return 'navigation';
-    case 'journey_completed':
-      return 'flag';
-    case 'instance_started':
-      return 'directions-bike';
-    case 'instance_paused':
-      return 'pause-circle-filled';
-    case 'instance_resumed':
-      return 'play-circle-filled';
-    case 'photo_uploaded':
-      return 'photo';
-    case 'message':
-    default:
-      return 'notifications';
-  }
-}
-
-function colorFor(e: RecentEvent) {
-  switch (e.type) {
-    case 'journey_started':
-      return '#10B981';
-    case 'journey_completed':
-      return '#6366F1';
-    case 'member_joined':
-      return '#F59E0B';
-    case 'member_left':
-      return '#EF4444';
-    default:
-      return '#6B7280';
-  }
-}
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-  },
-  title: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  listContent: { padding: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#E5E7EB' },
-  rowText: { fontSize: 14, color: '#111827' },
-  timeText: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  sep: { height: 1, backgroundColor: '#E5E7EB' },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
+  sub: { fontFamily: F.regular, fontSize: 12 },
+  listContent: { padding: 16, paddingBottom: 60 },
+  row: { flexDirection: 'row', gap: 12, paddingVertical: 14, borderBottomWidth: 1 },
+  avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  rowText: { fontFamily: F.medium, fontSize: 14, lineHeight: 19 },
+  time: { fontFamily: F.mono, fontSize: 11 },
+  join: { alignSelf: 'flex-start', height: 34, paddingHorizontal: 14, borderRadius: 11, backgroundColor: AMBER, justifyContent: 'center' },
+  joinText: { fontFamily: F.black, fontSize: 13, color: INK },
   emptyBox: { padding: 24, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: '#6B7280' },
+  emptyText: { fontFamily: F.medium, fontSize: 14 },
 });

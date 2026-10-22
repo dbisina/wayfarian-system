@@ -37,15 +37,22 @@ model User {
   expoPushToken String? // Expo push token for notifications
 
   // Relationships
-  journeys         Journey[]
-  journeyInstances JourneyInstance[]
-  photos           Photo[]
-  groupMemberships GroupMember[]
-  createdGroups    Group[]           @relation("GroupCreator")
-  rideEvents       RideEvent[]
-  achievements     UserAchievement[]
-  streak           UserStreak?
-  vehicles         Vehicle[]
+  journeys           Journey[]
+  journeyInstances   JourneyInstance[]
+  photos             Photo[]
+  groupMemberships   GroupMember[]
+  createdGroups      Group[]                @relation("GroupCreator")
+  rideEvents         RideEvent[]
+  achievements       UserAchievement[]
+  streak             UserStreak?
+  vehicles           Vehicle[]
+  rides              Ride[]
+  groupRidesLed      GroupRide[]            @relation("GroupRideLeader")
+  groupRideParts     GroupRideParticipant[]
+  vehicleServiceLogs VehicleServiceLog[]
+  stats              UserStats?
+  xpLedger           XpLedger[]
+  rideAchievements   RideAchievement[]
 
   @@map("users")
 }
@@ -53,19 +60,20 @@ model User {
 model Vehicle {
   id        String   @id @default(cuid())
   userId    String
-  name      String   // e.g. "My Kawasaki"
-  make      String   // e.g. "Kawasaki"
-  model     String   // e.g. "Z900"
-  year      Int?     // e.g. 2022
-  color     String?  // e.g. "Metallic Blue"
+  name      String // e.g. "My Kawasaki"
+  make      String // e.g. "Kawasaki"
+  model     String // e.g. "Z900"
+  year      Int? // e.g. 2022
+  color     String? // e.g. "Metallic Blue"
   type      String   @default("motorcycle") // car | bike | motorcycle | scooter | truck | van
   photoURL  String?
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  journeys Journey[] @relation("GarageVehicleJourneys")
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journeys    Journey[]           @relation("GarageVehicleJourneys")
+  serviceLogs VehicleServiceLog[]
 
   @@index([userId])
   @@index([userId, isDefault])
@@ -110,19 +118,19 @@ model Journey {
   vehicleName String? // denormalised snapshot so vehicle deletion doesn't lose history
 
   // Relationships
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group     Group?            @relation(fields: [groupId], references: [id])
-  garageVehicle Vehicle?       @relation("GarageVehicleJourneys", fields: [vehicleId], references: [id], onDelete: SetNull)
-  photos    Photo[]
-  reminders JourneyReminder[]
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group         Group?            @relation(fields: [groupId], references: [id])
+  garageVehicle Vehicle?          @relation("GarageVehicleJourneys", fields: [vehicleId], references: [id], onDelete: SetNull)
+  photos        Photo[]
+  reminders     JourneyReminder[]
 
-  @@map("journeys")
   @@index([userId, status, endTime])
   @@index([userId, status, startTime])
   @@index([userId])
   @@index([status])
   @@index([startTime])
   @@index([endTime])
+  @@map("journeys")
 }
 
 model GroupJourney {
@@ -216,8 +224,8 @@ model JourneyPhoto {
 
   // Capture stats (rider stats at time of photo)
   captureSpeed    Float? // km/h at time of capture
-  captureDistance  Float? // total distance covered at capture time (km)
-  captureHeading   Float? // heading/bearing at capture
+  captureDistance Float? // total distance covered at capture time (km)
+  captureHeading  Float? // heading/bearing at capture
 
   createdAt DateTime @default(now())
 
@@ -253,8 +261,8 @@ model Photo {
 
   // Capture stats (rider stats at time of photo)
   captureSpeed    Float? // km/h at time of capture
-  captureDistance  Float? // total distance covered at capture time (km)
-  captureHeading   Float? // heading/bearing at capture
+  captureDistance Float? // total distance covered at capture time (km)
+  captureHeading  Float? // heading/bearing at capture
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -263,10 +271,10 @@ model Photo {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   journey Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
 
-  @@map("photos")
   @@index([userId, takenAt])
   @@index([userId])
   @@index([takenAt])
+  @@map("photos")
 }
 
 model Group {
@@ -313,7 +321,7 @@ model RideEvent {
 
   // Capture stats (for PHOTO events)
   captureSpeed    Float? // km/h at time of capture
-  captureDistance  Float? // total distance covered at capture time (km)
+  captureDistance Float? // total distance covered at capture time (km)
 
   createdAt DateTime @default(now())
 
@@ -422,4 +430,219 @@ enum RideEventType {
   STATUS
   EMERGENCY
   CUSTOM
+}
+
+// ---------------------------------------------------------------------------
+// v2 ride engine. Independent of the legacy Journey/JourneyInstance tables:
+// v2 never reads or writes them (only the one-off backfill reads them).
+// Ids are generated on the device so every write can be retried safely.
+// ---------------------------------------------------------------------------
+
+enum RideStatus {
+  RECORDING
+  PAUSED
+  ENDED // device stopped recording; stats not yet credited
+  FINALIZED // stats computed and credited to the user exactly once
+  DELETED // removed and reversed
+}
+
+enum RideLifecycleType {
+  START
+  PAUSE
+  RESUME
+  END
+}
+
+model Ride {
+  id          String     @id // client-generated UUID
+  userId      String
+  vehicleId   String?
+  groupRideId String? // the group ride this solo-owned ride belongs to, if any
+  title       String?
+  status      RideStatus @default(RECORDING)
+  startedAt   DateTime
+  endedAt     DateTime?
+  timezone    String? // IANA zone of the rider, used for night/streak rules
+
+  // Authoritative stats, always computed by @wayfarian/ride-core on the server.
+  distanceM    Float @default(0)
+  movingTimeS  Int   @default(0)
+  elapsedTimeS Int   @default(0)
+  topSpeedMps  Float @default(0)
+  avgSpeedMps  Float @default(0)
+  pointCount   Int   @default(0)
+  statsVersion Int   @default(1)
+
+  finalizedAt DateTime?
+  deletedAt   DateTime?
+
+  // Backfill from the legacy tables
+  legacyJourneyId String? @unique
+  isLegacy        Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupRide GroupRide?           @relation(fields: [groupRideId], references: [id], onDelete: SetNull)
+  points    RidePoint[]
+  events    RideLifecycleEvent[]
+
+  @@index([groupRideId])
+  @@index([userId, startedAt])
+  @@index([userId, status])
+  @@index([status, updatedAt])
+  @@map("rides")
+}
+
+model RidePoint {
+  rideId     String
+  seq        Int // device-assigned, strictly increasing per ride; the dedupe key
+  segment    Int // 0 at start, +1 on each resume; nothing is counted across segments
+  lat        Float
+  lng        Float
+  recordedAt DateTime // device clock
+  accuracy   Float?
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@id([rideId, seq])
+  @@index([rideId, segment, recordedAt])
+  @@map("ride_points")
+}
+
+model RideLifecycleEvent {
+  id     String            @id // client-generated UUID
+  rideId String
+  type   RideLifecycleType
+  at     DateTime // device clock
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@index([rideId, at])
+  @@map("ride_lifecycle_events")
+}
+
+// A group ride is only membership, a leader, an optional destination and a lifecycle.
+// Every rider records an ordinary Ride (Ride.groupRideId) and the group summary is computed
+// from those finalized rides on read, so there is no second copy of any stat to drift.
+enum GroupRideStatus {
+  PLANNED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum GroupRideRole {
+  LEADER
+  MEMBER
+}
+
+model GroupRide {
+  id              String          @id // client-generated UUID
+  leaderId        String
+  title           String
+  code            String          @unique // short invite code
+  status          GroupRideStatus @default(PLANNED)
+  maxParticipants Int             @default(20)
+  destinationName String?
+  destinationLat  Float?
+  destinationLng  Float?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  leader       User                   @relation("GroupRideLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  participants GroupRideParticipant[]
+  rides        Ride[]
+
+  @@index([leaderId])
+  @@index([status, updatedAt])
+  @@map("group_rides")
+}
+
+model GroupRideParticipant {
+  id          String        @id @default(cuid())
+  groupRideId String
+  userId      String
+  role        GroupRideRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+  leftAt      DateTime? // null while the rider is in the group
+
+  groupRide GroupRide @relation(fields: [groupRideId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupRideId, userId])
+  @@index([userId, leftAt])
+  @@map("group_ride_participants")
+}
+
+// A service the rider did on a vehicle. The odometer is the distance ridden on it in Wayfarian at
+// that moment, so "km to the next service" is derived from rides and never drifts.
+model VehicleServiceLog {
+  id         String   @id // client-generated UUID
+  userId     String
+  vehicleId  String
+  kind       String   @default("service") // service | oil | tyres | chain | other
+  doneAt     DateTime
+  odometerM  Float
+  intervalKm Int      @default(2500)
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, doneAt])
+  @@index([userId])
+  @@map("vehicle_service_logs")
+}
+
+// Running totals, changed only inside RideService.finalize / reverse.
+model UserStats {
+  userId       String   @id
+  distanceM    Float    @default(0)
+  movingTimeS  Int      @default(0)
+  elapsedTimeS Int      @default(0)
+  topSpeedMps  Float    @default(0)
+  rides        Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_stats")
+}
+
+// Append-only. The unique (userId, source) makes awarding XP idempotent.
+model XpLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  source    String // e.g. "ride:<rideId>"
+  amount    Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source])
+  @@index([userId, createdAt])
+  @@map("xp_ledger")
+}
+
+// Achievements earned through the v2 engine. Unique per (user, achievement) so
+// awarding is idempotent; the XP itself lives in xp_ledger as "achievement:<id>".
+model RideAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  rideId        String? // the ride that tipped it over
+  xpAwarded     Int
+  earnedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, earnedAt])
+  @@map("ride_achievements")
 }

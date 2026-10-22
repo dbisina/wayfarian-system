@@ -12,14 +12,16 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Rect, Path, G, Circle } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from '../components/dw/Icon';
+import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import LocationPicker from '../components/LocationPicker';
 import { useJourney } from '../contexts/JourneyContext';
 import { useSettings, Vehicle } from '../contexts/SettingsContext';
 import VehiclePicker from '../components/VehiclePicker';
-import VehicleCard from '../components/VehicleCard';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchVehicles, selectVehicles, selectDefaultVehicle } from '../store/slices/vehicleSlice';
 import type { GarageVehicle } from '../services/api';
@@ -32,6 +34,8 @@ interface LocationData {
 }
 
 export default function NewJourneyScreen() {
+  const d = useDW();
+  const insets = useSafeAreaInsets();
   const { startJourney, saveJourney } = useJourney();
   const { vehicle: savedVehicle, setVehicle: persistVehicle } = useSettings();
   const dispatch = useAppDispatch();
@@ -110,7 +114,7 @@ export default function NewJourneyScreen() {
   };
 
   const handleSaveAndStart = async () => {
-    const trimmedJourneyName = journeyName.trim();
+    const trimmedJourneyName = journeyName.trim() || endLocation?.address?.split(',')[0]?.trim() || '';
 
     if (!trimmedJourneyName || !startLocation || !endLocation) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
@@ -157,10 +161,10 @@ export default function NewJourneyScreen() {
   };
 
   const handleSaveForLater = async () => {
-    const trimmedJourneyName = journeyName.trim();
+    const trimmedJourneyName = journeyName.trim() || endLocation?.address?.split(',')[0]?.trim() || '';
 
     if (!trimmedJourneyName) {
-      Alert.alert('Missing Information', 'Please enter a journey name to save.');
+      Alert.alert('Missing Information', 'Please choose a destination to save.');
       return;
     }
     
@@ -264,422 +268,215 @@ export default function NewJourneyScreen() {
     });
   };
 
+  const km = startLocation && endLocation ? haversineKm(startLocation, endLocation) : null;
+  const map = d.dark
+    ? { bg: '#161513', block: '#1E1C19', road: '#2A2723', water: '#132029' }
+    : { bg: '#ECE6D9', block: '#E2DBCB', road: '#FFFDF8', water: '#C9DCDD' };
+  const vehicles = garageVehicles.slice(0, 2);
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#000000" />
+    <View style={[styles.container, { backgroundColor: map.bg }]}>
+      <Svg width="100%" height={460} viewBox="0 0 390 460" preserveAspectRatio="xMidYMin slice" style={StyleSheet.absoluteFill}>
+        <Rect width={390} height={460} fill={map.bg} />
+        <Path d="M0 360 C70 340 120 400 200 380 S330 330 390 350 L390 460 L0 460 Z" fill={map.water} />
+        {[[20, 110, 80, 70], [130, 90, 90, 60], [250, 120, 110, 80], [40, 210, 110, 90], [190, 230, 70, 80], [290, 240, 80, 70]].map(([x, y, w, h], i) => (
+          <Rect key={i} x={x} y={y} width={w} height={h} rx={10} fill={map.block} />
+        ))}
+        <G fill="none" stroke={map.road} strokeWidth={8} strokeLinecap="round">
+          <Path d="M0 196 L390 214" />
+          <Path d="M118 0 L130 460" />
+          <Path d="M270 0 L276 460" />
+        </G>
+        <Path d="M90 330 C140 300 150 240 200 210 S290 160 320 100" fill="none" stroke={AMBER} strokeWidth={6} strokeLinecap="round" />
+        <Circle cx={90} cy={330} r={9} fill={d.ink} stroke="#FFFDF8" strokeWidth={3} />
+        <Rect x={309} y={89} width={22} height={22} rx={5} transform="rotate(45 320 100)" fill={AMBER} stroke={INK} strokeWidth={2.5} />
+      </Svg>
+
+      <View style={[styles.top, { top: Math.max(56, insets.top + 8) }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.round, shadow(d, 8), { backgroundColor: d.surface }]}
+        >
+          <Icon name="back" size={20} color={d.ink} stroke={2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Journey</Text>
-        <View style={styles.placeholder} />
+        <View style={[styles.titlePill, shadow(d, 8), { backgroundColor: d.surface }]}>
+          <Text style={[styles.title, { color: d.ink }]}>{groupId ? 'New group ride' : 'New solo ride'}</Text>
+        </View>
       </View>
 
       <KeyboardAvoidingView
-        behavior="padding"
-        keyboardVerticalOffset={keyboardVerticalOffset}
-        style={{ flex: 1 }}
-        enabled
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.sheetWrap}
+        pointerEvents="box-none"
       >
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        contentInsetAdjustmentBehavior="automatic"
-      >
-        {/* Journey Name */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Journey Name"
-            value={journeyName}
-            onChangeText={setJourneyName}
-            placeholderTextColor="#999999"
-          />
-        </View>
-
-        {/* Start Location */}
-        <View style={[styles.locationSection, { zIndex: 10 }]}>
-          <LocationPicker
-            placeholder="Start Location"
-            value={startLocation?.address || ''}
-            onLocationSelect={setStartLocation}
-            onLocationClear={() => setStartLocation(null)}
-            currentLocation={currentLocation || undefined}
-          />
-          {startLocation && (
-            <View style={styles.locationConfirmed}>
-              <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-              <Text style={styles.locationConfirmedText}>Location confirmed</Text>
-            </View>
-          )}
-        </View>
-
-        {/* End Location */}
-        <View style={[styles.locationSection, { zIndex: 5 }]}>
-          <LocationPicker
-            placeholder="End Location"
-            value={endLocation?.address || ''}
-            onLocationSelect={setEndLocation}
-            onLocationClear={() => setEndLocation(null)}
-            currentLocation={currentLocation || undefined}
-          />
-          {endLocation && (
-            <View style={styles.locationConfirmed}>
-              <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-              <Text style={styles.locationConfirmedText}>Location confirmed</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Start Date & Time */}
-        <TouchableOpacity 
-          style={styles.inputContainer} 
-          onPress={openDateTimePicker}
+        <ScrollView
+          style={[styles.sheet, { backgroundColor: d.surface }]}
+          contentContainerStyle={{ padding: 20, paddingTop: 10, paddingBottom: Math.max(24, insets.bottom + 12), gap: 18 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.dateTimeContainer}>
-            <TextInput
-              style={[styles.input, styles.dateTimeInput]}
-              placeholder="Start Date & Time"
-              value={formatDateTime(startDateTime)}
-              editable={false}
-              placeholderTextColor="#999999"
-            />
-            <MaterialIcons name="event" size={24} color="#999999" style={styles.calendarIcon} />
-          </View>
-        </TouchableOpacity>
+          <View style={[styles.grab, { backgroundColor: d.line2 }]} />
 
-        {Platform.OS === 'ios' && showDatePicker && (
-          <View style={styles.datePickerContainer}>
-            <View style={styles.datePickerHeader}>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.datePickerDone}>Done</Text>
+          <View style={{ gap: 8, zIndex: 20 }}>
+            <View pointerEvents="none" style={[styles.dashes, { borderColor: d.line2 }]} />
+            <LocationPicker
+              label="From"
+              marker={<View style={[styles.dotFrom, { backgroundColor: d.ink, shadowColor: d.line2 }]} />}
+              placeholder="Current location"
+              value={startLocation?.address || ''}
+              onLocationSelect={setStartLocation}
+              onLocationClear={() => setStartLocation(null)}
+              currentLocation={currentLocation || undefined}
+              suggestionsPosition="top"
+            />
+            <LocationPicker
+              label="To"
+              active
+              marker={<View style={styles.diamond} />}
+              placeholder="Where to?"
+              value={endLocation?.address || ''}
+              onLocationSelect={setEndLocation}
+              onLocationClear={() => setEndLocation(null)}
+              currentLocation={currentLocation || undefined}
+              suggestionsPosition="top"
+            />
+            {km !== null && (
+              <Text style={[styles.mono, { color: d.ink2 }]}>about {km.toFixed(0)} km as the crow flies</Text>
+            )}
+          </View>
+
+          <View style={{ gap: 10 }}>
+            <Text style={[styles.eyebrow, { color: d.ink2 }]}>Vehicle</Text>
+            <View style={styles.vehicleRow} accessibilityRole="radiogroup">
+              {vehicles.map((v, i) => {
+                const on = selectedGarageVehicle?.id === v.id;
+                return (
+                  <TouchableOpacity
+                    key={v.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: on }}
+                    onPress={() => setSelectedGarageVehicle(v)}
+                    style={[
+                      styles.vehicle,
+                      { flex: i === 0 ? 1.3 : 1 },
+                      on
+                        ? { borderWidth: 2, borderColor: AMBER, backgroundColor: d.amberTint }
+                        : { borderWidth: 1.5, borderColor: d.line2 },
+                    ]}
+                  >
+                    <Text style={[styles.vName, { color: d.ink }]} numberOfLines={1}>{v.name || `${v.make} ${v.model}`}</Text>
+                    <Text style={[styles.vType, { color: d.ink2 }]}>{v.type.charAt(0).toUpperCase() + v.type.slice(1)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={garageVehicles.length > 2 ? 'More vehicles' : 'Add vehicle'}
+                onPress={() => (garageVehicles.length > 2 ? setShowVehiclePicker(true) : router.push('/add-vehicle'))}
+                style={[styles.addVehicle, { borderColor: d.line2 }]}
+              >
+                <Icon name="plus" size={20} color={d.ink2} stroke={2} />
               </TouchableOpacity>
             </View>
-            <DateTimePicker
-              value={startDateTime}
-              mode="datetime"
-              display="spinner"
-              onChange={onDateChange}
-              minimumDate={new Date()}
-              themeVariant="light"
-              textColor="#000000"
-              style={{ backgroundColor: 'white' }}
-            />
           </View>
-        )}
 
-        {/* Vehicle Selector */}
-        <View style={styles.vehicleContainer}>
-          <Text style={styles.vehicleLabel}>Vehicle</Text>
-          {selectedGarageVehicle ? (
-            <VehicleCard
-              vehicle={selectedGarageVehicle}
-              compact
-              selected
-              onPress={() => setShowVehiclePicker(true)}
-            />
-          ) : (
-            <TouchableOpacity
-              style={styles.vehiclePickerButton}
-              onPress={() => setShowVehiclePicker(true)}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="directions-car" size={22} color="#666666" />
-              <Text style={styles.vehiclePickerButtonText}>
-                {garageVehicles.length > 0 ? 'Select a vehicle' : 'Add a vehicle'}
-              </Text>
-              <MaterialIcons name="chevron-right" size={20} color="#999" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <VehiclePicker
-          visible={showVehiclePicker}
-          selectedId={selectedGarageVehicle?.id ?? null}
-          onSelect={(v) => setSelectedGarageVehicle(v)}
-          onClose={() => setShowVehiclePicker(false)}
-        />
-
-        {/* Notes/Description */}
-        <View style={styles.notesContainer}>
-          <TextInput
-            style={styles.notesInput}
-            placeholder="Add notes, waypoints, or journey details..."
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            textAlignVertical="top"
-            placeholderTextColor="#999999"
+          <VehiclePicker
+            visible={showVehiclePicker}
+            selectedId={selectedGarageVehicle?.id ?? null}
+            onSelect={(v) => setSelectedGarageVehicle(v)}
+            onClose={() => setShowVehiclePicker(false)}
           />
-        </View>
-  </ScrollView>
-  </KeyboardAvoidingView>
 
-      {/* Action Buttons */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={[styles.primaryButton, isStarting && styles.buttonDisabled]} 
-          onPress={handleSaveAndStart}
-          disabled={isStarting}
-          activeOpacity={0.7}
-        >
-          {isStarting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.primaryButtonText}>Save & Start Tracking</Text>
+          <TouchableOpacity onPress={openDateTimePicker} style={styles.whenRow} accessibilityRole="button">
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowTitle, { color: d.ink }]}>Starts</Text>
+              <Text style={[styles.rowSub, { color: d.ink2 }]}>{formatDateTime(startDateTime)}</Text>
+            </View>
+            <Icon name="chevron" size={18} color={d.ink2} />
+          </TouchableOpacity>
+          {Platform.OS === 'ios' && showDatePicker && (
+            <View>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ alignSelf: 'flex-end', padding: 8 }}>
+                <Text style={{ fontFamily: F.extra, fontSize: 15, color: AMBER }}>Done</Text>
+              </TouchableOpacity>
+              <DateTimePicker
+                value={startDateTime}
+                mode="datetime"
+                display="spinner"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+                themeVariant={d.dark ? 'dark' : 'light'}
+              />
+            </View>
           )}
-        </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.secondaryButton, isStarting && styles.buttonDisabled]} 
-          onPress={handleSaveForLater}
-          disabled={isStarting}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.secondaryButtonText}>Save for Later</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.later, { borderColor: d.line2 }, isStarting && { opacity: 0.6 }]}
+              onPress={handleSaveForLater}
+              disabled={isStarting}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.laterText, { color: d.ink }]}>Save for later</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.start, isStarting && { opacity: 0.6 }]}
+              onPress={handleSaveAndStart}
+              disabled={isStarting}
+              accessibilityRole="button"
+            >
+              {isStarting ? (
+                <ActivityIndicator color={INK} />
+              ) : (
+                <>
+                  <Icon name="nav" size={18} color={INK} fill />
+                  <Text style={styles.startText}>Start ride</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
+const haversineKm = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
+  const R = 6371;
+  const rad = (x: number) => (x * Math.PI) / 180;
+  const dLat = rad(b.latitude - a.latitude);
+  const dLon = rad(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E8E8E8',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 20,
-    backgroundColor: '#E8E8E8',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  scrollContent: {
-    paddingBottom: 220,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    fontSize: 16,
-    color: '#000000',
-    fontFamily: 'Poppins',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  dateTimeContainer: {
-    position: 'relative',
-  },
-  dateTimeInput: {
-    paddingRight: 50,
-  },
-  calendarIcon: {
-    position: 'absolute',
-    right: 15,
-    top: 18,
-  },
-  notesContainer: {
-    marginBottom: 20,
-  },
-  notesInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    fontSize: 16,
-    color: '#000000',
-    fontFamily: 'Poppins',
-    height: 200,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  buttonContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    gap: 15,
-  },
-  primaryButton: {
-    backgroundColor: '#F4E04D',
-    borderRadius: 12,
-    paddingVertical: 18,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  secondaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 18,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000000',
-    fontFamily: 'Poppins',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  locationSection: {
-    marginBottom: 20,
-  },
-  locationConfirmed: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingHorizontal: 4,
-  },
-  locationConfirmedText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontFamily: 'Poppins',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  datePickerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  datePickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-  },
-  datePickerDone: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F4A020',
-    fontFamily: 'Poppins',
-  },
-  vehicleContainer: {
-    marginBottom: 20,
-  },
-  vehicleLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    fontFamily: 'Poppins',
-    marginBottom: 10,
-    marginLeft: 4,
-  },
-  vehicleRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  vehicleOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  vehicleOptionSelected: {
-    borderColor: '#F4E04D',
-    backgroundColor: '#FFFBE6',
-  },
-  vehicleOptionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666666',
-    fontFamily: 'Poppins',
-  },
-  vehicleOptionTextSelected: {
-    color: '#000000',
-    fontWeight: '600',
-  },
-  vehiclePickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  vehiclePickerButtonText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#666666',
-    fontFamily: 'Poppins',
-  },
+  container: { flex: 1 },
+  top: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  titlePill: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
+  title: { fontFamily: F.black, fontSize: 20, letterSpacing: -0.2 },
+  sheetWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '62%' },
+  sheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  grab: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2 },
+  dashes: { position: 'absolute', left: 21, top: 30, height: 36, borderLeftWidth: 2, borderStyle: 'dashed', zIndex: 1 },
+  dotFrom: { width: 14, height: 14, borderRadius: 7, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 0 },
+  diamond: { width: 12, height: 12, borderRadius: 3, transform: [{ rotate: '45deg' }], backgroundColor: AMBER, borderWidth: 2, borderColor: INK, marginHorizontal: 1 },
+  mono: { fontFamily: F.monoSemi, fontSize: 12, paddingLeft: 4 },
+  eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase' },
+  vehicleRow: { flexDirection: 'row', gap: 8 },
+  vehicle: { height: 64, borderRadius: 16, paddingHorizontal: 12, justifyContent: 'center' },
+  vName: { fontFamily: F.extra, fontSize: 14 },
+  vType: { fontFamily: F.regular, fontSize: 12 },
+  addVehicle: { width: 52, height: 64, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  whenRow: { flexDirection: 'row', alignItems: 'center' },
+  rowTitle: { fontFamily: F.extra, fontSize: 15 },
+  rowSub: { fontFamily: F.regular, fontSize: 12 },
+  actions: { flexDirection: 'row', gap: 10 },
+  later: { height: 56, paddingHorizontal: 18, borderRadius: 18, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  laterText: { fontFamily: F.extra, fontSize: 14 },
+  start: { flex: 1, height: 56, borderRadius: 18, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  startText: { fontFamily: F.black, fontSize: 16, color: INK },
 });

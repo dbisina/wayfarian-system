@@ -30,6 +30,15 @@ startMetricsLogging();
 startReminderJob(); // Start journey reminder notifications
 healthService.startPeriodicChecks(5 * 60 * 1000); // Every 5 minutes
 
+// v2 maintenance jobs (stale-ride finalizer, drift check). Opt in with V2_JOBS=1 so a local
+// run never registers schedules on a shared Redis by accident.
+let v2Jobs = { stop: async () => {} };
+if (process.env.V2_JOBS === '1') {
+  const { startV2Jobs } = require('./jobs/v2Jobs');
+  const { rideService } = require('./services/rideServices');
+  v2Jobs = startV2Jobs({ prisma: require('./prisma/client'), rideService, logger });
+}
+
 // Pre-warm database connection to avoid cold-start delays
 const warmupDatabase = async () => {
   try {
@@ -71,6 +80,8 @@ const gracefulShutdown = async () => {
       logger.info('Socket.io server closed');
     });
     
+    await v2Jobs.stop();
+
     // Shutdown job queue
     const { jobQueue } = require('./services/JobQueue');
     await jobQueue.shutdown();
