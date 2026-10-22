@@ -51,4 +51,4 @@ Run on one iPhone and one Android, ideally side by side:
 - The old v1 screens (journey, group-journey, journey-detail, etc.) and their contexts still exist and were not removed; only entry points were redirected to v2. Remove them once v2 is verified on devices.
 - Rider profile, live-activity boards, XP banner and the speed chart from the design are not built.
 - Group achievements are not implemented.
-- The store URL in `V2Provider.tsx` for iOS uses a placeholder app id; set the real one.
+- The iOS store link in `V2Provider.tsx` now has the real App Store id; it ships with the next build.

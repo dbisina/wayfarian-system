@@ -16,7 +16,7 @@ import { isUpdateRequired } from './version';
 import { startLiveActivityBridge } from './liveActivity';
 
 const STORE_URL = Platform.select({
-  ios: 'https://apps.apple.com/app/wayfarian/id0000000000',
+  ios: 'https://apps.apple.com/app/wayfarian/id6756589598',
   default: 'https://play.google.com/store/apps/details?id=com.wayfarian.wayfarianadventures',
 })!;
 
