@@ -142,7 +142,7 @@ function summarizeUser(user, plans, skipped) {
 // Prisma codes for "could not reach / lost the database" and timeouts. Anything else is a real bug.
 const TRANSIENT = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024', 'P2028']);
 
-async function retrying(fn, log = () => {}, { attempts = 6, baseMs = 1500 } = {}) {
+async function retrying(fn, log = () => {}, { attempts = 12, baseMs = 3000 } = {}) {
   for (let i = 1; ; i++) {
     try {
       return await fn();
@@ -157,15 +157,14 @@ async function retrying(fn, log = () => {}, { attempts = 6, baseMs = 1500 } = {}
 
 function createBackfill({ prisma, rideService, core = defaultCore, log = () => {} }) {
   async function plansForUser(userId) {
-    const [journeys, instances, hidden, unfinished] = await Promise.all([
-      prisma.journey.findMany({ where: { userId, status: 'COMPLETED', isHidden: false } }),
-      prisma.journeyInstance.findMany({
-        where: { userId, status: 'COMPLETED' },
-        include: { groupJourney: { select: { id: true, creatorId: true, title: true, startedAt: true, completedAt: true, endLatitude: true, endLongitude: true } } },
-      }),
-      prisma.journey.count({ where: { userId, status: 'COMPLETED', isHidden: true } }),
-      prisma.journey.count({ where: { userId, status: { notIn: ['COMPLETED'] } } }),
-    ]);
+    // Sequential on purpose: one connection through a flaky TCP proxy is far more reliable than four at once.
+    const journeys = await prisma.journey.findMany({ where: { userId, status: 'COMPLETED', isHidden: false } });
+    const instances = await prisma.journeyInstance.findMany({
+      where: { userId, status: 'COMPLETED' },
+      include: { groupJourney: { select: { id: true, creatorId: true, title: true, startedAt: true, completedAt: true, endLatitude: true, endLongitude: true } } },
+    });
+    const hidden = await prisma.journey.count({ where: { userId, status: 'COMPLETED', isHidden: true } });
+    const unfinished = await prisma.journey.count({ where: { userId, status: { notIn: ['COMPLETED'] } } });
     const plans = [
       ...journeys.map((j) => planRide('journey', j, core)),
       ...instances.map((i) => planRide('instance', i, core)),

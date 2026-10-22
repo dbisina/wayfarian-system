@@ -315,6 +315,40 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
     return ride;
   }
 
+  /** Rename a ride. The only user-editable field; stats are never editable. */
+  async function updateRide(userId, rideId, patch = {}) {
+    assertId(rideId, 'rideId');
+    const ride = await ownedRide(prisma, userId, rideId);
+    if (ride.status === 'DELETED') throw new RideError('not_found', 404, 'Ride not found');
+    if (typeof patch.title !== 'string') throw new RideError('invalid_input', 400, 'title must be a string');
+    const title = patch.title.trim().slice(0, 120);
+    return prisma.ride.update({ where: { id: rideId }, data: { title: title || null } });
+  }
+
+  /**
+   * The route to draw. Returns at most maxPoints, evenly thinned, always keeping the first and
+   * last fix and the segment each point belongs to (so a pause shows as a gap, not a line).
+   */
+  async function getRoute(userId, rideId, { maxPoints = 1500 } = {}) {
+    assertId(rideId, 'rideId');
+    const ride = await ownedRide(prisma, userId, rideId);
+    if (ride.status === 'DELETED') throw new RideError('not_found', 404, 'Ride not found');
+    const rows = await prisma.ridePoint.findMany({
+      where: { rideId },
+      orderBy: [{ segment: 'asc' }, { recordedAt: 'asc' }],
+      select: { segment: true, lat: true, lng: true, recordedAt: true },
+    });
+    const cap = Math.min(Math.max(parseInt(maxPoints, 10) || 1500, 2), 5000);
+    const step = rows.length > cap ? (rows.length - 1) / (cap - 1) : 1;
+    const picked = [];
+    for (let i = 0; i < rows.length; i = Math.round(picked.length * step)) {
+      picked.push(rows[i]);
+      if (picked.length >= cap) break;
+    }
+    if (rows.length && picked[picked.length - 1] !== rows[rows.length - 1]) picked[picked.length - 1] = rows[rows.length - 1];
+    return { total: rows.length, points: picked.map((r) => ({ segment: r.segment, lat: r.lat, lng: r.lng, t: r.recordedAt.getTime() })) };
+  }
+
   /** Cursor pagination, newest first. The cursor is the last ride's id. */
   async function listRides(userId, { cursor, limit = 20 } = {}) {
     const take = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
@@ -363,7 +397,7 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
     };
   }
 
-  return { upsertRide, addPoints, addEvents, finalize, deleteRide, getRide, listRides, getSummary, getStreak };
+  return { upsertRide, addPoints, addEvents, finalize, deleteRide, getRide, updateRide, getRoute, listRides, getSummary, getStreak };
 }
 
 module.exports = { createRideService, RideError };
