@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Keyboard, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Keyboard, LayoutAnimation, Platform, Alert, ActivityIndicator } from 'react-native';
 import TextInput from '../components/dw/DWTextInput';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import Svg, { Rect, Path, G, Circle } from 'react-native-svg';
@@ -28,8 +28,10 @@ export default function NewJourneyScreen() {
   const insets = useSafeAreaInsets();
   const [kbHeight, setKbHeight] = useState(0);
   useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbHeight(0));
+    // Resize the sheet in step with the keyboard instead of jumping.
+    const glide = (ms?: number) => LayoutAnimation.configureNext(LayoutAnimation.create(ms && ms > 0 ? ms : 200, 'keyboard', 'opacity'));
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow', (e) => { glide(e.duration); setKbHeight(e.endCoordinates.height); });
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', (e) => { glide(e?.duration); setKbHeight(0); });
     return () => { show.remove(); hide.remove(); };
   }, []);
   const { startJourney, saveJourney } = useJourney();

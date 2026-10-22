@@ -27,6 +27,7 @@ const hms = (s: number) => {
 };
 
 const HOLD_MS = 1200;
+const MIN_RIDE_M = 100; // the server rejects shorter rides, so there is nothing to summarise
 const MAX_TRAIL = 6000;
 const ZOOM = 16;
 const OFF_ROUTE_M = 70;
@@ -193,12 +194,21 @@ export default function RideScreen() {
     }
   }, []);
 
+  const distanceRef = useRef(0);
+  distanceRef.current = live?.distanceM ?? 0;
+
   const finish = useCallback(async () => {
     if (finishing.current) return;
     finishing.current = true;
     setBusy(true);
+    const tooShort = distanceRef.current < MIN_RIDE_M;
     let rideId: string | null = null;
     try { rideId = await endRide(); } finally { setBusy(false); }
+    if (tooShort) {
+      Alert.alert('Ride too short', 'Rides under 100 m are not saved. Start again when you are ready to go.');
+      router.replace('/(tabs)' as never);
+      return;
+    }
     router.replace(rideId ? ({ pathname: '/ride-summary', params: { rideId } } as never) : ('/(tabs)/log' as never));
   }, [router]);
 

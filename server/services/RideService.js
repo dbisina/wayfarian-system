@@ -6,7 +6,7 @@
 
 const defaultPrisma = require('../prisma/client');
 const rideCore = require('@wayfarian/ride-core');
-const { rideXp, countsAsRide } = require('../constants/rideXp');
+const { rideXp, countsAsRide, MIN_COUNTED_DISTANCE_M } = require('../constants/rideXp');
 const { calculateLevel } = require('../constants/xpSystem');
 const achievements = require('./achievementsV2');
 
@@ -201,7 +201,12 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
     assertId(rideId, 'rideId');
     const result = await prisma.$transaction(async (tx) => {
       let ride = await ownedRide(tx, userId, rideId);
-      if (ride.status === 'DELETED') throw new RideError('conflict', 409, 'Ride was deleted');
+      if (ride.status === 'DELETED') {
+        // A ride already rejected as too short answers the same way on a retry; a ride the user
+        // deleted stays a conflict.
+        if (!countsAsRide(ride.distanceM)) return { ...ride, invalid: true, newAchievements: [] };
+        throw new RideError('conflict', 409, 'Ride was deleted');
+      }
 
       const { segments, pointCount, lastAt } = await loadSegments(tx, rideId);
       // A backfilled ride with no usable GPS trail keeps the totals the backfill stored on it.
@@ -217,6 +222,16 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
         avgSpeedMps: stats.avgSpeedMps,
         pointCount,
       };
+
+      // A ride that never really moved (under 100 m) is an accidental start, not a ride. It is
+      // rejected: kept for the record but marked deleted, with nothing credited and nothing listed.
+      if (!ride.finalizedAt && !keepStored && !countsAsRide(next.distanceM)) {
+        const rejected = await tx.ride.update({
+          where: { id: rideId },
+          data: { ...next, status: 'DELETED', deletedAt: new Date(), endedAt: ride.endedAt || lastAt || new Date(), statsVersion: 1 },
+        });
+        return { ...rejected, invalid: true, newAchievements: [] };
+      }
 
       let first = false;
       if (!ride.finalizedAt) {
@@ -370,8 +385,14 @@ function createRideService({ prisma = defaultPrisma, core = rideCore, onStatsCha
   /** Cursor pagination, newest first. The cursor is the last ride's id. */
   async function listRides(userId, { cursor, limit = 20 } = {}) {
     const take = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+    // New short rides are rejected when they finish; this also hides any that were finalized before
+    // that rule, so a pile of them cannot push real rides off the page.
     const rows = await prisma.ride.findMany({
-      where: { userId, status: { not: 'DELETED' } },
+      where: {
+        userId,
+        status: { not: 'DELETED' },
+        NOT: { status: 'FINALIZED', distanceM: { lt: MIN_COUNTED_DISTANCE_M } },
+      },
       orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

@@ -1,11 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Keyboard, LayoutAnimation, Platform, UIManager, ActivityIndicator } from 'react-native';
 import TextInput from './dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Skeleton } from './Skeleton';
 import { placesAPI } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import { AMBER, F, useDW } from '../constants/design';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
+
+const DEBOUNCE_MS = 140; // short enough to feel live, long enough not to search on every keystroke
+const smooth = () => LayoutAnimation.configureNext(LayoutAnimation.create(140, 'easeInEaseOut', 'opacity'));
 
 interface LocationSuggestion {
   id: string;
@@ -54,7 +59,12 @@ export default function LocationPicker({
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Only the newest search may update the list, so a slow earlier answer can never overwrite it.
+  const latestSearch = useRef(0);
+  // Answers already fetched, so typing back over a query shows its results instantly.
+  const cache = useRef(new Map<string, LocationSuggestion[]>());
 
   // Sync internal query state with value prop
   useEffect(() => {
@@ -68,6 +78,19 @@ export default function LocationPicker({
       return;
     }
 
+    const key = text.toLowerCase();
+    const hit = cache.current.get(key);
+    if (hit) {
+      latestSearch.current++;
+      setSearching(false);
+      smooth();
+      setSuggestions(hit);
+      setShowSuggestions(hit.length > 0);
+      return;
+    }
+
+    const id = ++latestSearch.current;
+    setSearching(true);
     try {
       const params: any = { input: text };
       if (currentLocation) {
@@ -83,12 +106,19 @@ export default function LocationPicker({
         description: p.description,
       }));
       
+      if (cache.current.size > 60) cache.current.clear();
+      cache.current.set(key, items);
+      if (id !== latestSearch.current) return; // a newer search is already running
+      smooth();
       setSuggestions(items);
       setShowSuggestions(items.length > 0);
     } catch (error) {
+      if (id !== latestSearch.current) return;
       console.error('Autocomplete error:', error);
       setSuggestions([]);
       setShowSuggestions(false);
+    } finally {
+      if (id === latestSearch.current) setSearching(false);
     }
   }, [currentLocation]);
 
@@ -104,14 +134,19 @@ export default function LocationPicker({
     }
 
     if (!text.trim()) {
+      latestSearch.current++;
+      setSearching(false);
       setSuggestions([]);
       setShowSuggestions(!!currentLocation);
       return;
     }
 
+    // Open the list straight away (with a searching row) instead of popping in after the network
+    // answer; results from the previous letters stay visible until the new ones arrive.
+    setShowSuggestions(true);
     debounceRef.current = setTimeout(() => {
       fetchAutocomplete(text.trim());
-    }, 300);
+    }, DEBOUNCE_MS);
   };
 
   const handleSelectSuggestion = async (suggestion: LocationSuggestion) => {
@@ -242,7 +277,7 @@ export default function LocationPicker({
         </TouchableOpacity>
       </View>
 
-      {showSuggestions && (suggestions.length > 0 || !!currentLocation) && (
+      {showSuggestions && (suggestions.length > 0 || searching || !!currentLocation) && (
         <View 
           style={[
             styles.suggestionsContainer,
@@ -270,6 +305,12 @@ export default function LocationPicker({
                 {t('common.useCurrentLocation')}
               </Text>
             </TouchableOpacity>
+          )}
+          {searching && suggestions.length === 0 && (
+            <View style={[styles.suggestionItem, { borderBottomWidth: 0 }]}>
+              <ActivityIndicator size="small" color={AMBER} />
+              <Text style={[styles.suggestionText, { color: d.ink2 }]}>Searching…</Text>
+            </View>
           )}
           {suggestions.slice(0, 5).map((item, index, filteredSuggestions) => (
             <TouchableOpacity
