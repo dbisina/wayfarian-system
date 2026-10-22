@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import TextInput from '../components/dw/DWTextInput';
 import { router } from 'expo-router';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

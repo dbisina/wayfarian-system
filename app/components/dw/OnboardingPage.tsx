@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, ImageSourcePropType, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from './Icon';
+import BrandMark from './BrandMark';
 import { AMBER, CREAM, F, INK } from '../../constants/design';
 
 interface Props {
@@ -25,9 +26,7 @@ export default function OnboardingPage({ image, index, total, title, body, onNex
       <View style={styles.sheet} />
 
       <View style={[styles.top, { top: Math.max(56, insets.top + 8) }]}>
-        <View style={styles.logo}>
-          <Icon name="nav" size={22} color={INK} fill />
-        </View>
+        <BrandMark size={44} />
         <TouchableOpacity onPress={onSkip} accessibilityRole="button" style={styles.skip}>
           <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>

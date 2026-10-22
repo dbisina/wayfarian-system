@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import TextInput from './dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useTranslation } from 'react-i18next';

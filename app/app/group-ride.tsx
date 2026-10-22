@@ -3,7 +3,8 @@
 // membership, the leader's start/end, and shows live positions and the shared summary.
 
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import TextInput from '../components/dw/DWTextInput';
 import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';

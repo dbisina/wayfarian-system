@@ -1,7 +1,8 @@
 // app/app/gallery.tsx — ride gallery. Albums are the user's rides that have photos.
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
+import TextInput from '../components/dw/DWTextInput';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';

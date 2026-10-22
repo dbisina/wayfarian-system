@@ -15,6 +15,7 @@ import {
 } from '../store/slices/vehicleSlice';
 import type { GarageVehicle } from '../services/api';
 import Icon from '../components/dw/Icon';
+import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 
 const typeLabel = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -99,7 +100,7 @@ export default function ManageVehiclesScreen() {
               </View>
               <View style={styles.heroLane} />
               {selected.photoURL ? (
-                <Image source={{ uri: selected.photoURL }} style={styles.heroImg} resizeMode="contain" />
+                <VehiclePhoto uri={selected.photoURL} radius={22} style={styles.heroImg} />
               ) : (
                 <View style={styles.heroEmpty}>
                   <Icon name="route" size={64} color="rgba(245,165,36,0.5)" stroke={1.4} />
@@ -139,7 +140,7 @@ export default function ManageVehiclesScreen() {
                     ]}
                   >
                     {v.photoURL ? (
-                      <Image source={{ uri: v.photoURL }} style={styles.chipImg} resizeMode="contain" />
+                      <VehiclePhoto uri={v.photoURL} radius={14} style={styles.chipImg} />
                     ) : (
                       <View style={[styles.chipImg, { alignItems: 'center', justifyContent: 'center' }]}>
                         <Icon name="route" size={30} color={d.ink2} stroke={1.6} />
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
   heroName: { fontFamily: F.black, fontSize: 24, letterSpacing: -0.5, color: '#F2EEE5', marginTop: 6 },
   heroSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
   heroLane: { position: 'absolute', left: 0, right: 0, top: 322, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.4)' },
-  heroImg: { position: 'absolute', left: 14, top: 46, width: 330, height: 300 },
+  heroImg: { position: 'absolute', left: 20, right: 20, top: 100, height: 206 },
   heroEmpty: { position: 'absolute', left: 0, right: 0, top: 120, alignItems: 'center' },
   heroStats: { position: 'absolute', left: 20, right: 20, bottom: 16, flexDirection: 'row' },
   heroStat: { flex: 1 },
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
   heroStatValue: { fontFamily: F.monoBold, fontSize: 17, color: '#F2EEE5' },
   eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', marginLeft: 4, marginBottom: 10 },
   chipCard: { width: 132, height: 116, borderRadius: 22, overflow: 'hidden', paddingHorizontal: 12, justifyContent: 'flex-end', paddingBottom: 10 },
-  chipImg: { position: 'absolute', left: 10, top: 0, width: 112, height: 80 },
+  chipImg: { position: 'absolute', left: 10, right: 10, top: 10, height: 64 },
   chipName: { fontFamily: F.black, fontSize: 14 },
   chipSub: { fontFamily: F.monoBold, fontSize: 11 },
   addCard: { width: 96, height: 116, borderRadius: 22, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 6 },

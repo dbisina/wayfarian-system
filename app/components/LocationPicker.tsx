@@ -1,12 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Keyboard,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Keyboard } from 'react-native';
+import TextInput from './dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Skeleton } from './Skeleton';
 import { placesAPI } from '../services/api';

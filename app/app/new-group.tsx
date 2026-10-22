@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import TextInput from '../components/dw/DWTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';

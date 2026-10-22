@@ -7,6 +7,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacit
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/dw/Icon';
+import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { AMBER, F, INK, useDW } from '../constants/design';
 import { useV2Rider } from '../v2/hooks';
 import { formatDistance, formatSpeed } from '../v2/format';
@@ -73,7 +74,7 @@ export default function RiderProfileScreen() {
 
         {r.vehicle && (
           <TouchableOpacity activeOpacity={1} style={[styles.vehicle, { backgroundColor: d.panel }]}>
-            {r.vehicle.photoURL ? <Image source={{ uri: r.vehicle.photoURL }} style={styles.vehicleImg} resizeMode="contain" /> : null}
+            {r.vehicle.photoURL ? <VehiclePhoto uri={r.vehicle.photoURL} radius={14} style={styles.vehicleImg} /> : null}
             <View style={{ gap: 2 }}>
               <Text style={[styles.eyebrow, { color: d.panelMuted }]}>Drives</Text>
               <Text style={[styles.vehicleName, { color: d.panelText }]}>{r.vehicle.name}</Text>
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
   lvText: { color: INK, fontFamily: F.monoBold, fontSize: 11 },
   name: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
   vehicle: { marginHorizontal: 16, marginTop: 18, borderRadius: 22, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', overflow: 'hidden', minHeight: 100 },
-  vehicleImg: { position: 'absolute', right: -8, top: -26, width: 150, height: 150 },
+  vehicleImg: { position: 'absolute', right: 14, top: 14, width: 120, height: 76 },
   eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase' },
   vehicleName: { fontFamily: F.black, fontSize: 19 },
   mono: { fontFamily: F.monoBold },

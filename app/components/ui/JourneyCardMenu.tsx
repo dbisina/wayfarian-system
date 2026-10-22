@@ -2,16 +2,8 @@
 // Reusable 3-dot menu component for journey cards with Edit/Delete options
 
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  TextInput,
-  TouchableWithoutFeedback,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, Alert } from 'react-native';
+import TextInput from '../dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { getRuntime } from '../../v2/runtime';

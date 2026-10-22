@@ -1,20 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  Alert,
-  Share,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl,
-  ActivityIndicator,
-  TextInput,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert, Share, Modal, KeyboardAvoidingView, Platform, RefreshControl, ActivityIndicator } from 'react-native';
+import TextInput from '../components/dw/DWTextInput';
 import { Skeleton, SkeletonCircle, SkeletonLine } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/dw/Icon';

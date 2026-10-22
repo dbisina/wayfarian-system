@@ -1,18 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  StatusBar,
-  ActivityIndicator,
-  Modal,
-  FlatList,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator, Modal, FlatList, Alert } from 'react-native';
+import TextInput from '../../components/dw/DWTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/dw/Icon';
 import { AMBER, F, INK, useDW } from '../../constants/design';

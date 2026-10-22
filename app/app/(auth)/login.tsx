@@ -19,6 +19,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAlert } from '../../contexts/AlertContext';
 import { useTranslation } from 'react-i18next';
+import BrandMark from '../../components/dw/BrandMark';
 
 export default function LoginScreen() {
   const d = useDW();
@@ -168,11 +169,7 @@ export default function LoginScreen() {
         >
           <View style={styles.heroShade} />
           <View style={styles.heroText}>
-            <View style={styles.logo}>
-              <Svg width={24} height={24} viewBox="0 0 24 24">
-                <Path d="M12 3 20 20 12 15.5 4 20z" fill={INK} />
-              </Svg>
-            </View>
+            <BrandMark size={48} />
             <Text style={styles.brand}>Wayfarian</Text>
             <Text style={styles.tagline}>Every ride you take, kept like a diary.</Text>
           </View>
