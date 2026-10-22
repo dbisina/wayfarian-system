@@ -16,8 +16,11 @@ interface Props {
  * floating free where its square edges would overflow the card around it.
  */
 export default function VehiclePhoto({ uri, radius = 18, style, background = '#FFFFFF' }: Props) {
+  // A transparent cut-out (the server stores those as PNG) sits straight on the card with no tile
+  // behind it, like the design. Ordinary photos keep their rounded white tile.
+  const cutout = /\.png(\?|#|$)/i.test(uri);
   return (
-    <View style={[styles.tile, { borderRadius: radius, backgroundColor: background }, style]}>
+    <View style={[styles.tile, { borderRadius: radius, backgroundColor: cutout ? 'transparent' : background }, style]}>
       <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="contain" accessibilityIgnoresInvertColors />
     </View>
   );
