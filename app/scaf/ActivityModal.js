@@ -39,7 +39,7 @@ const ActivityModal = ({ visible, onClose }) => {
   const join = () => {
     const c = code.trim();
     if (!c) return;
-    go('/groups', { code: c });
+    go('/group-ride', { code: c });
   };
 
   const sheetStyle = {
@@ -71,7 +71,7 @@ const ActivityModal = ({ visible, onClose }) => {
         </View>
 
         <View style={styles.tiles}>
-          <Pressable style={{ flex: 1.25 }} onPress={() => go('/new-journey')} accessibilityRole="button">
+          <Pressable style={{ flex: 1.25 }} onPress={() => go('/ride')} accessibilityRole="button">
             <ClipCard color={AMBER} corner={20} radius={20} style={styles.tile}>
               <Icon name="nav" size={28} color={INK} fill />
               <View>
@@ -80,7 +80,7 @@ const ActivityModal = ({ visible, onClose }) => {
               </View>
             </ClipCard>
           </Pressable>
-          <Pressable style={{ flex: 1 }} onPress={() => go('/groups')} accessibilityRole="button">
+          <Pressable style={{ flex: 1 }} onPress={() => go('/group-ride')} accessibilityRole="button">
             <View style={[styles.tile, { backgroundColor: t.panel, borderRadius: 20 }]}>
               <View style={{ flexDirection: 'row' }}>
                 {[

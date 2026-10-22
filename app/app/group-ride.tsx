@@ -15,8 +15,8 @@ import { usePresence } from '../v2/usePresence';
 import { formatDistance, formatSpeed } from '../v2/format';
 
 export default function GroupRideScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  return id ? <Detail id={id} /> : <Lobby />;
+  const { id, code } = useLocalSearchParams<{ id?: string; code?: string }>();
+  return id ? <Detail id={id} /> : <Lobby initialCode={code} />;
 }
 
 function useRefresh() {
@@ -24,13 +24,13 @@ function useRefresh() {
   return () => { void getRuntime().queryClient.invalidateQueries({ queryKey: ['u', user?.id ?? 'none'] }); };
 }
 
-function Lobby() {
+function Lobby({ initialCode }: { initialCode?: string }) {
   const dw = useDW();
   const router = useRouter();
   const list = useV2GroupRides();
   const refresh = useRefresh();
   const [title, setTitle] = useState('');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState((initialCode ?? '').toUpperCase());
   const [busy, setBusy] = useState(false);
 
   const run = async (fn: () => Promise<{ id: string }>) => {
