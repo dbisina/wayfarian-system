@@ -22,7 +22,7 @@ export function toFixes(locations: OsLocation[], now: number): Fix[] {
     .filter((l) => l && l.coords && Number.isFinite(l.coords.latitude) && Number.isFinite(l.coords.longitude) && Number.isFinite(l.timestamp))
     .filter((l) => l.timestamp <= now + 60_000 && now - l.timestamp <= MAX_AGE_MS)
     .sort((a, b) => a.timestamp - b.timestamp)
-    .map((l) => ({ lat: l.coords.latitude, lng: l.coords.longitude, t: l.timestamp, accuracy: l.coords.accuracy ?? null }));
+    .map((l) => ({ lat: l.coords.latitude, lng: l.coords.longitude, t: l.timestamp, accuracy: l.coords.accuracy ?? null, speedMps: l.coords.speed != null && l.coords.speed >= 0 ? l.coords.speed : null }));
 }
 
 /** Feed a batch to the recorder in time order. Returns the latest live stats, if a ride is recording. */

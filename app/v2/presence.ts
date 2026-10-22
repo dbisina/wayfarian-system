@@ -20,6 +20,10 @@ export interface RiderPosition {
   lng: number;
   speedMps: number | null;
   heading: number | null;
+  /** How far the rider has gone, for ordering the group. */
+  distanceM: number | null;
+  /** Last time they were seen moving, so "stopped for 3 min" can be shown. */
+  lastMovedAt: number;
   t: number;
   receivedAt: number;
 }
@@ -60,6 +64,8 @@ export function createPresence(opts: PresenceOptions) {
       lng: p.lng,
       speedMps: p.speedMps ?? null,
       heading: p.heading ?? null,
+      distanceM: p.distanceM ?? null,
+      lastMovedAt: p.speedMps == null || p.speedMps >= 1 || !prev ? now() : prev.lastMovedAt,
       t: p.t,
       receivedAt: now(),
     });
@@ -89,12 +95,12 @@ export function createPresence(opts: PresenceOptions) {
   return {
     riders: snapshot,
     /** Send our own position. Dropped silently when offline or too soon after the last one. */
-    sendPosition(p: { lat: number; lng: number; speedMps?: number | null; heading?: number | null; t?: number }) {
+    sendPosition(p: { lat: number; lng: number; speedMps?: number | null; heading?: number | null; distanceM?: number | null; t?: number }) {
       if (disposed || !socket.connected) return false;
       const t = now();
       if (t - lastSent < sendIntervalMs) return false;
       lastSent = t;
-      socket.emit('gr:pos', { groupRideId, lat: p.lat, lng: p.lng, speedMps: p.speedMps ?? undefined, heading: p.heading ?? undefined, t: p.t ?? t });
+      socket.emit('gr:pos', { groupRideId, lat: p.lat, lng: p.lng, speedMps: p.speedMps ?? undefined, heading: p.heading ?? undefined, distanceM: p.distanceM ?? undefined, t: p.t ?? t });
       return true;
     },
     /** Drop riders who went silent. Call on a timer. */

@@ -1,14 +1,16 @@
 // app/app/vehicle.tsx
 // Single vehicle view — km ridden ring and per-vehicle ride numbers.
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppSelector } from '../store/hooks';
 import { selectVehicles } from '../store/slices/vehicleSlice';
-import { userAPI } from '../services/api';
+import { useV2Vehicle } from '../v2/hooks';
+import { getRuntime } from '../v2/runtime';
 import { useSettings } from '../contexts/SettingsContext';
 import Icon from '../components/dw/Icon';
 import { AMBER, F, INK, useDW } from '../constants/design';
@@ -22,34 +24,37 @@ export default function VehicleScreen() {
   const vehicles = useAppSelector(selectVehicles);
   const { convertSpeed } = useSettings();
   const vehicle = vehicles.find((v) => v.id === vehicleId) ?? vehicles.find((v) => v.isDefault) ?? vehicles[0];
-  const [journeys, setJourneys] = useState<any[]>([]);
-
-  useEffect(() => {
-    userAPI
-      .getJourneyHistory({ limit: 200, sortBy: 'startTime', sortOrder: 'desc' })
-      .then((res: any) => setJourneys(res?.journeys || []))
-      .catch(() => {});
-  }, []);
-
-  const mine = useMemo(
-    () =>
-      vehicle
-        ? journeys.filter((j) => j.vehicleId === vehicle.id || (j.vehicleName && j.vehicleName.startsWith(vehicle.name)))
-        : [],
-    [journeys, vehicle]
-  );
-  const km = mine.reduce((s, j) => s + (j.totalDistance || 0), 0);
-  const top = mine.reduce((m, j) => Math.max(m, j.topSpeed || 0), 0);
-  const longest = mine.reduce((m, j) => Math.max(m, j.totalDistance || 0), 0);
-  const goal = Math.max(500, Math.ceil((km + 1) / 500) * 500);
-  const pct = Math.min(1, km / goal);
-  const owned = vehicle ? Math.max(0, Math.round((Date.now() - new Date(vehicle.createdAt).getTime()) / (30 * 86400000))) : 0;
+  const stat = useV2Vehicle(vehicle?.id);
+  const v = stat.data;
+  const km = (v?.riddenM ?? 0) / 1000;
+  const service = v?.service;
+  const pct = service ? Math.min(1, service.pct / 100) : 0;
+  const ringGoal = Math.max(500, Math.ceil((km + 1) / 500) * 500);
+  const ringPct = Math.min(1, km / ringGoal);
 
   const stats = [
-    { label: 'Top speed', value: String(convertSpeed(top)), unit: '' },
-    { label: 'Longest', value: longest.toFixed(0), unit: 'km' },
-    { label: 'Owned', value: String(owned), unit: 'mo' },
+    { label: 'Top speed', value: String(convertSpeed((v?.topSpeedMps ?? 0) * 3.6)), unit: '' },
+    { label: 'Longest', value: ((v?.longestM ?? 0) / 1000).toFixed(0), unit: 'km' },
+    { label: 'Owned', value: String(v?.ownedMonths ?? 0), unit: 'mo' },
   ];
+
+  const logService = () => {
+    if (!vehicle) return;
+    Alert.alert('Log a service', 'Mark this vehicle as serviced now? The countdown restarts from today.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log it',
+        onPress: async () => {
+          try {
+            await getRuntime().client.logService(vehicle.id, Crypto.randomUUID(), { kind: 'service' });
+            await stat.refetch();
+          } catch (e: any) {
+            Alert.alert('Could not log the service', e?.message || 'Try again when you are online.');
+          }
+        },
+      },
+    ]);
+  };
 
   if (!vehicle) {
     return (
@@ -102,7 +107,7 @@ export default function VehicleScreen() {
                 <Circle cx={70} cy={70} r={60} fill="none" stroke={d.dark ? '#2E2B27' : '#E2DCCD'} strokeWidth={10}
                   strokeDasharray={`${RING_LEN * 0.75} ${RING_LEN}`} transform="rotate(135 70 70)" strokeLinecap="round" />
                 <Circle cx={70} cy={70} r={60} fill="none" stroke={AMBER} strokeWidth={10}
-                  strokeDasharray={`${RING_LEN * 0.75 * pct} ${RING_LEN}`} transform="rotate(135 70 70)" strokeLinecap="round" />
+                  strokeDasharray={`${RING_LEN * 0.75 * ringPct} ${RING_LEN}`} transform="rotate(135 70 70)" strokeLinecap="round" />
               </Svg>
               <View style={styles.ringCenter}>
                 <Text style={[styles.ringValue, { color: d.ink }]}>{Math.round(km).toLocaleString()}</Text>
@@ -110,15 +115,19 @@ export default function VehicleScreen() {
               </View>
             </View>
             <View style={{ flex: 1, gap: 6 }}>
-              <Text style={[styles.eyebrow, { color: d.ink2 }]}>Next milestone</Text>
-              <Text style={[styles.big, { color: d.ink }]}>
-                {Math.max(0, Math.round(goal - km)).toLocaleString()}
-                <Text style={[styles.bigUnit, { color: d.ink2 }]}> km to go</Text>
+              <Text style={[styles.eyebrow, { color: d.ink2 }]}>Next service</Text>
+              <Text style={[styles.big, { color: service?.due ? '#E5484D' : d.ink }]}>
+                {service ? Math.round(service.toGoKm).toLocaleString() : '–'}
+                <Text style={[styles.bigUnit, { color: d.ink2 }]}>{service?.due ? ' km overdue' : ' km to go'}</Text>
               </Text>
               <View style={[styles.track, { backgroundColor: d.dark ? '#2E2B27' : '#E2DCCD' }]}>
-                <View style={{ width: `${pct * 100}%`, height: 6, backgroundColor: AMBER }} />
+                <View style={{ width: `${pct * 100}%`, height: 6, backgroundColor: service?.due ? '#E5484D' : AMBER }} />
               </View>
-              <Text style={[styles.note, { color: d.ink2 }]}>{goal.toLocaleString()} km on this vehicle</Text>
+              <Text style={[styles.note, { color: d.ink2 }]}>
+                {service?.last
+                  ? `Last ${service.last.kind} ${new Date(service.last.doneAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
+                  : 'No service logged yet'}
+              </Text>
             </View>
           </View>
 
@@ -134,13 +143,18 @@ export default function VehicleScreen() {
             ))}
           </View>
 
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/log')}
-            accessibilityRole="button"
-            style={[styles.btn, { borderWidth: 1.5, borderColor: d.line2 }]}
-          >
-            <Text style={[styles.btnText, { color: d.ink }]}>{mine.length} rides on it</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/log')}
+              accessibilityRole="button"
+              style={[styles.btn, { flex: 1, borderWidth: 1.5, borderColor: d.line2 }]}
+            >
+              <Text style={[styles.btnText, { color: d.ink }]}>{v?.rides ?? 0} rides on it</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={logService} accessibilityRole="button" style={[styles.btn, { flex: 1, backgroundColor: AMBER }]}>
+              <Text style={[styles.btnText, { color: INK, fontFamily: F.black }]}>Log a service</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
     </View>

@@ -52,7 +52,7 @@ export class MemoryLocalRideStore implements LocalRideStore {
   async clear() { this.rides.clear(); this.points.clear(); }
 }
 
-export interface Fix { lat: number; lng: number; t: number; accuracy?: number | null }
+export interface Fix { lat: number; lng: number; t: number; accuracy?: number | null; /** Speed the OS reported, m/s. Display and presence only, never used for stats. */ speedMps?: number | null }
 
 export interface RecorderDeps {
   local: LocalRideStore;
@@ -69,7 +69,7 @@ export interface LiveStats extends RideStats {
   status: LocalRideStatus;
   rideId: string;
   /** Most recent accepted fix, for drawing the rider and sharing presence. */
-  lastFix: { lat: number; lng: number; t: number } | null;
+  lastFix: { lat: number; lng: number; t: number; speedMps: number | null } | null;
 }
 
 const toWire = (p: LocalPoint): WirePoint => ({ seq: p.seq, segment: p.segment, lat: p.lat, lng: p.lng, t: new Date(p.t).toISOString(), accuracy: p.accuracy });
@@ -85,7 +85,7 @@ export function createRecorder(deps: RecorderDeps) {
   let buffer: LocalPoint[] = [];
   let lastFlushAt = 0;
   let lastFixT = -Infinity;
-  let lastFix: { lat: number; lng: number; t: number } | null = null;
+  let lastFix: { lat: number; lng: number; t: number; speedMps: number | null } | null = null;
 
   const kick = () => { try { deps.kick?.(); } catch { /* never let sync break recording */ } };
 
@@ -145,7 +145,7 @@ export function createRecorder(deps: RecorderDeps) {
         if (p.segment !== seg) { acc.startSegment(); seg = p.segment; }
         acc.add(p);
         lastFixT = p.t;
-        lastFix = { lat: p.lat, lng: p.lng, t: p.t };
+        lastFix = { lat: p.lat, lng: p.lng, t: p.t, speedMps: null };
       }
       buffer = pts.filter((p) => p.seq > found.flushedSeq);
       lastFlushAt = now();
@@ -159,7 +159,7 @@ export function createRecorder(deps: RecorderDeps) {
       if (!ride || ride.status !== 'RECORDING') return null;
       if (!(fix.t > lastFixT)) return snapshot(); // duplicate or out-of-order delivery from the OS
       lastFixT = fix.t;
-      lastFix = { lat: fix.lat, lng: fix.lng, t: fix.t };
+      lastFix = { lat: fix.lat, lng: fix.lng, t: fix.t, speedMps: fix.speedMps ?? null };
       const p: LocalPoint = { seq: ride.nextSeq++, segment: ride.segment, lat: fix.lat, lng: fix.lng, t: fix.t, accuracy: fix.accuracy ?? null };
       await deps.local.appendPoints(ride.id, [p]);
       acc.add(p);

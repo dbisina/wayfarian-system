@@ -8,7 +8,7 @@ describe('location adapter', () => {
   test('orders late/out-of-order OS batches and maps fields', () => {
     const fixes = toFixes([loc(NOW - 1000, 3.41), loc(NOW - 3000, 3.4), loc(NOW - 2000, 3.405)], NOW);
     expect(fixes.map((f) => f.t)).toEqual([NOW - 3000, NOW - 2000, NOW - 1000]);
-    expect(fixes[0]).toEqual({ lat: 6.45, lng: 3.4, t: NOW - 3000, accuracy: 5 });
+    expect(fixes[0]).toEqual({ lat: 6.45, lng: 3.4, t: NOW - 3000, accuracy: 5, speedMps: null });
   });
 
   test('drops garbage, future-dated and ancient replayed fixes', () => {

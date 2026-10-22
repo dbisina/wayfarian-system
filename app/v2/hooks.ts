@@ -18,6 +18,8 @@ export const qk = {
   groupRides: (uid: string) => ['u', uid, 'group-rides'] as const,
   groupRide: (uid: string, id: string) => ['u', uid, 'group-ride', id] as const,
   groupSummary: (uid: string, id: string) => ['u', uid, 'group-summary', id] as const,
+  rider: (uid: string, id: string) => ['u', uid, 'rider', id] as const,
+  vehicle: (uid: string, id: string) => ['u', uid, 'vehicle', id] as const,
 };
 
 function useUid(): string | null {
@@ -79,6 +81,16 @@ export function useV2GroupRide(id: string | undefined) {
 export function useV2GroupSummary(id: string | undefined) {
   const uid = useUid();
   return useQuery({ queryKey: qk.groupSummary(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.groupRideSummary(id!), enabled: !!uid && !!id });
+}
+
+export function useV2Rider(id: string | undefined) {
+  const uid = useUid();
+  return useQuery({ queryKey: qk.rider(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.rider(id!), enabled: !!uid && !!id });
+}
+
+export function useV2Vehicle(id: string | undefined) {
+  const uid = useUid();
+  return useQuery({ queryKey: qk.vehicle(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.vehicle(id!), enabled: !!uid && !!id });
 }
 
 /** Live stats of the ride being recorded on this phone (null when none). Updates on every GPS fix. */

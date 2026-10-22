@@ -46,8 +46,9 @@ export default function RideScreen() {
         style: 'destructive',
         onPress: async () => {
           setBusy(true);
-          try { await endRide(); } finally { setBusy(false); }
-          router.replace('/(tabs)/log' as never);
+          let rideId: string | null = null;
+          try { rideId = await endRide(); } finally { setBusy(false); }
+          router.replace(rideId ? ({ pathname: '/ride-summary', params: { rideId } } as never) : ('/(tabs)/log' as never));
         },
       },
     ]);

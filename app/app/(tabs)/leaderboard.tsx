@@ -1,9 +1,10 @@
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, Pressable, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useLeaderboard } from '../../hooks/useLeaderboard';
+import { useV2LeaderboardView as useLeaderboard } from '../../v2/legacyAdapters';
 import { useTranslation } from 'react-i18next';
 import { SkeletonLine } from '../../components/Skeleton';
 import ClipCard from '../../components/dw/ClipCard';
@@ -50,6 +51,11 @@ export default function LeaderboardScreen(): React.JSX.Element {
   const km = (u: any) => convertDistance(u.totalDistance || 0);
   const topInk = d.dark ? AMBER : '#B26A00';
   const top0 = Math.max(56, insets.top + 8);
+
+  const openRider = (u: any) => {
+    const id = u.userId || u.id;
+    if (id) router.push({ pathname: '/rider-profile', params: { riderId: id } } as never);
+  };
 
   const setTab = (tab: 'friends' | 'global') => {
     setActiveTab(tab);
@@ -117,7 +123,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
               {top.map((u, i) => {
                 const first = i === 0;
                 return (
-                  <View key={u.id || i} style={[styles.podiumCell, { left: slots[i].x, top: slots[i].y }]}>
+                  <Pressable key={u.id || i} onPress={() => openRider(u)} accessibilityRole="button" accessibilityLabel={`${nameOf(u)}, rank ${i + 1}`} style={[styles.podiumCell, { left: slots[i].x, top: slots[i].y }]}>
                     <View style={[styles.podiumTop, { borderColor: d.ink }]} />
                     <View style={styles.rowBetween}>
                       <Text style={[styles.pos, { color: first ? topInk : d.ink }]}>P{i + 1}</Text>
@@ -135,14 +141,14 @@ export default function LeaderboardScreen(): React.JSX.Element {
                     <Text style={[styles.mono, { color: d.ink2 }]} numberOfLines={1}>
                       {km(u)}{ccOf(u) ? ` · ${ccOf(u)}` : ''}
                     </Text>
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
 
             <View style={styles.list}>
               {rest.map((u, i) => (
-                <View key={u.id || i} style={[styles.row, { borderTopColor: d.line }]}>
+                <Pressable key={u.id || i} onPress={() => openRider(u)} accessibilityRole="button" style={[styles.row, { borderTopColor: d.line }]}>
                   <Text style={[styles.rowPos, { color: d.ink2 }]}>{u.rank || u.position || i + 4}</Text>
                   <View style={[styles.av32, { backgroundColor: d.surface2 }]}>
                     {u.photoURL ? (
@@ -155,7 +161,7 @@ export default function LeaderboardScreen(): React.JSX.Element {
                     {nameOf(u)} <Text style={[styles.cc, { color: d.ink2 }]}>{ccOf(u)}</Text>
                   </Text>
                   <Text style={[styles.rowVal, { color: d.ink }]}>{km(u)}</Text>
-                </View>
+                </Pressable>
               ))}
             </View>
           </>

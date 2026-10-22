@@ -32,7 +32,8 @@ export function usePresence(groupRideId: string | undefined): RiderPosition[] {
   // Share our own position whenever the recorder accepts a new fix for this group ride.
   const fix = live?.lastFix;
   useEffect(() => {
-    if (fix) presence.current?.sendPosition({ lat: fix.lat, lng: fix.lng, t: fix.t });
+    if (fix) presence.current?.sendPosition({ lat: fix.lat, lng: fix.lng, t: fix.t, speedMps: fix.speedMps, distanceM: live?.distanceM });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fix]);
 
   return riders;

@@ -10,7 +10,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
-import { useUserData } from '../hooks/useUserData';
+import { useV2UserData as useUserData } from '../v2/legacyAdapters';
 import { getCurrentApiUrl, getAuthToken } from '../services/api';
 import { testApiConnection, printDiagnostics } from '../utils/apiDiagnostics';
 

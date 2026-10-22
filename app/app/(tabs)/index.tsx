@@ -5,9 +5,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { useUserData } from '../../hooks/useUserData';
+import { useV2UserData as useUserData } from '../../v2/legacyAdapters';
 import { useSettings } from '../../contexts/SettingsContext';
-import { userAPI } from '../../services/api';
 import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 import Cut from '../../components/dw/Cut';
 import ClipCard from '../../components/dw/ClipCard';
@@ -40,17 +39,13 @@ export default function HomeScreen(): React.JSX.Element {
   const { dashboardData, achievements, loading, refreshData } = useUserData();
   const { convertDistance, convertSpeed } = useSettings();
   const { t: tr } = useTranslation();
-  const [streak, setStreak] = useState(0);
+  const streak = (dashboardData as any)?.streak?.current ?? 0;
 
   useFocusEffect(
     useCallback(() => {
       refreshData();
     }, [refreshData])
   );
-
-  useEffect(() => {
-    userAPI.getStreak().then((res) => setStreak(res?.streak?.currentStreak ?? 0)).catch(() => {});
-  }, []);
 
   if (!isAuthenticated) {
     return (

@@ -139,6 +139,11 @@ function Detail({ id }: { id: string }) {
             </Pressable>
           )}
           {g.status === 'ACTIVE' && (
+            <Pressable onPress={() => router.push({ pathname: '/group-live', params: { id } } as never)} style={[styles.btn, { backgroundColor: dw.surface, borderColor: dw.line2, borderWidth: 1 }]}>
+              <Text style={[styles.btnText, { color: dw.ink, fontFamily: F.bold }]}>Open live view</Text>
+            </Pressable>
+          )}
+          {g.status === 'ACTIVE' && (
             <Pressable onPress={() => router.push({ pathname: '/ride', params: { groupRideId: id } } as never)} style={[styles.btn, { backgroundColor: AMBER }]}>
               <Text style={[styles.btnText, { fontFamily: F.black }]}>Record my ride</Text>
             </Pressable>

@@ -94,7 +94,11 @@ export function createV2Client(deps: V2ClientDeps) {
     getRide: (id: string) => request<any>('GET', `/rides/${enc(id)}`),
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
     summary: () => request<any>('GET', '/me/summary'),
-    leaderboard: (q: { metric?: string; period?: string; limit?: number } = {}) => request<any>('GET', `/leaderboard?${new URLSearchParams(q as Record<string, string>).toString()}`),
+    rider: (id: string) => request<any>('GET', `/riders/${enc(id)}`),
+    vehicle: (id: string) => request<any>('GET', `/vehicles/${enc(id)}`),
+    logService: (vehicleId: string, serviceId: string, input: { kind?: string; intervalKm?: number; doneAt?: string; notes?: string } = {}) =>
+      request<any>('PUT', `/vehicles/${enc(vehicleId)}/services/${enc(serviceId)}`, input),
+    leaderboard: (q: { metric?: string; period?: string; limit?: number; scope?: string } = {}) => request<any>('GET', `/leaderboard?${new URLSearchParams(q as Record<string, string>).toString()}`),
     leaderboardMe: (q: { metric?: string; period?: string } = {}) => request<any>('GET', `/leaderboard/me?${new URLSearchParams(q as Record<string, string>).toString()}`),
     // group rides
     createGroupRide: (id: string, input: Record<string, unknown>) => request<any>('PUT', `/group-rides/${enc(id)}`, input),
