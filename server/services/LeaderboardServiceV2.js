@@ -157,7 +157,58 @@ function createLeaderboardService({ prisma = defaultPrisma, redis = null, now = 
     });
   }
 
-  return { top, position, invalidate };
+  /**
+   * The board restricted to a set of riders (the caller's friends). Small by nature, so it is
+   * computed fresh instead of cached.
+   */
+  async function topAmong(userIds, options) {
+    const { metric, period, limit } = parseOptions(options);
+    const ids = [...new Set(userIds)].slice(0, 500);
+    if (ids.length === 0) return { metric, period, items: [] };
+    let rows;
+    if (period === 'allTime') {
+      const col = METRICS[metric].all;
+      const found = await prisma.userStats.findMany({
+        where: { userId: { in: ids }, [col]: { gt: 0 } },
+        orderBy: [{ [col]: 'desc' }, { userId: 'asc' }],
+        take: limit,
+        select: { userId: true, [col]: true },
+      });
+      rows = found.map((r) => ({ userId: r.userId, value: r[col] }));
+    } else {
+      const since = new Date(now().getTime() - PERIODS[period] * 86400000);
+      const agg = Prisma.raw(METRICS[metric].agg); // whitelisted constant, not user input
+      rows = await prisma.$queryRaw`
+        SELECT "userId", ${agg} AS value
+        FROM rides
+        WHERE status = 'FINALIZED' AND "distanceM" >= ${MIN_COUNTED_DISTANCE_M} AND "startedAt" >= ${since}
+          AND "userId" = ANY(${ids})
+        GROUP BY "userId"
+        ORDER BY value DESC, "userId" ASC
+        LIMIT ${limit}`;
+    }
+    const users = await prisma.user.findMany({
+      where: { id: { in: rows.map((r) => r.userId) } },
+      select: { id: true, displayName: true, photoURL: true, country: true, countryCode: true, level: true },
+    });
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return {
+      metric,
+      period,
+      items: rows.map((r, i) => ({
+        rank: i + 1,
+        userId: r.userId,
+        value: Number(r.value),
+        displayName: byId.get(r.userId)?.displayName || null,
+        photoURL: byId.get(r.userId)?.photoURL || null,
+        country: byId.get(r.userId)?.country || null,
+        countryCode: byId.get(r.userId)?.countryCode || null,
+        level: byId.get(r.userId)?.level || 1,
+      })),
+    };
+  }
+
+  return { top, topAmong, position, invalidate };
 }
 
 module.exports = { createLeaderboardService, LeaderboardError, METRICS, PERIODS };

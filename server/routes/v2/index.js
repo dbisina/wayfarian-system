@@ -39,7 +39,7 @@ router.patch('/rides/:id', wrap((req) => rideService.updateRide(req.user.id, req
 router.get('/rides/:id/route', wrap((req) => rideService.getRoute(req.user.id, req.params.id, { maxPoints: req.query.maxPoints })));
 router.get('/rides/:id', wrap((req) => rideService.getRide(req.user.id, req.params.id)));
 router.get('/rides', wrap((req) => rideService.listRides(req.user.id, { cursor: req.query.cursor, limit: req.query.limit })));
-router.get('/leaderboard', wrap((req) => leaderboards.top(req.query)));
+router.get('/leaderboard', wrap(async (req) => (req.query.scope === 'friends' ? leaderboards.topAmong(await groupRides.coRiders(req.user.id), req.query) : leaderboards.top(req.query))));
 router.get('/leaderboard/me', wrap((req) => leaderboards.position(req.user.id, req.query)));
 router.put('/group-rides/:id', wrap((req) => groupRides.create(req.user.id, req.params.id, req.body)));
 router.post('/group-rides/join', wrap((req) => groupRides.join(req.user.id, req.body && req.body.code)));

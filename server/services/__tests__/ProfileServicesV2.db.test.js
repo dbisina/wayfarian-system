@@ -94,6 +94,28 @@ suite('profiles, vehicles, XP info and group badges (real database)', () => {
     await expect(profiles.getRider(b.id, 'nobody')).rejects.toMatchObject({ status: 404 });
   });
 
+  test('the friends board only has riders who shared a group ride with you', async () => {
+    const { createLeaderboardService } = require('../LeaderboardServiceV2');
+    const lb = createLeaderboardService({ prisma });
+    const stranger = await prisma.user.create({ data: { firebaseUid: 'pz', displayName: 'Zed' } });
+    await ride(a, 'ride-fr-0000001', { speed: 10, seconds: 600 });
+    await ride(b, 'ride-fr-0000002', { speed: 12, seconds: 600 });
+    await ride(stranger, 'ride-fr-0000003', { speed: 30, seconds: 600 }); // the fastest overall
+    const g = await groups.create(a.id, 'friends-ride-001', { title: 'Mates' });
+    await groups.join(b.id, g.code);
+
+    const mine = await groups.coRiders(a.id);
+    expect([...mine].sort()).toEqual([a.id, b.id].sort());
+    const friends = await lb.topAmong(mine, { metric: 'distance', period: 'allTime' });
+    expect(friends.items.map((i) => i.userId)).toEqual([b.id, a.id]);
+    expect(friends.items.map((i) => i.rank)).toEqual([1, 2]);
+    const everyone = await lb.top({ metric: 'distance', period: 'allTime' });
+    expect(everyone.items[0].userId).toBe(stranger.id);
+    const week = await lb.topAmong(mine, { metric: 'distance', period: 'week' });
+    expect(week.items).toHaveLength(2);
+    expect(await lb.topAmong([], {})).toMatchObject({ items: [] });
+  });
+
   test('vehicle stats and the service countdown follow the rides', async () => {
     const v = await prisma.vehicle.create({ data: { userId: a.id, name: 'Bluebird', make: 'BMW', model: 'R 1250 RT' } });
     await ride(a, 'ride-veh-0000001', { vehicleId: v.id, speed: 20, seconds: 1200 }); // about 24 km

@@ -326,7 +326,19 @@ function createGroupRideService({ prisma = defaultPrisma, rideService } = {}) {
     return !!p && !p.leftAt;
   }
 
-  return { create, join, leave, start, end, startRide, get, summary, list, isActiveParticipant };
+  /** Riders who have shared a group ride with this user (plus the user): their "friends" for the board. */
+  async function coRiders(userId) {
+    const mine = await prisma.groupRideParticipant.findMany({ where: { userId }, select: { groupRideId: true } });
+    if (mine.length === 0) return [userId];
+    const others = await prisma.groupRideParticipant.findMany({
+      where: { groupRideId: { in: mine.map((m) => m.groupRideId) } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return [...new Set([userId, ...others.map((o) => o.userId)])];
+  }
+
+  return { create, join, leave, start, end, startRide, get, summary, list, isActiveParticipant, coRiders };
 }
 
 module.exports = { createGroupRideService };
