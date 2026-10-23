@@ -4,8 +4,8 @@
 // recorded on the ride screen; this tab only finds places and hands a destination over.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Localization from 'expo-localization';
 import { router } from 'expo-router';
@@ -15,6 +15,7 @@ import ClipCard from '../../components/dw/ClipCard';
 import Icon from '../../components/dw/Icon';
 import { useAuth } from '../../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
+import { mapLook } from '../../constants/mapStyle';
 import { placesAPI } from '../../services/api';
 import { fallbackRegion } from '../../v2/countryRegion';
 import { haversineM } from '../../v2/navigation';
@@ -47,24 +48,6 @@ const CHIPS = [
   { key: 'sight', label: 'Sights', type: 'tourist_attraction', noun: 'Attraction' },
   { key: 'shop', label: 'Shops', type: 'shopping_mall', noun: 'Shopping' },
 ] as const;
-
-// A calm map in the app's own colours (Google Maps only; Apple Maps has no custom style).
-const mapStyle = (dark: boolean) => {
-  const c = dark
-    ? { land: '#161513', poi: '#1E1C19', road: '#2A2723', major: '#38332B', water: '#132029', text: '#A29B8D', stroke: '#161513' }
-    : { land: '#ECE6D9', poi: '#E2DBCB', road: '#FFFDF8', major: '#FFFDF8', water: '#C9DCDD', text: '#625C51', stroke: '#ECE6D9' };
-  return [
-    { elementType: 'geometry', stylers: [{ color: c.land }] },
-    { elementType: 'labels.text.fill', stylers: [{ color: c.text }] },
-    { elementType: 'labels.text.stroke', stylers: [{ color: c.stroke }] },
-    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-    { featureType: 'road', elementType: 'geometry', stylers: [{ color: c.road }] },
-    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: c.major }] },
-    { featureType: 'water', elementType: 'geometry', stylers: [{ color: c.water }] },
-    { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: c.poi }] },
-  ];
-};
 
 const coord = (p: any) => {
   const lat = p?.latitude ?? p?.location?.latitude ?? p?.geometry?.location?.lat;
@@ -208,8 +191,7 @@ export default function MapScreen() {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        customMapStyle={Platform.OS === 'android' ? mapStyle(d.dark) : undefined}
+        {...mapLook(d.dark)}
         userInterfaceStyle={d.dark ? 'dark' : 'light'}
         showsUserLocation
         showsMyLocationButton={false}

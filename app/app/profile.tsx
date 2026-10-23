@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   dwBikeBg: { ...StyleSheet.absoluteFillObject, borderRadius: 28, backgroundColor: '#161513' },
   dwBikeCut: { position: 'absolute', right: -6, top: -58, width: 236, height: 236 },
   dwBikeEyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: '#A29B8D' },
-  dwBikeKm: { fontFamily: F.monoBold, fontSize: 38, lineHeight: 44, color: AMBER, letterSpacing: -0.8, marginTop: 4 },
+  dwBikeKm: { fontFamily: F.monoBold, fontSize: 38, lineHeight: 49, color: AMBER, letterSpacing: -0.8, marginTop: 4 },
   dwBikeUnit: { fontSize: 15, color: '#F2EEE5' },
   dwBikeSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
   dwBikeLane: { position: 'absolute', right: 12, bottom: 26, width: 190, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.5)' },

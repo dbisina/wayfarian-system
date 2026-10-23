@@ -24,7 +24,7 @@ export default function Odometer({ whole, tenth }: { whole: string; tenth: strin
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
   tile: { width: 36, height: 52, borderRadius: 8, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  digit: { fontFamily: F.monoBold, fontSize: 30, lineHeight: 36 },
+  digit: { fontFamily: F.monoBold, fontSize: 30, lineHeight: 40 },
   sheen: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 14, backgroundColor: 'rgba(255,255,255,0.04)' },
   unit: { fontFamily: F.extra, fontSize: 16, color: INK, marginLeft: 6, paddingBottom: 4 },
 });

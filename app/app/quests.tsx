@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   resetText: { fontFamily: F.monoBold, fontSize: 12 },
   hero: { marginHorizontal: 16 },
   eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(26,24,20,0.72)' },
-  heroNum: { fontFamily: F.monoBold, fontSize: 48, lineHeight: 52, letterSpacing: -1.4, color: INK },
+  heroNum: { fontFamily: F.monoBold, fontSize: 48, lineHeight: 62, letterSpacing: -1.4, color: INK },
   heroUnit: { fontSize: 16, letterSpacing: 0 },
   heroTrack: { height: 8, borderRadius: 4, backgroundColor: 'rgba(26,24,20,0.15)', overflow: 'hidden' },
   chestBtn: { marginTop: 4, height: 46, borderRadius: 23, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' },
