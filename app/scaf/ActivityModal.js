@@ -81,7 +81,7 @@ const ActivityModal = ({ visible, onClose }) => {
               </View>
             </ClipCard>
           </Pressable>
-          <Pressable style={{ flex: 1 }} onPress={() => go('/group-ride')} accessibilityRole="button">
+          <Pressable style={{ flex: 1 }} onPress={() => go('/groups')} accessibilityRole="button">
             <View style={[styles.tile, { backgroundColor: t.panel, borderRadius: 20 }]}>
               <View style={{ flexDirection: 'row' }}>
                 {[
