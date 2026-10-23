@@ -5,8 +5,8 @@
 // phone and uploaded later. Stats come from the same ride-core code the server uses.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ActivityIndicator, Alert, Animated, Easing, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Localization from 'expo-localization';
 import * as Location from 'expo-location';
@@ -15,6 +15,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
 import { useAuth } from '../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
+import { mapLook } from '../constants/mapStyle';
 import { useLiveRide, useSyncState } from '../v2/hooks';
 import { endRide, pauseRide, resumeRide, startRide, takeRidePhoto } from '../v2/rideController';
 import { formatDistance, formatDuration } from '../v2/format';
@@ -265,7 +266,7 @@ export default function RideScreen() {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        {...mapLook(d.dark)}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
@@ -426,7 +427,7 @@ const styles = StyleSheet.create({
   recTime: { fontFamily: F.monoBold, fontSize: 14 },
   turn: { position: 'absolute', left: 16, right: 16, height: 80, borderRadius: 22, backgroundColor: AMBER, paddingLeft: 12, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
   turnIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' },
-  turnDist: { fontFamily: F.monoBold, fontSize: 26, lineHeight: 30, color: INK, letterSpacing: -0.5 },
+  turnDist: { fontFamily: F.monoBold, fontSize: 26, lineHeight: 34, color: INK, letterSpacing: -0.5 },
   turnUnit: { fontSize: 14 },
   turnText: { fontFamily: F.extra, fontSize: 14, color: INK },
   then: { alignItems: 'center', gap: 2, paddingLeft: 12, borderLeftWidth: 1.5, borderLeftColor: 'rgba(26,24,20,0.3)', borderStyle: 'dashed' },
@@ -447,9 +448,9 @@ const styles = StyleSheet.create({
   progressYou: { position: 'absolute', width: 12, height: 12, marginLeft: -6, borderRadius: 3, backgroundColor: DASH_INK, transform: [{ rotate: '45deg' }] },
   progressEnd: { position: 'absolute', right: -2, width: 10, height: 10, borderRadius: 2, borderWidth: 2, borderColor: AMBER, transform: [{ rotate: '45deg' }] },
   gaugeWrap: { alignSelf: 'center', width: 300, height: 160, marginTop: 8 },
-  gaugeCenter: { position: 'absolute', left: 0, right: 0, top: 60, alignItems: 'center' },
-  speed: { fontFamily: F.black, fontSize: 78, lineHeight: 80, letterSpacing: -3, color: DASH_INK },
-  speedUnit: { fontFamily: F.extra, fontSize: 12, letterSpacing: 1.7, color: DASH_MUTED },
+  gaugeCenter: { position: 'absolute', left: 0, right: 0, top: 50, alignItems: 'center' },
+  speed: { fontFamily: F.black, fontSize: 78, lineHeight: 100, letterSpacing: -3, color: DASH_INK },
+  speedUnit: { marginTop: -10, fontFamily: F.extra, fontSize: 12, letterSpacing: 1.7, color: DASH_MUTED },
   gaugeEdge: { position: 'absolute', bottom: -4, fontFamily: F.monoSemi, fontSize: 11, color: DASH_MUTED },
   gaugeTop: { position: 'absolute', right: -14, top: 78, fontFamily: F.monoSemi, fontSize: 11, color: DASH_MUTED, textAlign: 'right' },
   stats: { flexDirection: 'row', marginTop: 12, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(242,238,229,0.1)' },

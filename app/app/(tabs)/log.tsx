@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   h1: { fontFamily: F.black, fontSize: 30, letterSpacing: -0.6, color: INK },
   rankBlock: { position: 'absolute', left: 20 },
   eyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(26,24,20,0.72)' },
-  rank: { fontFamily: F.black, fontSize: 72, lineHeight: 80, letterSpacing: -2.9, color: INK },
+  rank: { fontFamily: F.black, fontSize: 72, lineHeight: 94, letterSpacing: -2.9, color: INK },
   nextBadge: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, marginTop: 4 },
   nextIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   nextDiamond: { width: 30, height: 30, borderRadius: 8, borderWidth: 1.5, borderStyle: 'dashed', transform: [{ rotate: '45deg' }], alignItems: 'center', justifyContent: 'center' },

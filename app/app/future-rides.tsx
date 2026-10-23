@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
   nextEyebrow: { fontFamily: F.black, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: INK },
   nextTitle: { fontFamily: F.black, fontSize: 22, letterSpacing: -0.4, color: INK },
   nextSub: { fontFamily: F.semi, fontSize: 13, color: 'rgba(26,24,20,0.72)' },
-  nextDays: { fontFamily: F.monoBold, fontSize: 26, lineHeight: 28, color: INK },
+  nextDays: { fontFamily: F.monoBold, fontSize: 26, lineHeight: 34, color: INK },
   nextGo: { fontFamily: F.bold, fontSize: 12, color: INK },
   nextWhen: { fontFamily: F.extra, fontSize: 13, color: INK },
   nextBtn: { height: 40, paddingHorizontal: 14, borderRadius: 12, backgroundColor: INK, justifyContent: 'center' },

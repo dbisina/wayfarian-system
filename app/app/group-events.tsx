@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   questTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   questEyebrow: { fontFamily: F.black, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: INK },
   questTitle: { fontFamily: F.black, fontSize: 20, letterSpacing: -0.4, color: INK },
-  questNum: { fontFamily: F.monoBold, fontSize: 24, lineHeight: 26, color: INK },
+  questNum: { fontFamily: F.monoBold, fontSize: 24, lineHeight: 31, color: INK },
   questUnit: { fontFamily: F.bold, fontSize: 12, color: INK },
   bar: { flexDirection: 'row', height: 12, borderRadius: 6, overflow: 'hidden', backgroundColor: 'rgba(26,24,20,0.15)', gap: 2 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },

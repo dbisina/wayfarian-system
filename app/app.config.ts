@@ -32,7 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     config: {
       ...(baseConfig.expo?.ios?.config ?? {}),
       ...(config?.ios?.config ?? {}),
-      // Using Apple Maps (MapKit) on iOS - no Google Maps API key needed
+      googleMapsApiKey: googleMapsKey ?? '',
     },
   };
 

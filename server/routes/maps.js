@@ -489,4 +489,22 @@ router.get(
   }
 );
 
+/**
+ * @route POST /api/maps/snap-to-roads
+ * @desc Snap a recorded trail to the roads it followed (for drawing a finished ride). Display only.
+ * @access Private
+ */
+router.post('/snap-to-roads', async (req, res) => {
+  const points = req.body && req.body.points;
+  const valid = Array.isArray(points) && points.length >= 2 && points.length <= 100 &&
+    points.every((p) => mapsService.isValidCoordinate(p && p.latitude, p && p.longitude));
+  if (!valid) return res.status(400).json({ error: 'points must be 2 to 100 {latitude, longitude} pairs' });
+  try {
+    res.json({ success: true, points: await mapsService.snapToRoads(points) });
+  } catch (error) {
+    console.error('Snap to roads error:', error.message);
+    res.status(502).json({ error: 'Could not snap to roads', message: error.message });
+  }
+});
+
 module.exports = router;
