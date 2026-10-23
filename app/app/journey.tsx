@@ -5,8 +5,8 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 
 export default function JourneyRedirect() {
-  const { groupJourneyId } = useLocalSearchParams<{ groupJourneyId?: string }>();
-  // A legacy group journey keeps its own live screen; everything else is a normal ride.
-  if (groupJourneyId) return <Redirect href={{ pathname: '/group-journey', params: { groupJourneyId } } as never} />;
+  const { groupId } = useLocalSearchParams<{ groupId?: string }>();
+  // A crew ride is started from the crew page; everything else is a normal ride.
+  if (groupId) return <Redirect href={{ pathname: '/group-detail', params: { groupId: String(groupId) } } as never} />;
   return <Redirect href={'/ride' as never} />;
 }

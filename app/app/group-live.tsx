@@ -133,7 +133,7 @@ export default function GroupLiveScreen() {
         </ScrollView>
 
         <View style={styles.controls}>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/ride' } as never)} accessibilityRole="button" accessibilityLabel="Open my ride" style={[styles.iconBtn, { backgroundColor: surface2 }]}>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/ride', params: { groupRideId: id } } as never)} accessibilityRole="button" accessibilityLabel="Open my ride" style={[styles.iconBtn, { backgroundColor: surface2 }]}>
             <Icon name="route" size={22} color={d.ink} stroke={1.9} />
           </TouchableOpacity>
           <Pressable

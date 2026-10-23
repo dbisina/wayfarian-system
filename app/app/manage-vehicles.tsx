@@ -16,6 +16,8 @@ import {
 import type { GarageVehicle } from '../services/api';
 import Icon from '../components/dw/Icon';
 import VehiclePhoto from '../components/dw/VehiclePhoto';
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
+import { useV2Summary, useV2Vehicle } from '../v2/hooks';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 
 const typeLabel = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -51,11 +53,15 @@ export default function ManageVehiclesScreen() {
     ]);
   };
 
+  // Ridden, rides and the next service come from the ride engine, like the vehicle screen.
+  const usage = useV2Vehicle(selected?.id).data;
+  const summary = useV2Summary().data;
+  const service = usage?.service;
   const stats = selected
     ? [
-        { label: 'Type', value: typeLabel(selected.type) },
-        { label: 'Year', value: selected.year ? String(selected.year) : '–' },
-        { label: 'Colour', value: selected.color || '–' },
+        { label: 'Ridden', value: `${Math.round((usage?.riddenM ?? 0) / 1000).toLocaleString('en-US')} km`, warn: false },
+        { label: 'Rides', value: String(usage?.rides ?? 0), warn: false },
+        { label: 'Service', value: service ? `${Math.round(service.toGoKm).toLocaleString('en-US')} km` : '–', warn: true },
       ]
     : [];
 
@@ -75,6 +81,7 @@ export default function ManageVehiclesScreen() {
           <Text style={[styles.h1, { color: d.ink }]}>Garage</Text>
           <Text style={[styles.sub, { color: d.ink2 }]}>
             {vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'}
+            {summary ? ` · ${Math.round(summary.distanceM / 1000).toLocaleString('en-US')} km together` : ''}
           </Text>
         </View>
       </View>
@@ -98,6 +105,10 @@ export default function ManageVehiclesScreen() {
                   </Text>
                 </View>
               </View>
+              <Svg width={300} height={40} style={styles.heroFloor} pointerEvents="none">
+                <Defs><RadialGradient id="floor" cx="50%" cy="50%" rx="50%" ry="50%"><Stop offset="0" stopColor="#000" stopOpacity={0.8} /><Stop offset="1" stopColor="#000" stopOpacity={0} /></RadialGradient></Defs>
+                <Ellipse cx={150} cy={20} rx={150} ry={20} fill="url(#floor)" />
+              </Svg>
               <View style={styles.heroLane} />
               {selected.photoURL ? (
                 <VehiclePhoto uri={selected.photoURL} radius={22} style={styles.heroImg} />
@@ -110,7 +121,7 @@ export default function ManageVehiclesScreen() {
                 {stats.map((s, i) => (
                   <View key={s.label} style={[styles.heroStat, i > 0 && styles.heroStatDivider]}>
                     <Text style={styles.heroStatLabel}>{s.label}</Text>
-                    <Text style={styles.heroStatValue} numberOfLines={1}>{s.value}</Text>
+                    <Text style={[styles.heroStatValue, s.warn && { color: AMBER }]} numberOfLines={1}>{s.value}</Text>
                   </View>
                 ))}
               </View>
@@ -201,6 +212,7 @@ const styles = StyleSheet.create({
   defaultTagText: { fontFamily: F.black, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: INK },
   heroName: { fontFamily: F.black, fontSize: 24, letterSpacing: -0.5, color: '#F2EEE5', marginTop: 6 },
   heroSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
+  heroFloor: { position: 'absolute', left: 28, top: 290, alignSelf: 'center' },
   heroLane: { position: 'absolute', left: 0, right: 0, top: 322, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.4)' },
   heroImg: { position: 'absolute', left: 20, right: 20, top: 100, height: 206 },
   heroEmpty: { position: 'absolute', left: 0, right: 0, top: 120, alignItems: 'center' },

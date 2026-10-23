@@ -131,6 +131,13 @@ export function createV2Client(deps: V2ClientDeps) {
     leaveGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/leave`),
     startGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/start`),
     endGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/end`),
+    // crews (persistent groups): their rides, weekly quest and activity feed
+    crewState: (crewId: string) => request<any>('GET', `/crews/${enc(crewId)}`),
+    crewActivity: (crewId: string) => request<{ items: any[] }>('GET', `/crews/${enc(crewId)}/activity`),
+    postCrewMessage: (crewId: string, text: string) => request<any>('POST', `/crews/${enc(crewId)}/messages`, { text }),
+    startCrewRide: (crewId: string, input: Record<string, unknown>) => request<any>('POST', `/crews/${enc(crewId)}/rides`, input),
+    joinCrewRide: (crewId: string) => request<any>('POST', `/crews/${enc(crewId)}/rides/join`),
+    endCrewRide: (crewId: string) => request<any>('POST', `/crews/${enc(crewId)}/rides/end`),
     startGroupMemberRide: (groupId: string, rideId: string, input: Record<string, unknown>) =>
       request<any>('PUT', `/group-rides/${enc(groupId)}/rides/${enc(rideId)}`, input),
   };

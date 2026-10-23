@@ -3,7 +3,7 @@
 
 const express = require('express');
 const multer = require('multer');
-const { rideService, groupRides, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
+const { rideService, groupRides, crews, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -54,6 +54,12 @@ router.post('/group-rides/:id/leave', wrap((req) => groupRides.leave(req.user.id
 router.post('/group-rides/:id/start', wrap((req) => groupRides.start(req.user.id, req.params.id)));
 router.post('/group-rides/:id/end', wrap((req) => groupRides.end(req.user.id, req.params.id)));
 router.put('/group-rides/:id/rides/:rideId', wrap((req) => groupRides.startRide(req.user.id, req.params.id, req.params.rideId, req.body)));
+router.get('/crews/:crewId', wrap((req) => crews.getState(req.user.id, req.params.crewId)));
+router.get('/crews/:crewId/activity', wrap((req) => crews.activity(req.user.id, req.params.crewId, { limit: req.query.limit })));
+router.post('/crews/:crewId/messages', wrap((req) => crews.postMessage(req.user.id, req.params.crewId, req.body && req.body.text)));
+router.post('/crews/:crewId/rides', wrap((req) => crews.startRide(req.user.id, req.params.crewId, req.body || {})));
+router.post('/crews/:crewId/rides/join', wrap((req) => crews.joinRide(req.user.id, req.params.crewId)));
+router.post('/crews/:crewId/rides/end', wrap((req) => crews.endRide(req.user.id, req.params.crewId)));
 router.get('/riders/:id', wrap((req) => profiles.getRider(req.user.id, req.params.id)));
 router.get('/vehicles/:id', wrap((req) => profiles.getVehicle(req.user.id, req.params.id)));
 router.put('/vehicles/:id/services/:serviceId', wrap((req) => profiles.logService(req.user.id, req.params.id, req.params.serviceId, req.body)));
