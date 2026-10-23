@@ -16,6 +16,7 @@ import {
 import type { GarageVehicle } from '../services/api';
 import Icon from '../components/dw/Icon';
 import VehiclePhoto from '../components/dw/VehiclePhoto';
+import PlateBadge from '../components/dw/PlateBadge';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 import { useV2Summary, useV2Vehicle } from '../v2/hooks';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
@@ -105,6 +106,7 @@ export default function ManageVehiclesScreen() {
                   </Text>
                 </View>
               </View>
+              <View style={styles.heroPlate} pointerEvents="none"><PlateBadge plate={selected.plate} size="md" /></View>
               <Svg width={300} height={40} style={styles.heroFloor} pointerEvents="none">
                 <Defs><RadialGradient id="floor" cx="50%" cy="50%" rx="50%" ry="50%"><Stop offset="0" stopColor="#000" stopOpacity={0.8} /><Stop offset="1" stopColor="#000" stopOpacity={0} /></RadialGradient></Defs>
                 <Ellipse cx={150} cy={20} rx={150} ry={20} fill="url(#floor)" />
@@ -212,6 +214,7 @@ const styles = StyleSheet.create({
   defaultTagText: { fontFamily: F.black, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: INK },
   heroName: { fontFamily: F.black, fontSize: 24, letterSpacing: -0.5, color: '#F2EEE5', marginTop: 6 },
   heroSub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
+  heroPlate: { position: 'absolute', right: 20, top: 22 },
   heroFloor: { position: 'absolute', left: 28, top: 290, alignSelf: 'center' },
   heroLane: { position: 'absolute', left: 0, right: 0, top: 322, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.4)' },
   heroImg: { position: 'absolute', left: 20, right: 20, top: 100, height: 206 },

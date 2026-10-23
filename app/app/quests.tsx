@@ -1,11 +1,12 @@
 // app/app/quests.tsx — weekly quests, derived client-side from the journey history and streak API.
 
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
-import { userAPI } from '../services/api';
+import { useQuestWeek, useV2Rides, useV2Summary } from '../v2/hooks';
+import { getRuntime } from '../v2/runtime';
 import { useSettings } from '../contexts/SettingsContext';
 import ClipCard from '../components/dw/ClipCard';
 import Icon from '../components/dw/Icon';
@@ -25,24 +26,40 @@ export default function QuestsScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
   const { convertDistance } = useSettings();
-  const [journeys, setJourneys] = useState<any[]>([]);
-  const [streak, setStreak] = useState({ current: 0, best: 0 });
+  const qc = useQueryClient();
+  const rides = useV2Rides();
+  const summary = useV2Summary();
+  const questWeek = useQuestWeek();
+  const [opening, setOpening] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      userAPI
-        .getJourneyHistory({ limit: 100, sortBy: 'startTime', sortOrder: 'desc' })
-        .then((res: any) => setJourneys(res?.journeys || []))
-        .catch(() => {});
-      userAPI
-        .getStreak()
-        .then((res: any) => {
-          const s = res?.streak;
-          if (s) setStreak({ current: s.currentStreak ?? 0, best: s.longestStreak ?? s.bestStreak ?? s.currentStreak ?? 0 });
-        })
-        .catch(() => {});
-    }, [])
+  // Quests count rides from the ride engine. Load older pages until they reach the start of the month.
+  const monthStart = useMemo(() => { const m = new Date(); m.setDate(1); m.setHours(0, 0, 0, 0); return m.getTime(); }, []);
+  const loaded = rides.data?.pages.flatMap((p: any) => p.items) ?? [];
+  const oldest = loaded.length ? new Date(loaded[loaded.length - 1].startedAt).getTime() : Infinity;
+  useEffect(() => {
+    if (rides.hasNextPage && !rides.isFetchingNextPage && oldest > monthStart && (rides.data?.pages.length ?? 0) < 6) rides.fetchNextPage();
+  }, [rides, oldest, monthStart]);
+
+  const journeys = useMemo(
+    () => loaded
+      .filter((r: any) => r.status === 'FINALIZED' && r.distanceM >= 100)
+      .map((r: any) => ({ startTime: r.startedAt, totalDistance: r.distanceM / 1000, group: !!r.groupRideId })),
+    [loaded]
   );
+  const streak = { current: summary.data?.streak?.current ?? 0, best: summary.data?.streak?.longest ?? summary.data?.streak?.current ?? 0 };
+
+  const openChest = async () => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      await getRuntime().client.openQuestChest();
+      await Promise.all([questWeek.refetch(), qc.invalidateQueries({ queryKey: ['u'] })]);
+    } catch (e: any) {
+      Alert.alert('Could not open the chest', e?.message || 'Try again');
+    } finally {
+      setOpening(false);
+    }
+  };
 
   const now = new Date();
   const start = weekStart(now);
@@ -75,7 +92,10 @@ export default function QuestsScreen() {
     { title: 'Join a group ride', cur: week.filter((j) => !!j.group).length, goal: 1, label: '' },
   ];
   const doneCount = quests.filter((q) => q.cur >= q.goal).length;
-  const heroPct = Math.min(1, weekKm / 150);
+  const qw = questWeek.data;
+  const xp = qw?.xp ?? 0;
+  const xpTarget = qw?.target ?? 800;
+  const heroPct = Math.min(1, xp / xpTarget);
 
   return (
     <View style={[styles.root, { backgroundColor: d.bg }]}>
@@ -101,15 +121,23 @@ export default function QuestsScreen() {
 
         <ClipCard color={AMBER} corner={24} radius={26} style={styles.hero}>
           <View style={{ padding: 20, gap: 8 }}>
-            <Text style={styles.eyebrow}>This week</Text>
+            <Text style={styles.eyebrow}>Earned this week</Text>
             <Text style={styles.heroNum}>
-              {Math.round(weekKm)}
-              <Text style={styles.heroUnit}>  / 150 km</Text>
+              {xp.toLocaleString('en-US')}
+              <Text style={styles.heroUnit}>  / {xpTarget.toLocaleString('en-US')} XP</Text>
             </Text>
             <View style={styles.heroTrack}>
               <View style={{ width: `${heroPct * 100}%`, height: 8, backgroundColor: INK }} />
             </View>
-            <Text style={styles.heroNote}>{doneCount} of {quests.length} quests done</Text>
+            {qw?.chest.unlocked && !qw.chest.claimed ? (
+              <TouchableOpacity onPress={openChest} disabled={opening} accessibilityRole="button" style={[styles.chestBtn, { opacity: opening ? 0.6 : 1 }]}>
+                <Text style={styles.chestBtnText}>Open the weekly chest · +{qw.chest.rewardXp} XP</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.heroNote}>
+                {qw?.chest.claimed ? `Chest opened this week · ${doneCount} of ${quests.length} quests done` : `${qw ? qw.xpToGo.toLocaleString('en-US') : '–'} XP more unlocks the weekly chest`}
+              </Text>
+            )}
           </View>
         </ClipCard>
 
@@ -215,6 +243,8 @@ const styles = StyleSheet.create({
   heroNum: { fontFamily: F.monoBold, fontSize: 48, lineHeight: 52, letterSpacing: -1.4, color: INK },
   heroUnit: { fontSize: 16, letterSpacing: 0 },
   heroTrack: { height: 8, borderRadius: 4, backgroundColor: 'rgba(26,24,20,0.15)', overflow: 'hidden' },
+  chestBtn: { marginTop: 4, height: 46, borderRadius: 23, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' },
+  chestBtnText: { fontFamily: F.black, fontSize: 14, color: AMBER },
   heroNote: { fontFamily: F.bold, fontSize: 13, color: 'rgba(26,24,20,0.75)' },
   block: { paddingHorizontal: 20, gap: 12 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },

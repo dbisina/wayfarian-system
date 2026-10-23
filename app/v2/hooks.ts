@@ -110,6 +110,11 @@ export function useV2Rider(id: string | undefined) {
   return useQuery({ queryKey: qk.rider(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.rider(id!), enabled: !!uid && !!id });
 }
 
+export function useQuestWeek() {
+  const uid = useUid();
+  return useQuery({ queryKey: ['u', uid ?? 'none', 'quest-week'], queryFn: () => getRuntime().client.questWeek(), enabled: !!uid, staleTime: 30_000 });
+}
+
 export function useMyFollows() {
   const uid = useUid();
   return useQuery({ queryKey: ['u', uid ?? 'none', 'follows'], queryFn: () => getRuntime().client.myFollows(), enabled: !!uid, staleTime: 60_000 });

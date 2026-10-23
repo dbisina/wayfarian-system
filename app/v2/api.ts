@@ -120,6 +120,9 @@ export function createV2Client(deps: V2ClientDeps) {
     followRider: (id: string) => request<any>('POST', `/riders/${enc(id)}/follow`),
     unfollowRider: (id: string) => request<any>('DELETE', `/riders/${enc(id)}/follow`),
     inviteRider: (id: string, groupRideId: string) => request<any>('POST', `/riders/${enc(id)}/invite`, { groupRideId }),
+    photoAlbums: () => request<{ items: any[] }>('GET', '/photos/albums'),
+    questWeek: () => request<any>('GET', '/me/quests/week'),
+    openQuestChest: () => request<any>('POST', '/me/quests/chest'),
     myFollows: () => request<{ followers: number; following: number }>('GET', '/me/follows'),
     vehicle: (id: string) => request<any>('GET', `/vehicles/${enc(id)}`),
     logService: (vehicleId: string, serviceId: string, input: { kind?: string; intervalKm?: number; doneAt?: string; notes?: string } = {}) =>

@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import VehiclePhoto from '../components/dw/VehiclePhoto';
+import PlateBadge from '../components/dw/PlateBadge';
 import { useSettings } from '../contexts/SettingsContext';
 import { useV2UserData as useUserData } from '../v2/legacyAdapters';
 import { getCurrentApiUrl, getAuthToken } from '../services/api';
@@ -256,6 +257,7 @@ export default function ProfileScreen() {
           <Text style={styles.dwBikeSub}>
             {u?.totalTrips ?? 0} rides · top {Math.round(u?.topSpeed || 0)} km/h
           </Text>
+          <View style={styles.dwBikePlate} pointerEvents="none"><PlateBadge plate={bike?.plate} size="sm" /></View>
           <View style={styles.dwBikeLane} />
           {bike?.photoURL ? (
             /\.png(\?|#|$)/i.test(bike.photoURL)
@@ -310,6 +312,7 @@ const styles = StyleSheet.create({
   dwName: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
   dwSub: { fontFamily: F.regular, fontSize: 13 },
   dwBike: { marginHorizontal: 16, marginTop: 28, height: 176, padding: 18 },
+  dwBikePlate: { position: 'absolute', left: 18, bottom: 16 },
   dwBikeBg: { ...StyleSheet.absoluteFillObject, borderRadius: 28, backgroundColor: '#161513' },
   dwBikeCut: { position: 'absolute', right: -6, top: -58, width: 236, height: 236 },
   dwBikeEyebrow: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: '#A29B8D' },

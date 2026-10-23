@@ -3,7 +3,7 @@
 
 const express = require('express');
 const multer = require('multer');
-const { rideService, groupRides, crews, follows, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
+const { rideService, groupRides, crews, follows, quests, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -39,6 +39,7 @@ router.delete('/rides/:id', wrap((req) => rideService.deleteRide(req.user.id, re
 router.patch('/rides/:id', wrap((req) => rideService.updateRide(req.user.id, req.params.id, req.body)));
 const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('file');
 router.put('/rides/:id/photos/:photoId', (req, res, next) => uploadPhoto(req, res, (err) => (err ? res.status(400).json({ ok: false, error: { code: 'invalid_input', message: err.message } }) : next())), wrap((req) => photos().putPhoto(req.user.id, req.params.id, req.params.photoId, req.file, req.body)));
+router.get('/photos/albums', wrap((req) => photos().listAlbums(req.user.id, { limit: req.query.limit })));
 router.get('/rides/:id/photos', wrap((req) => photos().listPhotos(req.user.id, req.params.id)));
 router.get('/rides/:id/route', wrap((req) => rideService.getRoute(req.user.id, req.params.id, { maxPoints: req.query.maxPoints })));
 router.get('/rides/:id', wrap((req) => rideService.getRide(req.user.id, req.params.id)));
@@ -64,6 +65,8 @@ router.get('/riders/:id', wrap(async (req) => ({ ...(await profiles.getRider(req
 router.post('/riders/:id/follow', wrap((req) => follows.follow(req.user.id, req.params.id)));
 router.delete('/riders/:id/follow', wrap((req) => follows.unfollow(req.user.id, req.params.id)));
 router.post('/riders/:id/invite', wrap((req) => follows.invite(req.user.id, req.params.id, req.body && req.body.groupRideId)));
+router.get('/me/quests/week', wrap((req) => quests.week(req.user.id)));
+router.post('/me/quests/chest', wrap((req) => quests.openChest(req.user.id)));
 router.get('/me/follows', wrap((req) => follows.counts(req.user.id)));
 router.get('/vehicles/:id', wrap((req) => profiles.getVehicle(req.user.id, req.params.id)));
 router.put('/vehicles/:id/services/:serviceId', wrap((req) => profiles.logService(req.user.id, req.params.id, req.params.serviceId, req.body)));

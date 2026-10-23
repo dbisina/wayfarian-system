@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import { userAPI } from '../services/api';
+import { getRuntime } from '../v2/runtime';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { getFirebaseDownloadUrl } from '../utils/storage';
@@ -24,7 +25,8 @@ export default function GalleryScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { convertDistance } = useSettings();
-  const [journeys, setJourneys] = useState<any[]>([]);
+  const [oldJourneys, setJourneys] = useState<any[]>([]);
+  const [v2Albums, setV2Albums] = useState<any[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
   const [query, setQuery] = useState('');
 
@@ -34,7 +36,22 @@ export default function GalleryScreen() {
         .getJourneyHistory({ limit: 60, sortBy: 'startTime', sortOrder: 'desc' })
         .then((res: any) => setJourneys((res?.journeys || []).filter((j: any) => (j.photos?.length || 0) > 0 || j.coverPhotoUrl)))
         .catch(() => {});
+      // Rides recorded on the ride engine keep their photos there.
+      getRuntime().client.photoAlbums().then((res) => setV2Albums(res.items)).catch(() => {});
     }, [])
+  );
+
+  // One list: new albums and old ones, newest first. A new album carries its own cover and count.
+  const journeys = useMemo(
+    () =>
+      [
+        ...v2Albums.map((a) => ({
+          id: a.rideId, v2: true, startTime: a.startedAt, title: a.title || 'Ride', customTitle: a.title,
+          totalDistance: a.distanceM / 1000, group: a.group, coverPhotoUrl: a.coverUrl, photos: [] as any[], photoCount: a.photoCount,
+        })),
+        ...oldJourneys,
+      ].sort((x: any, y: any) => new Date(y.startTime).getTime() - new Date(x.startTime).getTime()),
+    [v2Albums, oldJourneys]
   );
 
   const shown = useMemo(
@@ -53,7 +70,7 @@ export default function GalleryScreen() {
   const name = user?.displayName || 'Your';
   const initials = (user?.displayName || 'W').split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]!.toUpperCase()).join('');
   const cover = latest ? photoUri({ imageUrl: latest.coverPhotoUrl }) || photoUri(latest.photos?.[0]) : null;
-  const open = (j: any) => router.push({ pathname: '/gallery-album', params: { journeyId: j.id } } as never);
+  const open = (j: any) => router.push({ pathname: '/gallery-album', params: j.v2 ? { rideId: j.id } : { journeyId: j.id } } as never);
 
   return (
     <View style={[styles.root, { backgroundColor: d.bg }]}>
@@ -146,7 +163,7 @@ export default function GalleryScreen() {
               <View style={styles.albumShade} />
               <View style={styles.albumPill}>
                 <Text style={styles.albumPillText}>
-                  {latest.photos?.length || 1} photos · {convertDistance(latest.totalDistance || 0)} ·{' '}
+                  {latest.photoCount || latest.photos?.length || 1} photos · {convertDistance(latest.totalDistance || 0)} ·{' '}
                   {new Date(latest.startTime).toLocaleDateString(undefined, { weekday: 'short' })}
                 </Text>
               </View>

@@ -70,6 +70,7 @@ model Vehicle {
   color     String? // e.g. "Metallic Blue"
   type      String   @default("motorcycle") // car | bike | motorcycle | scooter | truck | van
   photoURL  String?
+  plate     String? // number plate, shown as a badge
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

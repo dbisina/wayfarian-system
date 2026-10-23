@@ -1,43 +1,90 @@
-// app/app/gallery-album.tsx — one ride's photos. Param: journeyId.
+// app/app/gallery-album.tsx — one ride's photos. Param: rideId (a ride from the ride engine) or journeyId (an older journey).
+// A swipe pager: swipe the big photo, or tap a thumbnail, and the dots, caption and details follow.
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator, useWindowDimensions, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { journeyAPI } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 import { getFirebaseDownloadUrl } from '../utils/storage';
+import { getRuntime } from '../v2/runtime';
 import Icon from '../components/dw/Icon';
 import { AMBER, F, shadow, useDW } from '../constants/design';
 
 const uri = (p: any) => getFirebaseDownloadUrl(p?.imageUrl || p?.firebasePath) || p?.imageUrl || p?.firebasePath;
+const thumbUri = (p: any) => getFirebaseDownloadUrl(p?.thumbnailUrl || p?.imageUrl || p?.firebasePath) || p?.thumbnailUrl || p?.imageUrl || p?.firebasePath;
 const hm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+
+interface Album {
+  title: string;
+  totalDistance: number; // km
+  topSpeed: number; // km/h
+  photos: any[];
+}
 
 export default function GalleryAlbumScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
-  const { journeyId } = useLocalSearchParams<{ journeyId?: string }>();
+  const { width } = useWindowDimensions();
+  const { rideId, journeyId } = useLocalSearchParams<{ rideId?: string; journeyId?: string }>();
   const { convertDistance, convertSpeed } = useSettings();
-  const [journey, setJourney] = useState<any>(null);
+  const [album, setAlbum] = useState<Album | null>(null);
   const [idx, setIdx] = useState(0);
   const [loading, setLoading] = useState(true);
+  const pager = useRef<FlatList<any>>(null);
+  const thumbs = useRef<ScrollView>(null);
 
   useEffect(() => {
-    if (!journeyId) return;
-    journeyAPI
-      .getJourney(String(journeyId))
-      .then((res: any) => setJourney(res?.journey))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [journeyId]);
+    let cancelled = false;
+    const done = () => { if (!cancelled) setLoading(false); };
+    if (rideId) {
+      const rt = getRuntime();
+      Promise.all([rt.client.getRide(String(rideId)), rt.client.ridePhotos(String(rideId))])
+        .then(([ride, photos]) => {
+          if (cancelled) return;
+          setAlbum({ title: ride?.title || 'Ride album', totalDistance: (ride?.distanceM ?? 0) / 1000, topSpeed: (ride?.topSpeedMps ?? 0) * 3.6, photos: photos?.items ?? [] });
+        })
+        .catch(() => {})
+        .finally(done);
+    } else if (journeyId) {
+      journeyAPI
+        .getJourney(String(journeyId))
+        .then((res: any) => {
+          const j = res?.journey;
+          if (!cancelled && j) setAlbum({ title: j.customTitle || j.title || 'Ride album', totalDistance: j.totalDistance || 0, topSpeed: j.topSpeed || 0, photos: j.photos || [] });
+        })
+        .catch(() => {})
+        .finally(done);
+    } else {
+      done();
+    }
+    return () => { cancelled = true; };
+  }, [rideId, journeyId]);
 
-  const photos: any[] = journey?.photos || [];
+  const photos = album?.photos ?? [];
   const photo = photos[idx];
-  const title = journey?.customTitle || journey?.title || 'Ride album';
+  const title = album?.title ?? 'Ride album';
+  const page = width; // each photo is one full-width page with the card inset by 16
+
+  const goTo = useCallback((i: number) => {
+    setIdx(i);
+    pager.current?.scrollToOffset({ offset: i * page, animated: true });
+  }, [page]);
+
+  const onSwipeEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.min(photos.length - 1, Math.max(0, Math.round(e.nativeEvent.contentOffset.x / page)));
+    if (i !== idx) setIdx(i);
+  };
+
+  // Keep the selected thumbnail in view as the big photo is swiped.
+  useEffect(() => {
+    thumbs.current?.scrollTo({ x: Math.max(0, idx * 62 - width / 2 + 40), animated: true });
+  }, [idx, width]);
 
   const meta = [
-    { icon: 'route' as const, text: convertDistance(journey?.totalDistance || 0) },
-    { icon: 'bolt' as const, text: `${convertSpeed(journey?.topSpeed || 0)} top` },
+    { icon: 'route' as const, text: convertDistance(album?.totalDistance || 0) },
+    { icon: 'bolt' as const, text: `${convertSpeed(album?.topSpeed || 0)} top` },
     { icon: 'user' as const, text: hm(photo?.takenAt) || '–' },
   ];
 
@@ -55,7 +102,7 @@ export default function GalleryAlbumScreen() {
         </TouchableOpacity>
         <Text style={[styles.title, { color: d.ink }]} numberOfLines={1}>{title}</Text>
         <TouchableOpacity
-          onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: String(journeyId) } })}
+          onPress={() => router.push(rideId ? ({ pathname: '/ride-detail', params: { rideId: String(rideId) } } as never) : ({ pathname: '/journey-detail', params: { journeyId: String(journeyId) } } as never))}
           accessibilityRole="button"
           style={[styles.route, shadow(d, 8), { backgroundColor: d.surface }]}
         >
@@ -70,32 +117,44 @@ export default function GalleryAlbumScreen() {
         <Text style={[styles.empty, { color: d.ink2 }]}>No photos in this ride yet.</Text>
       ) : (
         <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbs} contentContainerStyle={styles.thumbsContent}>
+          <ScrollView ref={thumbs} horizontal showsHorizontalScrollIndicator={false} style={styles.thumbs} contentContainerStyle={styles.thumbsContent}>
             {photos.map((p, i) => {
               const sel = i === idx;
               return (
-                <TouchableOpacity key={p.id} onPress={() => setIdx(i)} accessibilityRole="button" accessibilityState={{ selected: sel }}>
+                <TouchableOpacity key={p.id} onPress={() => goTo(i)} accessibilityRole="button" accessibilityLabel={`Photo ${i + 1}`} accessibilityState={{ selected: sel }}>
                   <Image
-                    source={{ uri: uri(p) }}
-                    style={[
-                      sel ? styles.thumbSel : styles.thumb,
-                      sel && { borderWidth: 3, borderColor: AMBER },
-                      { backgroundColor: d.surface2 },
-                    ]}
+                    source={{ uri: thumbUri(p) }}
+                    style={[sel ? styles.thumbSel : styles.thumb, sel && { borderWidth: 3, borderColor: AMBER }, { backgroundColor: d.surface2 }]}
                   />
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
 
-          <View style={[styles.figure, shadow(d, 10), { backgroundColor: d.surface2 }]}>
-            <Image source={{ uri: uri(photo) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            {photo?.takenAt ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{hm(photo.takenAt)}</Text>
+          <FlatList
+            ref={pager}
+            data={photos}
+            keyExtractor={(p) => String(p.id)}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={onSwipeEnd}
+            getItemLayout={(_, i) => ({ length: page, offset: page * i, index: i })}
+            style={styles.pager}
+            accessibilityLabel="Photos, swipe to browse"
+            renderItem={({ item }) => (
+              <View style={{ width: page, paddingHorizontal: 16 }}>
+                <View style={[styles.figure, shadow(d, 10), { backgroundColor: d.surface2 }]}>
+                  <Image source={{ uri: uri(item) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  {item?.takenAt ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{hm(item.takenAt)}</Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
-            ) : null}
-          </View>
+            )}
+          />
 
           <View style={styles.dots}>
             {photos.slice(0, 7).map((_, i) => (
@@ -104,7 +163,7 @@ export default function GalleryAlbumScreen() {
           </View>
 
           <View style={styles.caption}>
-            <Text style={[styles.cap, { color: d.ink }]}>{title}</Text>
+            <Text style={[styles.cap, { color: d.ink }]} numberOfLines={2}>{title}</Text>
             <Text style={[styles.capSub, { color: d.ink2 }]}>
               Photo {idx + 1} of {photos.length}
             </Text>
@@ -136,7 +195,8 @@ const styles = StyleSheet.create({
   thumbsContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
   thumb: { width: 54, height: 54, borderRadius: 16 },
   thumbSel: { width: 68, height: 68, borderRadius: 20 },
-  figure: { marginHorizontal: 16, marginTop: 16, height: 348, borderRadius: 28, overflow: 'hidden' },
+  pager: { flexGrow: 0, marginTop: 16 },
+  figure: { height: 348, borderRadius: 28, overflow: 'hidden' },
   badge: { position: 'absolute', right: 14, bottom: 14, height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
   badgeText: { fontFamily: F.monoBold, fontSize: 12, color: '#FFFDF8' },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 12 },
