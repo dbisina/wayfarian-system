@@ -39,7 +39,7 @@ export default function NewJourneyScreen() {
   const dispatch = useAppDispatch();
   const garageVehicles = useAppSelector(selectVehicles);
   const defaultGarageVehicle = useAppSelector(selectDefaultVehicle);
-  const { groupId } = useLocalSearchParams<{ groupId?: string }>();
+  const { groupId, destName, destLat, destLng } = useLocalSearchParams<{ groupId?: string; destName?: string; destLat?: string; destLng?: string }>();
   const [journeyName, setJourneyName] = useState('');
   const [startLocation, setStartLocation] = useState<LocationData | null>(null);
   const [endLocation, setEndLocation] = useState<LocationData | null>(null);
@@ -76,10 +76,13 @@ export default function NewJourneyScreen() {
     useCallback(() => {
       setJourneyName('');
       setStartLocation(null);
-      setEndLocation(null);
+      // Opened from "Ride here" on the map: the chosen place is the destination.
+      const dLat = Number(destLat);
+      const dLng = Number(destLng);
+      setEndLocation(destLat && destLng && Number.isFinite(dLat) && Number.isFinite(dLng) ? { latitude: dLat, longitude: dLng, address: String(destName || 'Destination') } : null);
       setNotes('');
       setStartDateTime(new Date());
-    }, [])
+    }, [destLat, destLng, destName])
   );
 
   const handleVehicleChange = (v: Vehicle) => {
@@ -328,7 +331,7 @@ export default function NewJourneyScreen() {
           // With the keyboard up the sheet fills the space between the title and the keyboard, so
           // both fields and their suggestions stay visible on iOS and Android.
           kbHeight > 0
-            ? { bottom: kbHeight, top: Math.max(56, insets.top + 8) + 56, maxHeight: undefined }
+            ? { bottom: Platform.OS === 'ios' ? kbHeight : 0, top: Math.max(56, insets.top + 8) + 56, maxHeight: undefined }
             : null,
         ]}
         pointerEvents="box-none"

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, Platform } from 'react-native';
 import TextInput from '../components/dw/DWTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { groupAPI } from '../services/api';
 import Icon from '../components/dw/Icon';
+import { useKeyboardHeight } from '../components/dw/KeyboardInset';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 
 const RIDE_STYLES = ['Long distance', 'Weekend runs', 'Night rides', 'Off-road', 'Commutes'];
@@ -83,10 +84,11 @@ export default function NewGroupScreen() {
     }
   };
 
+  const kbHeight = useKeyboardHeight();
   const name = groupName.trim();
 
   return (
-    <View style={[styles.root, { backgroundColor: d.bg }]}>
+    <View style={[styles.root, { backgroundColor: d.bg, paddingBottom: Platform.OS === 'ios' ? kbHeight : 0 }]}>
       <ScrollView
         contentContainerStyle={{ paddingTop: Math.max(56, insets.top + 8), paddingHorizontal: 16, paddingBottom: 120, gap: 18 }}
         showsVerticalScrollIndicator={false}

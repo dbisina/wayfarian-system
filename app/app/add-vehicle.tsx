@@ -123,14 +123,10 @@ export default function AddVehicleScreen() {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: d.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
+    <View style={[styles.container, { backgroundColor: d.bg }]}>
       <StatusBar barStyle={d.dark ? 'light-content' : 'dark-content'} />
 
-      <View style={[styles.header, { paddingTop: Math.max(56, insets.top + 8) }]}>
+      <View style={[styles.header, { paddingTop: Math.max(56, insets.top + 8), paddingBottom: 10, backgroundColor: d.bg, zIndex: 2 }]}>
         {isOnboarding ? (
           <View style={{ width: 44 }} />
         ) : (
@@ -243,7 +239,7 @@ export default function AddVehicleScreen() {
           </>
         )}
       </TouchableOpacity>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -255,7 +251,7 @@ const styles = StyleSheet.create({
   skip: { fontFamily: F.extra, fontSize: 14 },
   stage: { height: 262, borderRadius: 32, backgroundColor: '#161513', overflow: 'hidden' },
   stageLane: { position: 'absolute', left: 0, right: 0, top: 196, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.4)' },
-  stagePhoto: { position: 'absolute', left: 40, right: 40, top: 0, height: 210 },
+  stagePhoto: { position: 'absolute', left: 40, right: 40, top: 8, height: 190, overflow: 'hidden', borderRadius: 14 },
   stageHint: { fontFamily: F.bold, fontSize: 13, color: 'rgba(242,238,229,0.6)' },
   callIt: { position: 'absolute', left: 14, right: 14, bottom: 14, height: 44, borderRadius: 22, backgroundColor: 'rgba(242,238,229,0.1)', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
   callItLabel: { fontFamily: F.extra, fontSize: 12, color: '#A29B8D' },

@@ -1,1242 +1,354 @@
-/**
- * Main map tab — the app's home screen during rides.
- *
- * Responsibilities:
- * - Full-screen MapView with auto-follow while tracking (1 s throttle, 3 s
- *   gesture cooldown to prevent camera fighting).
- * - Place search with 250 ms debounced autocomplete and geocode fallback.
- * - Nearby-place filter chips (gas, hotel, restaurant, attraction, shopping).
- * - Completed-journey card markers pinned to each ride's endpoint.
- * - Floating play/stop button that starts a formless journey or opens the
- *   end-journey modal when already tracking.
- * - Mini-stats sheet (time / speed / distance + LIVE badge) overlaid during
- *   an active journey.
- * - Destination bottom sheet with a "Start Journey" CTA when a search result
- *   is selected.
- */
+// app/app/(tabs)/map.tsx
+// The Map tab, laid out as the "Map" board: a calm map, a "Where to?" search, nearby-place chips,
+// square place pins, and a card for the selected place with "Ride here". Rides themselves are
+// recorded on the ride screen; this tab only finds places and hands a destination over.
 
-import * as Localization from 'expo-localization';
-import { fallbackRegion } from '../../v2/countryRegion';
-import { useLiveRide } from '../../v2/hooks';
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, FlatList, Keyboard, Platform, Animated, ActivityIndicator } from 'react-native';
-import TextInput from '../../components/dw/DWTextInput';
-import { Image } from 'expo-image';
-import { router } from 'expo-router';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { useAuth } from '../../contexts/AuthContext';
-import { useSettings, MapType } from '../../contexts/SettingsContext';
-import { useJourney } from '../../contexts/JourneyContext';
-import { useJourneyStats, useJourneyRoutePoints } from '../../hooks/useJourneyState';
-import { placesAPI, userAPI } from '../../services/api';
-import { Skeleton, SkeletonLine, SkeletonCircle } from '../../components/Skeleton';
-import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { useTranslation } from 'react-i18next';
+import * as Localization from 'expo-localization';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import JourneyEndModal from '../../components/JourneyEndModal';
-import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import {
-  fetchVehicles,
-  selectDefaultVehicle,
-  selectSelectedVehicle,
-} from '../../store/slices/vehicleSlice';
-import type { Vehicle } from '../../contexts/SettingsContext';
+import Svg, { Path } from 'react-native-svg';
+import ClipCard from '../../components/dw/ClipCard';
 import Icon from '../../components/dw/Icon';
+import { useAuth } from '../../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
+import { placesAPI } from '../../services/api';
+import { fallbackRegion } from '../../v2/countryRegion';
+import { haversineM } from '../../v2/navigation';
+import { formatDistance } from '../../v2/format';
 
 interface Place {
   id: string;
   name: string;
   latitude: number;
   longitude: number;
-  type: string;
+  kind: string;
   rating?: number;
+  subtitle?: string;
 }
 
-interface MapJourney {
-  id: string;
-  title: string;
-  customTitle?: string | null;
-  endLatitude?: number;
-  endLongitude?: number;
-  endAddress?: string;
-  startTime?: string;
-  vehicle?: string;
-  photos?: { id: string; imageUrl: string }[];
-}
+// Icon paths from the board (24 grid).
+const ICONS: Record<string, string> = {
+  fuel: 'M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9M14 8l3 2v7a1.5 1.5 0 0 0 3 0V9l-3-3',
+  hotel: 'M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5M7 11.5a1.5 1.5 0 1 0 0-.01',
+  food: 'M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 3c-2 1-3 4-3 7h3v11',
+  sight: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z',
+  shop: 'M5 8h14l-1 12H6zM9 8a3 3 0 0 1 6 0',
+  pin: 'M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21zM12 7.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+};
 
-export default function MapScreen(): React.JSX.Element {
-  const { isAuthenticated, user } = useAuth();
-  const { mapType, vehicle: settingsVehicle } = useSettings();
-  const dispatch = useAppDispatch();
-  // VehiclePicker writes only to the Redux garage slice (not SettingsContext), so
-  // the play button must consult Redux first or it always falls back to "car".
-  const garageSelectedVehicle = useAppSelector(selectSelectedVehicle);
-  const garageDefaultVehicle = useAppSelector(selectDefaultVehicle);
-  const activeGarageVehicle = garageSelectedVehicle ?? garageDefaultVehicle;
-  const effectiveVehicleType: Vehicle = ((activeGarageVehicle?.type as Vehicle | undefined) ?? settingsVehicle) || 'car';
-  const { currentLocation } = useJourney();
-  const liveRide = useLiveRide();
-  const isTracking = !!liveRide && liveRide.status !== 'ENDED';
-  const stats = useJourneyStats();
-  const routePoints = useJourneyRoutePoints();
-  const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+const CHIPS = [
+  { key: 'fuel', label: 'Fuel', type: 'gas_station', noun: 'Fuel' },
+  { key: 'food', label: 'Food', type: 'restaurant', noun: 'Restaurant' },
+  { key: 'hotel', label: 'Hotels', type: 'lodging', noun: 'Hotel' },
+  { key: 'sight', label: 'Sights', type: 'tourist_attraction', noun: 'Attraction' },
+  { key: 'shop', label: 'Shops', type: 'shopping_mall', noun: 'Shopping' },
+] as const;
+
+// A calm map in the app's own colours (Google Maps only; Apple Maps has no custom style).
+const mapStyle = (dark: boolean) => {
+  const c = dark
+    ? { land: '#161513', poi: '#1E1C19', road: '#2A2723', major: '#38332B', water: '#132029', text: '#A29B8D', stroke: '#161513' }
+    : { land: '#ECE6D9', poi: '#E2DBCB', road: '#FFFDF8', major: '#FFFDF8', water: '#C9DCDD', text: '#625C51', stroke: '#ECE6D9' };
+  return [
+    { elementType: 'geometry', stylers: [{ color: c.land }] },
+    { elementType: 'labels.text.fill', stylers: [{ color: c.text }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: c.stroke }] },
+    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: c.road }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: c.major }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: c.water }] },
+    { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: c.poi }] },
+  ];
+};
+
+const coord = (p: any) => {
+  const lat = p?.latitude ?? p?.location?.latitude ?? p?.geometry?.location?.lat;
+  const lng = p?.longitude ?? p?.location?.longitude ?? p?.geometry?.location?.lng;
+  return typeof lat === 'number' && typeof lng === 'number' ? { latitude: lat, longitude: lng } : null;
+};
+
+const initialsOf = (name?: string | null) =>
+  (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || 'W';
+
+export default function MapScreen() {
   const d = useDW();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const mapRef = useRef<MapView | null>(null);
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [me, setMe] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [chip, setChip] = useState<(typeof CHIPS)[number]['key'] | null>('fuel');
   const [places, setPlaces] = useState<Place[]>([]);
-  const [mapJourneys, setMapJourneys] = useState<MapJourney[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Place | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [destination, setDestination] = useState<{ latitude: number; longitude: number; name?: string } | null>(null);
-  const [suggestions, setSuggestions] = useState<{ id: string; description: string; placeId: string }[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [initialRegion, setInitialRegion] = useState<Region | null>(null);
-  const [isStartBusy, setIsStartBusy] = useState(false);
-  const [showEndModal, setShowEndModal] = useState(false);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [suggestions, setSuggestions] = useState<{ id: string; description: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [markersLive, setMarkersLive] = useState(true);
+  const latestSearch = useRef(0);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ─── Navigation / follow mode ─────────────────────────────────────────────
+  const region = useMemo(
+    () => fallbackRegion({ profileCountryCode: user?.countryCode, deviceRegionCode: Localization.getLocales()[0]?.regionCode }),
+    [user?.countryCode]
+  );
 
-  const [isNavigationMode, setIsNavigationMode] = useState(true);
-  const isManuallyPanningRef = useRef(false);
-  const lastUserGestureAtRef = useRef(0);
-  const lastCameraUpdateRef = useRef(0);
+  const flyTo = useCallback((latitude: number, longitude: number, zoom = 15) => {
+    mapRef.current?.animateCamera({ center: { latitude, longitude }, zoom }, { duration: 500 });
+  }, []);
 
-  // Pulse the stop button ring while tracking so it's clearly "live".
-  useEffect(() => {
-    if (isTracking) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.18, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    }
-    pulseAnim.setValue(1);
-    return undefined;
-  }, [isTracking, pulseAnim]);
-
-  // Auto-follow: 1 s throttle matches 2 Hz GPS; 3 s cooldown after any touch.
-  useEffect(() => {
-    if (!isTracking || !currentLocation || !isNavigationMode || isManuallyPanningRef.current) return;
-
-    const now = Date.now();
-    if (now - lastCameraUpdateRef.current < 1000) return;
-    if (now - lastUserGestureAtRef.current < 3000) return;
-
-    lastCameraUpdateRef.current = now;
-
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 1000);
-    }
-  }, [currentLocation, isTracking, isNavigationMode]);
-
-  const filterTypes = useMemo(() => [
-    { key: 'gas', serverType: 'gas_station', label: t('map.filters.gas') },
-    { key: 'lodging', serverType: 'lodging', label: t('map.filters.hotel') },
-    { key: 'restaurant', serverType: 'restaurant', label: t('map.filters.restaurant') },
-    { key: 'tourist_attraction', serverType: 'tourist_attraction', label: t('map.filters.attractions') },
-    { key: 'shopping_mall', serverType: 'shopping_mall', label: t('map.filters.shopping') },
-  ], [t]);
-
-  /** Returns static sample places when the Places API returns empty or fails. */
-  const getMockPlaces = useCallback((filter?: string): Place[] => {
-    if (!location) return [];
-    const samples: Place[] = [
-      {
-        id: 'mock-gas-1',
-        name: 'Shell Gas Station',
-        latitude: location.coords.latitude + 0.01,
-        longitude: location.coords.longitude + 0.01,
-        type: 'gas',
-        rating: 4.2,
-      },
-      {
-        id: 'mock-food-1',
-        name: "McDonald's",
-        latitude: location.coords.latitude - 0.005,
-        longitude: location.coords.longitude + 0.008,
-        type: 'restaurant',
-        rating: 4.0,
-      },
-      {
-        id: 'mock-hotel-1',
-        name: 'Holiday Inn',
-        latitude: location.coords.latitude + 0.008,
-        longitude: location.coords.longitude - 0.012,
-        type: 'lodging',
-        rating: 4.5,
-      },
-    ];
-
-    if (filter) {
-      const filtered = samples.filter(place => place.type === filter);
-      if (filtered.length > 0) {
-        return filtered;
-      }
-    }
-
-    return samples;
-  }, [location]);
-
-  useEffect(() => {
-    getCurrentLocation(false);
-    fetchMapJourneys();
-    // Hydrate the garage so the play button knows which vehicle to use.
-    // Without this, effectiveVehicleType stays "car" until the user opens
-    // new-journey or settings — the source of the "vehicle reverts" bug.
-    dispatch(fetchVehicles());
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [dispatch]);
-
-  const fetchMapJourneys = async () => {
+  // Find the rider: last known position first, then a fresh fix.
+  const locate = useCallback(async (prompt: boolean) => {
     try {
-      const response = await userAPI.getJourneyHistory({ status: 'COMPLETED', limit: 20 });
-      if (response && response.journeys) {
-        setMapJourneys(response.journeys);
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (!perm.granted && prompt) perm = await Location.requestForegroundPermissionsAsync();
+      if (!perm.granted) return null;
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) {
+        const p = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+        setMe(p);
+        flyTo(p.latitude, p.longitude);
       }
-    } catch (error) {
-      console.error('Failed to fetch map journeys:', error);
-    }
-  };
-
-  // Where to open the map when there is no GPS fix: the profile country, then the phone's region.
-  const getFallbackRegion = () =>
-    fallbackRegion({ profileCountryCode: user?.countryCode, deviceRegionCode: Localization.getLocales()[0]?.regionCode });
-
-  /**
-   * Resolves the device's current location.
-   * @param promptIfMissing - When true, requests foreground permission if not
-   *   granted and animates the camera to the fresh location on success.
-   */
-  const getCurrentLocation = async (promptIfMissing = true) => {
-    try {
-      let { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted' && promptIfMissing) {
-        const req = await Location.requestForegroundPermissionsAsync();
-        status = req.status;
-      }
-
-      if (status !== 'granted') {
-        setError(t('map.locationPermDenied'));
-        // No location: open on the rider's own country (profile, then phone region), not an arbitrary city.
-        setInitialRegion((prev) => prev ?? getFallbackRegion());
-        return;
-      }
-
-      // Show cached position immediately, then refine with a fresh fix.
-      const lastKnown = await Location.getLastKnownPositionAsync();
-      // Nothing cached yet (first launch): open on the rider's country right away instead of a
-      // blank screen, and fly to them as soon as the first fix arrives.
-      if (!lastKnown) setInitialRegion((prev) => prev ?? getFallbackRegion());
-      if (lastKnown) {
-        setLocation(lastKnown);
-        const region = {
-          latitude: lastKnown.coords.latitude,
-          longitude: lastKnown.coords.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        };
-        setInitialRegion(region);
-        if (promptIfMissing) animateToRegion(region);
-      }
-
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      setLocation(currentLocation);
-      const freshRegion = {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      };
-
-      if (!lastKnown) {
-        setInitialRegion(freshRegion);
-        animateToRegion(freshRegion); // the map may already be showing the country view
-      }
-
-      if (promptIfMissing) {
-        animateToRegion(freshRegion);
-      }
-    } catch (error: any) {
-      console.error('Location error:', error);
-      setInitialRegion((prev) => prev ?? getFallbackRegion());
-    }
-  };
-
-  const fetchNearbyPlaces = useCallback(async (filterKey?: string) => {
-    const targetLat = destination?.latitude ?? location?.coords.latitude;
-    const targetLng = destination?.longitude ?? location?.coords.longitude;
-
-    if (!targetLat || !targetLng) return;
-
-    const activeFilter = filterKey ?? selectedFilter;
-    try {
-      setLoading(true);
-      const serverType = filterTypes.find(f => f.key === activeFilter)?.serverType || 'point_of_interest';
-      const response = await placesAPI.searchNearby({
-        latitude: targetLat,
-        longitude: targetLng,
-        type: serverType,
-        radius: 5000,
-      });
-
-      if (!response?.places || response.places.length === 0) {
-        setPlaces(getMockPlaces(activeFilter ?? undefined));
-        return;
-      }
-
-      const formattedPlaces = response.places
-        .map((place: any) => {
-          // The Places API has changed its response shape across versions;
-          // try all known paths before discarding the result.
-          const latitudeCandidate =
-            typeof place.latitude === 'number'
-              ? place.latitude
-              : typeof place?.location?.latitude === 'number'
-                ? place.location.latitude
-                : typeof place?.geometry?.location?.lat === 'number'
-                  ? place.geometry.location.lat
-                  : null;
-          const longitudeCandidate =
-            typeof place.longitude === 'number'
-              ? place.longitude
-              : typeof place?.location?.longitude === 'number'
-                ? place.location.longitude
-                : typeof place?.geometry?.location?.lng === 'number'
-                  ? place.geometry.location.lng
-                  : null;
-
-          if (typeof latitudeCandidate !== 'number' || typeof longitudeCandidate !== 'number') {
-            return null;
-          }
-
-          return {
-            id: place.id || place.place_id || String(Math.random()),
-            name: place.name || 'Unknown',
-            latitude: latitudeCandidate,
-            longitude: longitudeCandidate,
-            type: activeFilter,
-            rating: typeof place.rating === 'number' ? place.rating : undefined,
-          } as Place;
-        })
-        .filter(Boolean) as Place[];
-
-      setPlaces(formattedPlaces);
-    } catch (error: any) {
-      console.error('Places fetch error:', error);
-      setPlaces(getMockPlaces(activeFilter ?? undefined));
-    } finally {
-      setLoading(false);
-    }
-  }, [location, destination, selectedFilter, filterTypes, getMockPlaces]);
-
-  useEffect(() => {
-    if ((location || destination) && isAuthenticated && selectedFilter) {
-      fetchNearbyPlaces(selectedFilter);
-    }
-  }, [location, destination, selectedFilter, isAuthenticated, fetchNearbyPlaces]);
-
-  // ─── Journey actions ──────────────────────────────────────────────────────
-
-  const handleStartJourney = async () => {
-    if (!isAuthenticated) {
-      Alert.alert(t('map.authRequired'), t('map.loginToStart'));
-      return;
-    }
-    // v2 recorder: the ride screen starts (or resumes) the ride itself, offline-capable.
-    router.push({
-      pathname: '/ride',
-      params: { vehicleId: activeGarageVehicle?.id, vehicleType: effectiveVehicleType },
-    } as never);
-  };
-
-  const handleStartJourneyToDestination = async () => {
-    if (!isAuthenticated) {
-      Alert.alert(t('map.authRequired'), t('map.loginToStart'));
-      return;
-    }
-    router.push({
-      pathname: '/ride',
-      params: { vehicleId: activeGarageVehicle?.id, vehicleType: effectiveVehicleType },
-    } as never);
-  };
-
-  const formatTime = (seconds: number): string => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const handleFilterPress = (filterKey: string) => {
-    setSelectedFilter(filterKey);
-  };
-
-  const animateToRegion = (region: Region) => {
-    mapRef.current?.animateToRegion(region, 600);
-  };
-
-  // ─── Search ───────────────────────────────────────────────────────────────
-
-  const handleSearchSubmit = async () => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    try {
-      setLoading(true);
-      setSuggestions([]);
-      Keyboard.dismiss();
-      const result = await placesAPI.geocode(trimmed);
-      // Server returns { success, result: { location: { latitude, longitude }, formattedAddress } }
-      const lat = result?.result?.location?.latitude;
-      const lng = result?.result?.location?.longitude;
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        const region: Region = {
-          latitude: lat,
-          longitude: lng,
-          latitudeDelta: 0.04,
-          longitudeDelta: 0.02,
-        };
-        setDestination({ latitude: lat, longitude: lng, name: result?.result?.formattedAddress || trimmed });
-        animateToRegion(region);
-      } else {
-        Alert.alert(t('map.notFound'), t('map.destNotFound'));
-      }
+      const cur = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const p = { latitude: cur.coords.latitude, longitude: cur.coords.longitude };
+      setMe(p);
+      flyTo(p.latitude, p.longitude);
+      return p;
     } catch {
-      Alert.alert(t('alerts.error'), t('map.searchError'));
-    } finally {
-      setLoading(false);
+      return null;
     }
-  };
+  }, [flyTo]);
 
-  const fetchAutocomplete = async (text: string) => {
-    try {
-      const params: any = { input: text };
-      if (location) {
-        params.latitude = location.coords.latitude;
-        params.longitude = location.coords.longitude;
-      }
-      const res = await placesAPI.autocomplete(params);
-      const items = (res?.predictions || []).map((p: any) => ({ id: p.placeId, placeId: p.placeId, description: p.description }));
-      setSuggestions(items);
-    } catch {
-      // Non-fatal — just clear suggestions on network error.
-      setSuggestions([]);
-    }
-  };
+  useEffect(() => { locate(true); }, [locate]);
 
-  const onChangeQuery = (text: string) => {
+  // Nearby places for the active chip, around the rider.
+  useEffect(() => {
+    const def = CHIPS.find((c) => c.key === chip);
+    if (!def || !me) { setPlaces([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    placesAPI
+      .searchNearby({ latitude: me.latitude, longitude: me.longitude, type: def.type, radius: 5000 })
+      .then((res: any) => {
+        if (cancelled) return;
+        const list: Place[] = (res?.places ?? [])
+          .map((p: any, i: number) => {
+            const c = coord(p);
+            if (!c) return null;
+            return { id: String(p.id || p.place_id || `${def.key}-${i}`), name: p.name || def.noun, ...c, kind: def.key, rating: typeof p.rating === 'number' ? p.rating : undefined, subtitle: p.vicinity || p.address } as Place;
+          })
+          .filter(Boolean)
+          .slice(0, 20);
+        setPlaces(list);
+        setSelected((s) => (s && list.some((p) => p.id === s.id) ? s : list[0] ?? null));
+      })
+      .catch(() => { if (!cancelled) setPlaces([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [chip, me?.latitude, me?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Custom markers draw once, then stop re-rendering (keeps Android fast).
+  useEffect(() => {
+    setMarkersLive(true);
+    const t = setTimeout(() => setMarkersLive(false), 800);
+    return () => clearTimeout(t);
+  }, [places, selected?.id]);
+
+  const onQuery = (text: string) => {
     setQuery(text);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!text.trim()) {
-      setSuggestions([]);
-      return;
-    }
-    debounceRef.current = setTimeout(() => fetchAutocomplete(text.trim()), 250);
-  };
-
-  const handlePickSuggestion = async (placeId: string, description: string) => {
-    try {
-      setLoading(true);
-      Keyboard.dismiss();
-      const details = await placesAPI.placeDetails(placeId);
-      const lat = details?.place?.location?.latitude;
-      const lng = details?.place?.location?.longitude;
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        const region: Region = { latitude: lat, longitude: lng, latitudeDelta: 0.04, longitudeDelta: 0.02 };
-        setDestination({ latitude: lat, longitude: lng, name: details?.place?.address || description });
-        animateToRegion(region);
-        setSuggestions([]);
-        setQuery(description);
+    if (debounce.current) clearTimeout(debounce.current);
+    if (!text.trim()) { latestSearch.current++; setSuggestions([]); setSearching(false); return; }
+    debounce.current = setTimeout(async () => {
+      const id = ++latestSearch.current;
+      setSearching(true);
+      try {
+        const res: any = await placesAPI.autocomplete({ input: text.trim(), ...(me ? { latitude: me.latitude, longitude: me.longitude, radius: 20000 } : {}) });
+        if (id !== latestSearch.current) return;
+        setSuggestions((res?.predictions ?? []).slice(0, 5).map((p: any) => ({ id: p.placeId, description: p.description })));
+      } catch {
+        if (id === latestSearch.current) setSuggestions([]);
+      } finally {
+        if (id === latestSearch.current) setSearching(false);
       }
-    } catch {
-      Alert.alert(t('alerts.error'), t('map.placeDetailsError'));
-    } finally {
-      setLoading(false);
-    }
+    }, 140);
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  const pick = async (s: { id: string; description: string }) => {
+    setQuery(s.description);
+    setSuggestions([]);
+    try {
+      const res: any = await placesAPI.placeDetails(s.id);
+      const c = coord(res?.place);
+      if (!c) return;
+      const place: Place = { id: s.id, name: s.description.split(',')[0], ...c, kind: 'pin', subtitle: res?.place?.address || s.description };
+      setChip(null);
+      setPlaces([place]);
+      setSelected(place);
+      flyTo(c.latitude, c.longitude, 14);
+    } catch { /* leave the search as typed */ }
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>{t('map.loginToView')}</Text>
-        </View>
-      </View>
-    );
-  }
+  const rideHere = () => {
+    if (!selected) return;
+    router.push({ pathname: '/new-journey', params: { destName: selected.subtitle || selected.name, destLat: String(selected.latitude), destLng: String(selected.longitude) } } as never);
+  };
+
+  const sh = shadow(d, 8);
+  const topInset = Math.max(56, insets.top + 8);
+  const initials = initialsOf(user?.displayName);
+  const distM = selected && me ? haversineM(me, selected) : null;
+  const selDef = CHIPS.find((c) => c.key === selected?.kind);
 
   return (
-    <View style={styles.container}>
-      {initialRegion ? (
-        <MapView
-          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-          style={styles.map}
-          ref={mapRef as any}
-          initialRegion={initialRegion}
-          showsUserLocation={true}
-          showsMyLocationButton={false}
-          mapType={Platform.OS === 'ios' && mapType === 'terrain' ? 'standard' : mapType}
-          onTouchStart={() => {
-            isManuallyPanningRef.current = true;
-            lastUserGestureAtRef.current = Date.now();
-            setIsNavigationMode(false);
-          }}
-          onPanDrag={() => {
-            lastUserGestureAtRef.current = Date.now();
-          }}
-          onRegionChangeComplete={(r, { isGesture }) => {
-            if (isGesture) {
-              isManuallyPanningRef.current = true;
-              lastUserGestureAtRef.current = Date.now();
-              setIsNavigationMode(false);
-            }
-          }}
-        >
-          {places.map((place) => (
-            <Marker
-              key={place.id}
-              coordinate={{
-                latitude: place.latitude,
-                longitude: place.longitude,
-              }}
-              title={place.name}
-              description={`Rating: ${place.rating || 'N/A'}`}
-            />
-          ))}
-          {destination && (
-            <Marker
-              coordinate={{ latitude: destination.latitude, longitude: destination.longitude }}
-              title={destination.name || t('map.destination')}
-              pinColor="#F9A825"
-            />
-          )}
+    <View style={[styles.root, { backgroundColor: d.bg }]}>
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        customMapStyle={Platform.OS === 'android' ? mapStyle(d.dark) : undefined}
+        userInterfaceStyle={d.dark ? 'dark' : 'light'}
+        showsUserLocation
+        showsMyLocationButton={false}
+        showsCompass={false}
+        toolbarEnabled={false}
+        initialRegion={me ? { ...me, latitudeDelta: 0.05, longitudeDelta: 0.05 } : region}
+        onPress={() => setSuggestions([])}
+      >
+        {places.map((p) => {
+          const on = p.id === selected?.id;
+          const size = on ? 44 : 36;
+          return (
+            <Marker key={p.id} coordinate={p} onPress={() => setSelected(p)} tracksViewChanges={markersLive} anchor={{ x: 0.5, y: 0.5 }} zIndex={on ? 2 : 1}>
+              <View style={[styles.pin, { width: size, height: size, backgroundColor: on ? AMBER : d.surface, borderColor: on ? INK : d.surface }, sh]}>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d={ICONS[p.kind] ?? ICONS.pin} stroke={on ? INK : d.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+            </Marker>
+          );
+        })}
+      </MapView>
 
-          {isTracking && routePoints.length > 1 && (
-            <Polyline coordinates={routePoints} strokeWidth={4} strokeColor="#F9A825" />
-          )}
+      <View style={[styles.top, { top: topInset }]}>
+        <View style={[styles.search, { backgroundColor: d.surface }, sh]}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM20 20l-4.2-4.2" stroke={d.ink2} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+          <TextInput
+            value={query}
+            onChangeText={onQuery}
+            placeholder="Where to?"
+            placeholderTextColor={d.ink2}
+            accessibilityLabel="Search destination"
+            returnKeyType="search"
+            style={[styles.input, { color: d.ink }]}
+          />
+          {searching ? <ActivityIndicator size="small" color={AMBER} /> : null}
+          <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+        </View>
 
-          {mapJourneys.map((journey) => {
-            if (!journey.endLatitude || !journey.endLongitude) return null;
+        {suggestions.length > 0 && (
+          <View style={[styles.suggestions, { backgroundColor: d.surface }, sh]}>
+            {suggestions.map((s, i) => (
+              <TouchableOpacity key={s.id} onPress={() => pick(s)} accessibilityRole="button" style={[styles.suggestion, i > 0 && { borderTopWidth: 1, borderTopColor: d.line }]}>
+                <Icon name="nav" size={16} color={d.ink2} />
+                <Text style={[styles.suggestionText, { color: d.ink }]} numberOfLines={2}>{s.description}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-            const hasPhotos = journey.photos && journey.photos.length > 0;
-            const coverPhoto = hasPhotos ? journey.photos![0].imageUrl : null;
-
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled" accessibilityRole="radiogroup">
+          {CHIPS.map((c) => {
+            const on = chip === c.key;
             return (
-              <Marker
-                key={journey.id}
-                coordinate={{
-                  latitude: journey.endLatitude,
-                  longitude: journey.endLongitude,
-                }}
-                onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
-                tracksViewChanges={false}
+              <TouchableOpacity
+                key={c.key}
+                onPress={() => { setSelected(null); setChip(on ? null : c.key); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={[styles.chip, { backgroundColor: on ? INK : d.surface }, sh]}
               >
-                <View style={styles.cardMarkerContainer}>
-                  {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '3deg' }] }]} />}
-                  {hasPhotos && <View style={[styles.cardStackLayer, { transform: [{ rotate: '-3deg' }] }]} />}
-
-                  <View style={styles.cardMarker}>
-                    {coverPhoto && (
-                      <Image source={{ uri: coverPhoto }} style={styles.cardImage} contentFit="cover" transition={200} />
-                    )}
-                    <View style={styles.cardContent}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>
-                        {journey.customTitle || journey.title || t('journey.defaultTitle')}
-                      </Text>
-                      {/* Explicit TouchableOpacity with hitSlop — Android swallows taps on
-                          icons sitting flush against a marker edge without it, making the
-                          "view" arrow not clickable while the card background still fires. */}
-                      <TouchableOpacity
-                        style={styles.cardFooter}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        activeOpacity={0.7}
-                        onPress={() => router.push({ pathname: '/journey-detail', params: { journeyId: journey.id } })}
-                      >
-                        <Text style={styles.cardSubtitle}>{t('common.view')}</Text>
-                        <Ionicons name="arrow-forward" size={12} color="#000" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  <View style={styles.cardAnchor} />
-                </View>
-              </Marker>
+                <Text style={[styles.chipText, { color: on ? AMBER : d.ink }]}>{c.label}</Text>
+              </TouchableOpacity>
             );
           })}
+        </ScrollView>
+      </View>
 
-        </MapView>
-      ) : (
-        <View style={styles.mapPlaceholder}>
-          <Skeleton width={"88%"} height={180} style={{ borderRadius: 12 }} />
-          <View style={{ height: 14 }} />
-          <SkeletonLine width={"60%"} height={14} />
-          <View style={{ height: 10 }} />
-          <SkeletonLine width={"40%"} height={12} />
-        </View>
-      )}
-
-      {loading && (
-        <View style={styles.loadingBadge}>
-          <SkeletonCircle size={14} />
-          <View style={{ width: 8 }} />
-          <SkeletonLine width={70} height={12} />
-        </View>
-      )}
-
-      <View style={[styles.searchBar, shadow(d, 8), { top: Math.max(56, insets.top + 8), backgroundColor: d.surface }]}>
-        <TextInput
-          value={query}
-          onChangeText={onChangeQuery}
-          onSubmitEditing={handleSearchSubmit}
-          placeholder={t('map.searchPlaceholder')}
-          returnKeyType="search"
-          style={[styles.searchInput, { color: d.ink, backgroundColor: 'transparent' }]}
-          placeholderTextColor={d.ink2}
-        />
-        {query.length > 0 && (
-          <TouchableOpacity
-            onPress={() => { setQuery(''); setSuggestions([]); }}
-            style={[styles.clearBtn, { backgroundColor: d.surface2 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-          >
-            <Icon name="close" size={14} color={d.ink2} stroke={2.2} />
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          onPress={handleSearchSubmit}
-          accessibilityRole="button"
-          accessibilityLabel="Search"
-          style={styles.searchGo}
-        >
-          <Feather name="search" size={18} color={INK} />
+      <View style={[styles.rail, { bottom: (selected ? 262 : 146) + Math.max(0, insets.bottom - 20) }]}>
+        <TouchableOpacity onPress={() => locate(true)} accessibilityRole="button" accessibilityLabel="Centre on me" style={[styles.railBtn, { backgroundColor: d.surface }, sh]}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="M12 5.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM12 2v3M12 19v3M2 12h3M19 12h3" stroke={d.ink} strokeWidth={1.9} strokeLinecap="round" />
+            <Path d="M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" fill={d.ink} />
+          </Svg>
         </TouchableOpacity>
       </View>
 
-      {suggestions.length > 0 && (
-        <View style={[styles.suggestionsBox, { top: Math.max(56, insets.top + 8) + 56, backgroundColor: d.surface }]}>
-          <FlatList
-            keyboardShouldPersistTaps="handled"
-            data={suggestions}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={[styles.suggestionItem, { borderBottomColor: d.line }]} onPress={() => handlePickSuggestion(item.placeId, item.description)}>
-                <Text numberOfLines={1} style={[styles.suggestionText, { color: d.ink }]}>{item.description}</Text>
-              </TouchableOpacity>
-            )}
-          />
+      {loading && !selected && (
+        <View style={[styles.loading, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]}>
+          <ActivityIndicator size="small" color={AMBER} />
+          <Text style={[styles.loadingText, { color: d.ink2 }]}>Finding places nearby</Text>
         </View>
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[styles.filterContainer, { top: Math.max(56, insets.top + 8) + 62 }]}
-        contentContainerStyle={styles.filterContent}
-      >
-        {filterTypes.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[
-              styles.filterButton,
-              { backgroundColor: d.surface },
-              selectedFilter === filter.key && styles.filterButtonActive,
-            ]}
-            onPress={() => handleFilterPress(filter.key)}
-          >
-            <Text style={[
-              styles.filterText,
-              { color: d.ink },
-              selectedFilter === filter.key && styles.filterTextActive,
-            ]}>
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {destination && !isTracking && (
-        <View style={[styles.destinationSheet, shadow(d, 10), { bottom: insets.bottom + 100, backgroundColor: d.surface }]}>
-          <View style={styles.destinationInfo}>
-            <MaterialIcons name="place" size={18} color={AMBER} />
-            <Text style={[styles.destinationName, { color: d.ink }]} numberOfLines={1}>
-              {destination.name || t('map.destination')}
-            </Text>
-            <TouchableOpacity onPress={() => { setDestination(null); setQuery(''); }} accessibilityLabel="Clear destination">
-              <Icon name="close" size={18} color={d.ink2} stroke={2.2} />
+      {selected && (
+        <ClipCard color={d.surface} corner={20} radius={24} style={[styles.card, { bottom: 104 + Math.max(0, insets.bottom - 20) }, sh]}>
+          <View style={styles.cardBody}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardIcon}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                  <Path d={ICONS[selected.kind] ?? ICONS.pin} stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardTitle, { color: d.ink }]} numberOfLines={1}>{selected.name}</Text>
+                <Text style={[styles.cardSub, { color: d.ink2 }]} numberOfLines={1}>
+                  {[selDef?.noun ?? 'Destination', selected.rating ? `${selected.rating.toFixed(1)}★` : null].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
+              {distM != null && <Text style={[styles.cardDist, { color: d.ink }]}>{formatDistance(distM)}</Text>}
+            </View>
+            <TouchableOpacity onPress={rideHere} accessibilityRole="button" style={styles.rideBtn}>
+              <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M12 3 20 20 12 15.5 4 20z" fill={INK} /></Svg>
+              <Text style={styles.rideText}>Ride here</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.startJourneyDestBtn, isStartBusy && { opacity: 0.6 }]}
-            onPress={handleStartJourneyToDestination}
-            disabled={isStartBusy}
-            activeOpacity={0.85}
-          >
-            {isStartBusy ? (
-              <ActivityIndicator color="#000" size="small" />
-            ) : (
-              <Text style={styles.startJourneyDestBtnText}>Start Journey</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        </ClipCard>
       )}
-
-      {isTracking && (
-        <View style={[styles.miniStatsSheet, shadow(d, 10), { bottom: insets.bottom + 100, backgroundColor: d.surface }]}>
-          <View style={styles.miniStatsRow}>
-            <View style={styles.miniStatItem}>
-              <Text style={[styles.miniStatValue, { color: d.ink }]}>{formatTime(Math.floor(stats?.totalTime || 0))}</Text>
-              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>{t('journey.time')}</Text>
-            </View>
-            <View style={[styles.miniStatDivider, { backgroundColor: d.line }]} />
-            <View style={styles.miniStatItem}>
-              <Text style={[styles.miniStatValue, { color: d.ink }]}>{stats?.currentSpeed?.toFixed(0) || '0'}</Text>
-              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>km/h</Text>
-            </View>
-            <View style={[styles.miniStatDivider, { backgroundColor: d.line }]} />
-            <View style={styles.miniStatItem}>
-              <Text style={[styles.miniStatValue, { color: d.ink }]}>{(stats?.totalDistance || 0).toFixed(2)}</Text>
-              <Text style={[styles.miniStatLabel, { color: d.ink2 }]}>km</Text>
-            </View>
-            <TouchableOpacity style={styles.expandBtn} onPress={() => router.push('/journey')} accessibilityLabel="Open ride">
-              <MaterialIcons name="open-in-full" size={18} color={AMBER} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.liveStrip}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
-          </View>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[styles.floatingButton, shadow(d, 6), { bottom: insets.bottom + (isTracking ? 230 : 190) }]}
-        onPress={handleStartJourney}
-        activeOpacity={0.8}
-        disabled={isStartBusy && !isTracking}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityRole="button"
-        accessibilityLabel={isTracking ? 'Stop ride' : 'Start ride'}
-      >
-        {isTracking ? (
-          <Animated.View style={[styles.fab, { backgroundColor: '#E5484D', transform: [{ scale: pulseAnim }] }]}>
-            <MaterialIcons name="stop" size={24} color="#fff" />
-          </Animated.View>
-        ) : (
-          <View style={[styles.fab, { backgroundColor: AMBER }]}>
-            {isStartBusy ? <ActivityIndicator color={INK} size="small" /> : <Icon name="nav" size={24} color={INK} fill />}
-          </View>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.floatingButton, shadow(d, 6), { bottom: insets.bottom + (isTracking ? 165 : 125) }]}
-        onPress={() => getCurrentLocation(true)}
-        activeOpacity={0.8}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityRole="button"
-        accessibilityLabel="Recenter"
-      >
-        <View style={[styles.fab, { backgroundColor: d.surface }]}>
-          <MaterialIcons name="my-location" size={22} color={d.ink} />
-        </View>
-      </TouchableOpacity>
-
-      {!isNavigationMode && isTracking && (
-        <TouchableOpacity
-          onPress={() => {
-            isManuallyPanningRef.current = false;
-            lastUserGestureAtRef.current = 0;
-            setIsNavigationMode(true);
-            if (mapRef.current && currentLocation) {
-              mapRef.current.animateToRegion({
-                latitude: currentLocation.latitude,
-                longitude: currentLocation.longitude,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }, 1000);
-            }
-            lastCameraUpdateRef.current = Date.now();
-          }}
-          style={[styles.recenterButton, { bottom: insets.bottom + 295, backgroundColor: d.surface }]}
-          activeOpacity={0.85}
-        >
-          <MaterialIcons name="navigation" size={20} color={AMBER} />
-          <Text style={styles.recenterText}>{t('journey.recenter') || 'Recenter'}</Text>
-        </TouchableOpacity>
-      )}
-
-      <JourneyEndModal
-        visible={showEndModal}
-        onDone={() => setShowEndModal(false)}
-      />
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fab: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  searchGo: { width: 40, height: 40, borderRadius: 14, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  map: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#f0f0f0",
-  },
-  loadingBadge: {
-    position: "absolute",
-    top: 160,
-    right: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-    zIndex: 900,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: "#666",
-    fontFamily: F.bold,
-  },
-  searchBar: {
-    position: "absolute",
-    top: 50,
-    left: 15,
-    right: 15,
-    height: 52,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-    zIndex: 30,
-  },
-  searchInput: {
-    flex: 1,
-    height: 36,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    fontSize: 16,
-    color: "#000",
-    fontFamily: F.bold,
-  },
-  searchIcon: {
-    fontSize: 16,
-    color: "#fff",
-  },
-  clearBtn: {
-    marginLeft: 4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(0,0,0,0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clearIcon: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "600",
-  },
-  locationBtn: {
-    marginLeft: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: "#4CAF50",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  locationIcon: {
-    fontSize: 16,
-  },
-  suggestionsBox: {
-    position: "absolute",
-    top: 102,
-    left: 15,
-    right: 15,
-    maxHeight: 220,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 12,
-    overflow: "hidden",
-    zIndex: 40,
-  },
-  suggestionItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomColor: "#eee",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  suggestionText: {
-    fontSize: 14,
-    color: "#333",
-    fontFamily: F.bold,
-  },
-  filterContainer: {
-    position: "absolute",
-    top: 110,
-    left: 15,
-    right: 15,
-    height: 40,
-    zIndex: 20,
-  },
-  filterContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  filterButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    minHeight: 32,
-  },
-  filterButtonActive: {
-    backgroundColor: AMBER,
-  },
-  filterText: {
-    fontFamily: F.bold,
-    fontSize: 12,
-    fontWeight: "500",
-    lineHeight: 18,
-    color: "#000000",
-  },
-  filterTextActive: {
-    color: INK,
-    fontWeight: "600",
-  },
-  floatingButton: {
-    position: "absolute",
-    width: 50,
-    height: 50,
-    right: 22,
-    zIndex: 50,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  floatingButtonImage: {
-    width: 50,
-    height: 50,
-  },
-  loadingButton: {
-    borderRadius: 25,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stopButtonOuter: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    borderWidth: 3,
-    borderColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  stopButtonInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  destinationSheet: {
-    position: 'absolute',
-    left: 15,
-    right: 15,
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    padding: 14,
-    zIndex: 50,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    gap: 10,
-  },
-  destinationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  destinationName: {
-    flex: 1,
-    fontFamily: F.bold,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-  },
-  startJourneyDestBtn: {
-    backgroundColor: AMBER,
-    borderRadius: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  startJourneyDestBtnText: {
-    fontFamily: F.bold,
-    fontSize: 15,
-    fontWeight: '700',
-    color: INK,
-  },
-  miniStatsSheet: {
-    position: 'absolute',
-    left: 15,
-    right: 80,
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    zIndex: 50,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    overflow: 'hidden',
-  },
-  miniStatsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 4,
-  },
-  miniStatItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  miniStatValue: {
-    fontFamily: F.monoBold,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000',
-  },
-  miniStatLabel: {
-    fontFamily: F.bold,
-    fontSize: 9,
-    color: '#888',
-  },
-  miniStatDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: '#eee',
-  },
-  expandBtn: {
-    padding: 6,
-  },
-  liveStrip: {
-    backgroundColor: '#ef4444',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    gap: 6,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#fff',
-  },
-  liveText: {
-    fontFamily: F.bold,
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 1.5,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: "#666",
-    textAlign: "center",
-    fontFamily: F.bold,
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: "#F9A825",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: F.bold,
-  },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-  },
-  cardMarkerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 140,
-  },
-  cardStackLayer: {
-    position: 'absolute',
-    width: 130,
-    height: 60,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  cardMarker: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    width: 140,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  cardImage: {
-    width: '100%',
-    height: 60,
-    backgroundColor: '#F5F5F5',
-  },
-  cardContent: {
-    padding: 8,
-  },
-  cardTitle: {
-    fontFamily: F.bold,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 4,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  cardSubtitle: {
-    fontFamily: F.bold,
-    fontSize: 10,
-    color: '#000000',
-    fontWeight: '500',
-  },
-  cardAnchor: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderBottomWidth: 0,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#FFFFFF', // Matches card background so anchor blends seamlessly.
-    marginTop: -1, // Slight overlap removes the visible seam between card and anchor.
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  recenterButton: {
-    position: 'absolute',
-    right: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    zIndex: 100,
-  },
-  recenterText: {
-    fontFamily: F.bold,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#F9A825',
-    marginLeft: 8,
-  },
+  root: { flex: 1 },
+  top: { position: 'absolute', left: 16, right: 16, gap: 10 },
+  search: { height: 52, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8 },
+  input: { flex: 1, minWidth: 0, fontFamily: F.extra, fontSize: 16, padding: 0 },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: AMBER, fontFamily: F.black, fontSize: 11 },
+  suggestions: { borderRadius: 18, overflow: 'hidden' },
+  suggestion: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
+  suggestionText: { flex: 1, fontFamily: F.semi, fontSize: 14 },
+  chips: { gap: 6, paddingRight: 16 },
+  chip: { height: 34, paddingHorizontal: 13, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  chipText: { fontFamily: F.extra, fontSize: 13 },
+  pin: { borderRadius: 12, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
+  rail: { position: 'absolute', right: 16 },
+  railBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  loading: { position: 'absolute', alignSelf: 'center', height: 40, borderRadius: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  loadingText: { fontFamily: F.semi, fontSize: 13 },
+  card: { position: 'absolute', left: 16, right: 16 },
+  cardBody: { padding: 16, gap: 14 },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  cardIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { fontFamily: F.black, fontSize: 17, letterSpacing: -0.2 },
+  cardSub: { fontFamily: F.regular, fontSize: 13 },
+  cardDist: { fontFamily: F.monoBold, fontSize: 14 },
+  rideBtn: { height: 48, borderRadius: 14, backgroundColor: AMBER, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  rideText: { color: INK, fontFamily: F.black, fontSize: 14 },
 });

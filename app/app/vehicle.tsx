@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert } fr
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, Path, RadialGradient, Stop } from 'react-native-svg';
 import { useAppSelector } from '../store/hooks';
 import { selectVehicles } from '../store/slices/vehicleSlice';
 import { useV2Vehicle } from '../v2/hooks';
@@ -85,14 +85,18 @@ export default function VehicleScreen() {
           accessibilityLabel="Edit vehicle"
           style={styles.glass}
         >
-          <Icon name="settings" size={18} color="#F2EEE5" stroke={2} />
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Path d="M4 20h4L19 9l-4-4L4 16z" stroke="#F2EEE5" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
         </TouchableOpacity>
       </View>
 
       <View style={styles.stage}>
+        <Svg width={300} height={46} style={styles.floor} pointerEvents="none">
+          <Defs><RadialGradient id="floor" cx="50%" cy="50%" rx="50%" ry="50%"><Stop offset="0" stopColor="#000" stopOpacity={0.75} /><Stop offset="1" stopColor="#000" stopOpacity={0} /></RadialGradient></Defs>
+          <Ellipse cx={150} cy={23} rx={150} ry={23} fill="url(#floor)" />
+        </Svg>
         <View style={styles.lane} />
         {vehicle.photoURL ? (
-          <VehiclePhoto uri={vehicle.photoURL} radius={26} style={styles.photo} />
+          <VehiclePhoto uri={vehicle.photoURL} radius={26} style={/\.png(\?|#|$)/i.test(vehicle.photoURL) ? styles.cutout : styles.photo} />
         ) : (
           <View style={[styles.photo, { alignItems: 'center', justifyContent: 'center' }]}>
             <Icon name="route" size={96} color="rgba(245,165,36,0.5)" stroke={1.2} />
@@ -166,11 +170,13 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#161513' },
   top: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 5 },
   glass: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(242,238,229,0.1)', alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: F.black, fontSize: 22, color: '#F2EEE5' },
-  sub: { fontFamily: F.regular, fontSize: 12, color: '#A29B8D' },
+  title: { fontFamily: F.black, fontSize: 22, lineHeight: 28, color: '#F2EEE5', includeFontPadding: false },
+  sub: { fontFamily: F.regular, fontSize: 12, lineHeight: 16, color: '#A29B8D', includeFontPadding: false },
   stage: { position: 'absolute', top: 104, left: 0, right: 0, height: 350 },
   lane: { position: 'absolute', left: 0, right: 0, top: 300, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.35)' },
   photo: { position: 'absolute', left: 20, right: 20, top: 8, height: 300 },
+  cutout: { position: 'absolute', left: 20, right: 20, top: 0, height: 350 },
+  floor: { position: 'absolute', left: 45, top: 264 },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 392, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 24 },
   ringRow: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   ringBox: { width: 140, height: 140 },

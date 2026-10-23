@@ -32,6 +32,7 @@ import OfflineQueueService from '../services/offlineQueueService';
 import LiveNotificationService from '../services/liveNotificationService';
 import '../v2/locationEngine'; // defines the background location task; must load at app start
 import { V2Provider } from '../v2/V2Provider';
+import KeyboardInset from '../components/dw/KeyboardInset';
 
 // Initialize Sentry error tracking (must be early in app lifecycle)
 initSentry();
@@ -166,6 +167,7 @@ function RootLayoutContent() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <KeyboardInset>
       <Stack screenOptions={stackScreenOptions}>
         {showAuth ? (
           <Stack.Screen name="(auth)" />
@@ -185,6 +187,7 @@ function RootLayoutContent() {
         <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="group-journey-detail" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
+      </KeyboardInset>
       <StatusBar style="auto" />
       
       {/* Global listener for group journey start events */}
