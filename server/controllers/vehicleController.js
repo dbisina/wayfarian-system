@@ -41,13 +41,20 @@ const listVehicles = async (req, res) => {
   }
 };
 
+/** A plate is stored upper case, with letters, digits, spaces and hyphens only, up to 12 characters. */
+const normalizePlate = (value) => {
+  if (typeof value !== 'string') return null;
+  const clean = value.toUpperCase().replace(/[^A-Z0-9 -]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12).trim();
+  return clean || null;
+};
+
 /**
  * POST /api/vehicles
  * Create a new vehicle
  */
 const createVehicle = async (req, res) => {
   try {
-    const { name, make, model, year, color, type, isDefault } = req.body;
+    const { name, make, model, year, color, type, isDefault, plate } = req.body;
 
     if (!name || !make || !model) {
       return res.status(400).json({ error: 'name, make, and model are required' });
@@ -73,6 +80,7 @@ const createVehicle = async (req, res) => {
         model: model.trim(),
         year: year ? parseInt(year) : null,
         color: color?.trim() || null,
+        plate: normalizePlate(plate),
         type: type || 'motorcycle',
         isDefault: shouldBeDefault,
       },
@@ -92,7 +100,7 @@ const createVehicle = async (req, res) => {
 const updateVehicle = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, make, model, year, color, type, isDefault } = req.body;
+    const { name, make, model, year, color, type, isDefault, plate } = req.body;
 
     const existing = await prisma.vehicle.findFirst({
       where: { id, userId: req.user.id },
@@ -114,6 +122,7 @@ const updateVehicle = async (req, res) => {
         ...(model !== undefined && { model: model.trim() }),
         ...(year !== undefined && { year: year ? parseInt(year) : null }),
         ...(color !== undefined && { color: color?.trim() || null }),
+        ...(plate !== undefined && { plate: normalizePlate(plate) }),
         ...(type !== undefined && { type }),
         ...(isDefault !== undefined && { isDefault }),
       },
@@ -253,6 +262,7 @@ const uploadVehiclePhoto = async (req, res) => {
 };
 
 module.exports = {
+  normalizePlate,
   upload,
   listVehicles,
   createVehicle,

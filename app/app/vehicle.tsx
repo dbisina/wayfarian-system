@@ -14,6 +14,7 @@ import { getRuntime } from '../v2/runtime';
 import { useSettings } from '../contexts/SettingsContext';
 import Icon from '../components/dw/Icon';
 import VehiclePhoto from '../components/dw/VehiclePhoto';
+import PlateBadge from '../components/dw/PlateBadge';
 import { AMBER, F, INK, useDW } from '../constants/design';
 
 const RING_LEN = 2 * Math.PI * 60;
@@ -104,6 +105,8 @@ export default function VehicleScreen() {
         )}
       </View>
 
+      <View style={styles.plate} pointerEvents="none"><PlateBadge plate={vehicle.plate} size="lg" /></View>
+
       <View style={[styles.sheet, { backgroundColor: d.dark ? '#1C1A17' : '#F4F1E9' }]}>
         <ScrollView contentContainerStyle={{ gap: 18, paddingBottom: Math.max(24, insets.bottom + 8) }} showsVerticalScrollIndicator={false}>
           <View style={styles.ringRow}>
@@ -176,6 +179,7 @@ const styles = StyleSheet.create({
   lane: { position: 'absolute', left: 0, right: 0, top: 300, borderTopWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(245,165,36,0.35)' },
   photo: { position: 'absolute', left: 20, right: 20, top: 8, height: 300 },
   cutout: { position: 'absolute', left: 20, right: 20, top: 0, height: 350 },
+  plate: { position: 'absolute', top: 132, left: 20 },
   floor: { position: 'absolute', left: 45, top: 264 },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 392, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 24 },
   ringRow: { flexDirection: 'row', alignItems: 'center', gap: 18 },

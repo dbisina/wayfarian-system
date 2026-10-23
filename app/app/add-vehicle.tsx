@@ -38,6 +38,7 @@ export default function AddVehicleScreen() {
   const [model, setModel] = useState(editingVehicle?.model ?? '');
   const [year, setYear] = useState(editingVehicle?.year ? String(editingVehicle.year) : '');
   const [color, setColor] = useState(editingVehicle?.color ?? '');
+  const [plate, setPlate] = useState(editingVehicle?.plate ?? '');
   const [type, setType] = useState<string>(editingVehicle?.type ?? 'motorcycle');
   const [photoUri, setPhotoUri] = useState<string | null>(editingVehicle?.photoURL ?? null);
   const [saving, setSaving] = useState(false);
@@ -75,6 +76,7 @@ export default function AddVehicleScreen() {
         model: model.trim(),
         year: year ? parseInt(year) : null,
         color: color.trim() || null,
+        plate: plate.trim() || null,
         type,
       };
 
@@ -222,6 +224,7 @@ export default function AddVehicleScreen() {
           <View style={{ flex: 1 }}>{field('Year', year, setYear, '2023', { keyboardType: 'numeric', maxLength: 4 })}</View>
           <View style={{ flex: 1 }}>{field('Colour', color, setColor, 'Blue')}</View>
         </View>
+        {field('Plate', plate, (v) => setPlate(v.toUpperCase()), 'LND 482 KJ', { autoCapitalize: 'characters', maxLength: 12 })}
       </ScrollView>
 
       <TouchableOpacity

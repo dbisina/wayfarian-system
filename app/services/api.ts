@@ -1037,6 +1037,7 @@ export interface GarageVehicle {
   model: string;
   year?: number | null;
   color?: string | null;
+  plate?: string | null;
   type: 'car' | 'bike' | 'motorcycle' | 'scooter' | 'truck' | 'van';
   photoURL?: string | null;
   isDefault: boolean;
@@ -1055,6 +1056,7 @@ export const vehicleAPI = {
     model: string;
     year?: number | null;
     color?: string | null;
+    plate?: string | null;
     type?: string;
     isDefault?: boolean;
   }): Promise<{ success: boolean; vehicle: GarageVehicle }> => {
@@ -1069,6 +1071,7 @@ export const vehicleAPI = {
       model: string;
       year: number | null;
       color: string | null;
+      plate: string | null;
       type: string;
       isDefault: boolean;
     }>

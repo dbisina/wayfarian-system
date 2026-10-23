@@ -29,7 +29,7 @@ describe('ride notification', () => {
     expect(n.android.showChronometer).toBe(true);
     expect(n.android.timestamp).toBe(1_000);
     expect(n.android.actions.map((a) => a.title)).toEqual(['Photo', 'Pause', 'Finish']);
-    expect(n.android.actions[1].pressAction.id).toBe(RIDE_ACTIONS.PAUSE);
+    expect(n.android.actions[1]!.pressAction.id).toBe(RIDE_ACTIONS.PAUSE);
   });
 
   test('it is the foreground service of type location, so there is one notification', () => {
@@ -44,14 +44,14 @@ describe('ride notification', () => {
     expect(n.title).toBe('Ride paused');
     expect(n.body).toBe('64.2 km · 0:47:12');
     expect(n.android.showChronometer).toBe(false);
-    expect(n.android.actions[1]).toMatchObject({ title: 'Resume', pressAction: { id: RIDE_ACTIONS.RESUME } });
+    expect(n.android.actions[1]!).toMatchObject({ title: 'Resume', pressAction: { id: RIDE_ACTIONS.RESUME } });
   });
 
   test('route progress shows only when it is known, clamped to 0 to 100', () => {
     expect(buildRideNotification(live()).android).not.toHaveProperty('progress');
     expect(buildRideNotification(live(), { progress: 0.523 }).android.progress).toEqual({ max: 100, current: 52, indeterminate: false });
-    expect(buildRideNotification(live(), { progress: 4 }).android.progress.current).toBe(100);
-    expect(buildRideNotification(live(), { progress: -1 }).android.progress.current).toBe(0);
+    expect(buildRideNotification(live(), { progress: 4 }).android.progress?.current).toBe(100);
+    expect(buildRideNotification(live(), { progress: -1 }).android.progress?.current).toBe(0);
   });
 
   test('no GPS fix yet shows 0 km/h and a named ride shows its name', () => {

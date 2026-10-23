@@ -89,7 +89,40 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
     return { items: rows.map(view) };
   }
 
-  return { putPhoto, listPhotos };
+  /** The rider's rides that have photos, newest photo first, each with a cover and a count. */
+  async function listAlbums(userId, { limit = 60 } = {}) {
+    const take = Math.min(Math.max(parseInt(limit, 10) || 60, 1), 100);
+    const groups = await prisma.ridePhoto.groupBy({
+      by: ['rideId'],
+      where: { userId },
+      _count: { _all: true },
+      _max: { takenAt: true },
+      orderBy: { _max: { takenAt: 'desc' } },
+      take,
+    });
+    if (!groups.length) return { items: [] };
+    const ids = groups.map((g) => g.rideId);
+    const [rides, photos] = await Promise.all([
+      prisma.ride.findMany({ where: { id: { in: ids }, status: { not: 'DELETED' } }, select: { id: true, title: true, startedAt: true, distanceM: true, topSpeedMps: true, groupRideId: true } }),
+      prisma.ridePhoto.findMany({ where: { rideId: { in: ids } }, orderBy: [{ takenAt: 'asc' }, { id: 'asc' }], select: { rideId: true, thumbPath: true } }),
+    ]);
+    const rideById = new Map(rides.map((r) => [r.id, r]));
+    const cover = new Map();
+    for (const p of photos) if (!cover.has(p.rideId)) cover.set(p.rideId, p.thumbPath);
+    return {
+      items: groups
+        .filter((g) => rideById.has(g.rideId))
+        .map((g) => {
+          const r = rideById.get(g.rideId);
+          return {
+            rideId: g.rideId, title: r.title, startedAt: r.startedAt, distanceM: r.distanceM, topSpeedMps: r.topSpeedMps,
+            group: !!r.groupRideId, photoCount: g._count._all, coverUrl: cover.has(g.rideId) ? urlFor(cover.get(g.rideId)) : null,
+          };
+        }),
+    };
+  }
+
+  return { putPhoto, listPhotos, listAlbums };
 }
 
 /** The real dependencies: sharp for resizing, the existing storage helper for uploads. */
