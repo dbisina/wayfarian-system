@@ -5,9 +5,11 @@ import React, { useEffect, useState } from 'react';
 import DWTabBar from '@/components/dw/TabBar';
 import { useAuth } from '../../contexts/AuthContext';
 import ActivityModal from '../../scaf/ActivityModal';
+import { useKeyboardHeight } from '../../components/dw/KeyboardInset';
 import FloatingJourneyStatus from '../../components/FloatingJourneyStatus';
 
 export default function TabLayout() {
+  const keyboardOpen = useKeyboardHeight() > 0;
   const [rideMenuOpen, setRideMenuOpen] = useState(false);
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
@@ -39,7 +41,7 @@ export default function TabLayout() {
       </Tabs>
       <FloatingJourneyStatus />
       <ActivityModal visible={rideMenuOpen} onClose={() => setRideMenuOpen(false)} />
-      <DWTabBar active={active} onNavigate={navigate} open={rideMenuOpen} onCenter={() => setRideMenuOpen((v) => !v)} />
+      {!keyboardOpen && <DWTabBar active={active} onNavigate={navigate} open={rideMenuOpen} onCenter={() => setRideMenuOpen((v) => !v)} />}
     </View>
   );
 }

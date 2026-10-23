@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, Alert } from 'react-native';
 import TextInput from '../dw/DWTextInput';
+import KeyboardInset from '../dw/KeyboardInset';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { getRuntime } from '../../v2/runtime';
@@ -154,6 +155,7 @@ const JourneyCardMenu: React.FC<JourneyCardMenuProps> = ({
         animationType="fade"
         onRequestClose={handleCancelRename}
       >
+        <KeyboardInset>
         <View style={styles.renameBackdrop}>
           <View style={styles.renameCard}>
             <Text style={styles.renameTitle}>{t('history.rename')}</Text>
@@ -183,6 +185,7 @@ const JourneyCardMenu: React.FC<JourneyCardMenuProps> = ({
             </View>
           </View>
         </View>
+        </KeyboardInset>
       </Modal>
     </>
   );
