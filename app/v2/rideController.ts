@@ -5,6 +5,19 @@
 
 import { getRuntime, ensureRestored } from './runtime';
 import { getTrackingPermission, requestTrackingPermission, startTracking, stopTracking } from './locationEngine';
+import { isRichNotificationEnabled, showRideNotification } from './rideNotification';
+
+/**
+ * Starts the GPS. With the rich ride notification beta on (Android), that notification is shown
+ * first and is the foreground service; if it cannot be shown the plain notification is used, so a
+ * ride is never left without a foreground service.
+ */
+async function beginTracking(vehicleType?: string): Promise<void> {
+  const live = getRuntime().recorder.live();
+  let plain = true;
+  if (live && (await isRichNotificationEnabled())) plain = !(await showRideNotification(live));
+  await startTracking({ vehicleType, plainNotification: plain });
+}
 
 export type StartResult = { ok: true; rideId: string } | { ok: false; reason: 'permission' | 'in_progress' };
 
@@ -19,7 +32,7 @@ export async function startRide(opts: { vehicleId?: string; vehicleType?: string
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const rideId = await rt.recorder.start({ vehicleId: opts.vehicleId, title: opts.title, timezone, groupRideId: opts.groupRideId });
-  await startTracking({ vehicleType: opts.vehicleType });
+  await beginTracking(opts.vehicleType);
   rt.emitLive(rt.recorder.live());
   return { ok: true, rideId };
 }
@@ -33,7 +46,7 @@ export async function pauseRide(): Promise<void> {
 export async function resumeRide(vehicleType?: string): Promise<void> {
   const rt = getRuntime();
   rt.emitLive(await rt.recorder.resume());
-  await startTracking({ vehicleType });
+  await beginTracking(vehicleType);
 }
 
 export async function endRide(): Promise<string | null> {
@@ -52,7 +65,7 @@ export async function recoverRide(): Promise<boolean> {
   const live = rt.recorder.live();
   if (!live || live.status === 'ENDED') return false;
   rt.emitLive(live);
-  if (live.status === 'RECORDING') await startTracking();
+  if (live.status === 'RECORDING') await beginTracking();
   return true;
 }
 

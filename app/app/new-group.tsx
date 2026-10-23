@@ -7,6 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { groupAPI } from '../services/api';
 import Icon from '../components/dw/Icon';
 import { useKeyboardHeight } from '../components/dw/KeyboardInset';
+import { Asset } from 'expo-asset';
+import { COVER_PRESETS } from '../constants/covers';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 
 const RIDE_STYLES = ['Long distance', 'Weekend runs', 'Night rides', 'Off-road', 'Commutes'];
@@ -20,7 +22,9 @@ export default function NewGroupScreen() {
   const [groupName, setGroupName] = useState('');
   const [styles_, setStyles] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(true);
-  const [coverUri, setCoverUri] = useState<string | null>(null);
+  const [coverUri, setCoverUri] = useState<string | null>(null); // a photo from the phone
+  const [presetKey, setPresetKey] = useState<string | null>(COVER_PRESETS[0].key);
+  const preset = COVER_PRESETS.find((c) => c.key === presetKey) ?? null;
   const [busy, setBusy] = useState(false);
 
   const toggleStyle = (s: string) =>
@@ -42,9 +46,20 @@ export default function NewGroupScreen() {
       const groupId = result?.group?.id || result?.id;
       if (!groupId) throw new Error('No group id returned');
 
-      if (coverUri) {
+      // The chosen cover is a photo from the phone, or one of the bundled presets.
+      let coverFile: string | null = coverUri;
+      if (!coverFile && preset) {
         try {
-          await groupAPI.uploadGroupCover(groupId, coverUri);
+          const asset = Asset.fromModule(preset.source as number);
+          await asset.downloadAsync();
+          coverFile = asset.localUri || asset.uri;
+        } catch {
+          coverFile = null;
+        }
+      }
+      if (coverFile) {
+        try {
+          await groupAPI.uploadGroupCover(groupId, coverFile);
         } catch (e: any) {
           console.error('[Group Cover] Upload failed:', e?.message || e);
           Alert.alert(
@@ -73,7 +88,7 @@ export default function NewGroupScreen() {
         quality: 0.9,
         base64: false,
       });
-      if (!result.canceled && result.assets?.length) setCoverUri(result.assets[0].uri);
+      if (!result.canceled && result.assets?.length) { setCoverUri(result.assets[0].uri); setPresetKey(null); }
     } catch (e: any) {
       console.error('[New Group] Photo selection failed:', e);
       if (e?.message?.includes('ActivityResultLauncher') || e?.message?.includes('unregistered')) {
@@ -107,8 +122,7 @@ export default function NewGroupScreen() {
         </View>
 
         <View style={[styles.preview, { backgroundColor: INK }]}>
-          {coverUri ? null : <View style={styles.previewGlow} />}
-          {coverUri ? <Image source={{ uri: coverUri }} style={StyleSheet.absoluteFill} /> : null}
+          {coverUri ? <Image source={{ uri: coverUri }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : preset ? <Image source={preset.source} style={StyleSheet.absoluteFill} resizeMode="cover" /> : <View style={styles.previewGlow} />}
           <View style={styles.previewShade} />
           <View style={styles.previewChip}>
             <Text style={styles.previewChipText}>Preview</Text>
@@ -127,6 +141,21 @@ export default function NewGroupScreen() {
         <View style={{ gap: 8 }}>
           <Text style={[styles.label, { color: d.ink }]}>Cover</Text>
           <View style={styles.coverRow}>
+            {COVER_PRESETS.map((c) => {
+              const on = !coverUri && presetKey === c.key;
+              return (
+                <TouchableOpacity
+                  key={c.key}
+                  onPress={() => { setPresetKey(c.key); setCoverUri(null); }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={c.label}
+                  style={[styles.coverOpt, on && { borderColor: AMBER }]}
+                >
+                  <Image source={c.source} style={styles.coverOptImg} resizeMode="cover" />
+                </TouchableOpacity>
+              );
+            })}
             <TouchableOpacity
               onPress={handleUploadPhoto}
               accessibilityRole="button"
@@ -229,7 +258,9 @@ const styles = StyleSheet.create({
   label: { fontFamily: F.extra, fontSize: 13 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between' },
   counter: { fontFamily: F.monoSemi, fontSize: 13 },
-  coverRow: { flexDirection: 'row', gap: 8 },
+  coverRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  coverOpt: { width: 58, height: 58, borderRadius: 16, borderWidth: 3, borderColor: 'transparent', overflow: 'hidden' },
+  coverOptImg: { width: '100%', height: '100%' },
   coverBtn: { width: 58, height: 58, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   coverThumb: { width: 58, height: 58 },
   input: { height: 52, borderRadius: 16, borderWidth: 2, borderColor: AMBER, paddingHorizontal: 16, fontFamily: F.extra, fontSize: 17 },

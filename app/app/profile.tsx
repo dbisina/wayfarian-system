@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/dw/Icon';
+import { useMyFollows } from '../v2/hooks';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { useAppSelector } from '../store/hooks';
 import { selectDefaultVehicle, selectVehicles } from '../store/slices/vehicleSlice';
@@ -160,6 +161,7 @@ export default function ProfileScreen() {
     }
   };
 
+  const follows = useMyFollows().data;
   const u = dashboardData?.user;
   const name = u?.displayName || user?.displayName || 'Rider';
   const photo = u?.photoURL || user?.photoURL;
@@ -233,6 +235,9 @@ export default function ProfileScreen() {
               {t('home.explorerRank')}
               {(user as any)?.country ? ` · ${(user as any).country}` : ''}
             </Text>
+            <Text style={[styles.dwSub, { color: d.ink2, marginTop: 4 }]}>
+              <Text style={[styles.dwFollowNum, { color: d.ink }]}>{follows?.following ?? 0}</Text> following   <Text style={[styles.dwFollowNum, { color: d.ink }]}>{follows?.followers ?? 0}</Text> followers
+            </Text>
           </View>
         </View>
 
@@ -301,6 +306,7 @@ const styles = StyleSheet.create({
   dwUploading: { ...StyleSheet.absoluteFillObject, borderRadius: 28, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   dwLevel: { position: 'absolute', right: -8, bottom: -6, height: 24, paddingHorizontal: 7, borderRadius: 12, backgroundColor: AMBER, borderWidth: 3, justifyContent: 'center' },
   dwLevelText: { fontFamily: F.monoBold, fontSize: 11, color: INK },
+  dwFollowNum: { fontFamily: F.monoBold, fontSize: 14, color: INK },
   dwName: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
   dwSub: { fontFamily: F.regular, fontSize: 13 },
   dwBike: { marginHorizontal: 16, marginTop: 28, height: 176, padding: 18 },

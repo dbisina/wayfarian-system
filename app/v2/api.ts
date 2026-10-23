@@ -117,6 +117,10 @@ export function createV2Client(deps: V2ClientDeps) {
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
     summary: () => request<any>('GET', '/me/summary'),
     rider: (id: string) => request<any>('GET', `/riders/${enc(id)}`),
+    followRider: (id: string) => request<any>('POST', `/riders/${enc(id)}/follow`),
+    unfollowRider: (id: string) => request<any>('DELETE', `/riders/${enc(id)}/follow`),
+    inviteRider: (id: string, groupRideId: string) => request<any>('POST', `/riders/${enc(id)}/invite`, { groupRideId }),
+    myFollows: () => request<{ followers: number; following: number }>('GET', '/me/follows'),
     vehicle: (id: string) => request<any>('GET', `/vehicles/${enc(id)}`),
     logService: (vehicleId: string, serviceId: string, input: { kind?: string; intervalKm?: number; doneAt?: string; notes?: string } = {}) =>
       request<any>('PUT', `/vehicles/${enc(vehicleId)}/services/${enc(serviceId)}`, input),
@@ -131,6 +135,13 @@ export function createV2Client(deps: V2ClientDeps) {
     leaveGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/leave`),
     startGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/start`),
     endGroupRide: (id: string) => request<any>('POST', `/group-rides/${enc(id)}/end`),
+    // crews (persistent groups): their rides, weekly quest and activity feed
+    crewState: (crewId: string) => request<any>('GET', `/crews/${enc(crewId)}`),
+    crewActivity: (crewId: string) => request<{ items: any[] }>('GET', `/crews/${enc(crewId)}/activity`),
+    postCrewMessage: (crewId: string, text: string) => request<any>('POST', `/crews/${enc(crewId)}/messages`, { text }),
+    startCrewRide: (crewId: string, input: Record<string, unknown>) => request<any>('POST', `/crews/${enc(crewId)}/rides`, input),
+    joinCrewRide: (crewId: string) => request<any>('POST', `/crews/${enc(crewId)}/rides/join`),
+    endCrewRide: (crewId: string) => request<any>('POST', `/crews/${enc(crewId)}/rides/end`),
     startGroupMemberRide: (groupId: string, rideId: string, input: Record<string, unknown>) =>
       request<any>('PUT', `/group-rides/${enc(groupId)}/rides/${enc(rideId)}`, input),
   };

@@ -6,6 +6,7 @@
 
 import { Platform } from 'react-native';
 import { dismissJourneyNotification, updateJourneyNotification } from '../services/liveNotificationService';
+import { hideRideNotification, isRichNotificationEnabled, showRideNotification } from './rideNotification';
 import { getRuntime } from './runtime';
 import type { LiveStats } from './recorder';
 
@@ -27,6 +28,7 @@ export function toActivityData(s: LiveStats) {
 }
 
 export function startLiveActivityBridge(): () => void {
+  if (Platform.OS === 'android') return startAndroidBridge();
   if (Platform.OS !== 'ios') return () => {};
   const rt = getRuntime();
   let last = 0;
@@ -44,4 +46,31 @@ export function startLiveActivityBridge(): () => void {
   };
   rt.liveListeners.add(onLive);
   return () => { rt.liveListeners.delete(onLive); };
+}
+
+/**
+ * Android: keeps the rich ride notification current, but only when that beta setting is on. With it
+ * off nothing happens here and the plain foreground notification from the location task is used.
+ */
+function startAndroidBridge(): () => void {
+  const rt = getRuntime();
+  let last = 0;
+  let lastStatus: string | null = null;
+  let broken = false; // the notification could not be shown for this ride; stop trying
+  const onLive = async (s: LiveStats | null) => {
+    if (!(await isRichNotificationEnabled())) return;
+    if (!s || s.status === 'ENDED') {
+      if (lastStatus) { lastStatus = null; broken = false; void hideRideNotification(); }
+      return;
+    }
+    if (broken) return;
+    const now = Date.now();
+    const changed = s.status !== lastStatus;
+    if (!changed && now - last < MIN_INTERVAL_MS) return;
+    last = now;
+    lastStatus = s.status;
+    if (!(await showRideNotification(s))) broken = true;
+  };
+  rt.liveListeners.add(onLive as never);
+  return () => { rt.liveListeners.delete(onLive as never); };
 }

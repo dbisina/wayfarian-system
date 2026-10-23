@@ -8,6 +8,7 @@ import { groupAPI } from '../services/api';
 import { SkeletonLine } from '../components/Skeleton';
 import Icon from '../components/dw/Icon';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
+import { defaultCoverFor } from '../constants/covers';
 
 interface GroupItem {
   id: string;
@@ -128,7 +129,7 @@ export default function GroupsScreen(): React.JSX.Element {
             style={styles.feature}
           >
             <View style={styles.featureGlow} />
-            {live.coverPhotoURL ? <Image source={{ uri: live.coverPhotoURL }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+            <Image source={live.coverPhotoURL ? { uri: live.coverPhotoURL } : defaultCoverFor(live.id)} style={StyleSheet.absoluteFill} resizeMode="cover" />
             <View style={styles.featureShade} />
             <View style={styles.featureChip}>
               <View style={styles.liveDot} />
@@ -186,13 +187,7 @@ export default function GroupsScreen(): React.JSX.Element {
                 accessibilityRole="button"
               >
                 <View style={styles.coverWrap}>
-                  {g.coverPhotoURL ? (
-                    <Image source={{ uri: g.coverPhotoURL }} style={styles.cover} />
-                  ) : (
-                    <View style={[styles.cover, { backgroundColor: INK, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Icon name="route" size={22} color={AMBER} stroke={2} />
-                    </View>
-                  )}
+                  <Image source={g.coverPhotoURL ? { uri: g.coverPhotoURL } : defaultCoverFor(g.id)} style={styles.cover} />
                   <View
                     style={[
                       styles.mark,

@@ -3,13 +3,16 @@
 // never routes, locations or anything private.
 
 import React from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Crypto from 'expo-crypto';
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/dw/Icon';
 import VehiclePhoto from '../components/dw/VehiclePhoto';
 import { AMBER, F, INK, useDW } from '../constants/design';
 import { useV2Rider } from '../v2/hooks';
+import { getRuntime } from '../v2/runtime';
 import { formatDistance, formatSpeed } from '../v2/format';
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
@@ -20,6 +23,57 @@ export default function RiderProfileScreen() {
   const { riderId } = useLocalSearchParams<{ riderId: string }>();
   const rider = useV2Rider(riderId);
   const r = rider.data;
+  const qc = useQueryClient();
+  const [following, setFollowing] = React.useState<boolean | null>(null); // null until the rider taps Follow
+  const [followBusy, setFollowBusy] = React.useState(false);
+  const [inviting, setInviting] = React.useState(false);
+  const isFollowing = following ?? !!r?.isFollowing;
+  const followerCount = (r?.followers ?? 0) + (following === null ? 0 : Number(following) - Number(!!r?.isFollowing));
+
+  const toggleFollow = async () => {
+    if (!riderId || followBusy) return;
+    const next = !isFollowing;
+    setFollowing(next);
+    setFollowBusy(true);
+    try {
+      if (next) await getRuntime().client.followRider(riderId); else await getRuntime().client.unfollowRider(riderId);
+      void qc.invalidateQueries({ queryKey: ['u'] });
+    } catch (e: any) {
+      setFollowing(!next);
+      Alert.alert('Could not update', e?.message || 'Try again');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
+  // Invites the rider to a group ride you are in (or starts one), and sends them the join code.
+  const invite = async () => {
+    if (!riderId || inviting) return;
+    const first = (r?.displayName || 'Rider').split(' ')[0];
+    setInviting(true);
+    try {
+      const rt = getRuntime();
+      const list = await rt.client.groupRides();
+      let ride = list.items.find((g: any) => g.status === 'PLANNED' || g.status === 'ACTIVE');
+      if (!ride) ride = await rt.client.createGroupRide(Crypto.randomUUID(), { title: `Ride with ${first}` });
+      const res = await rt.client.inviteRider(riderId, ride.id);
+      if (res.delivered) {
+        Alert.alert('Invite sent', `${first} has the code for "${ride.title}".`, [
+          { text: 'Open ride', onPress: () => router.push({ pathname: '/group-ride', params: { id: ride.id } } as never) },
+          { text: 'Done', style: 'cancel' },
+        ]);
+      } else {
+        Alert.alert(`${first} is not on notifications`, 'Share the code with them instead.', [
+          { text: 'Share code', onPress: () => Share.share({ message: `Join my ride "${ride.title}" on Wayfarian with code ${res.code}.` }).catch(() => {}) },
+          { text: 'Close', style: 'cancel' },
+        ]);
+      }
+    } catch (e: any) {
+      Alert.alert('Could not invite', e?.message || 'Try again');
+    } finally {
+      setInviting(false);
+    }
+  };
 
   if (rider.isLoading) {
     return <View style={[styles.center, { backgroundColor: d.bg }]}><ActivityIndicator color={AMBER} /></View>;
@@ -59,6 +113,17 @@ export default function RiderProfileScreen() {
             <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={styles.glass}>
               <Icon name="back" size={20} color="#FFFDF8" stroke={2} />
             </TouchableOpacity>
+            {!r.isSelf && (
+              <TouchableOpacity
+                onPress={toggleFollow}
+                disabled={followBusy}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isFollowing }}
+                style={[styles.follow, isFollowing ? styles.following : { backgroundColor: AMBER }]}
+              >
+                <Text style={[styles.followText, { color: isFollowing ? '#FFFDF8' : INK }]}>{isFollowing ? 'Following' : 'Follow'}</Text>
+              </TouchableOpacity>
+            )}
           </View>
           {lastLabel && <View style={styles.lastRide}><Text style={styles.lastRideText}>{lastLabel}</Text></View>}
         </View>
@@ -70,6 +135,9 @@ export default function RiderProfileScreen() {
           </View>
           <Text style={[styles.name, { color: d.ink }]}>{name}</Text>
           {!!sub && <Text style={{ fontFamily: F.regular, fontSize: 13, color: d.ink2 }}>{sub}</Text>}
+          <Text style={{ fontFamily: F.regular, fontSize: 12, color: d.ink2, marginTop: 2 }}>
+            <Text style={{ fontFamily: F.monoBold, fontSize: 14, color: d.ink }}>{r.following ?? 0}</Text> following   <Text style={{ fontFamily: F.monoBold, fontSize: 14, color: d.ink }}>{followerCount}</Text> {followerCount === 1 ? 'follower' : 'followers'}
+          </Text>
         </View>
 
         {r.vehicle && (
@@ -117,11 +185,12 @@ export default function RiderProfileScreen() {
 
       {!r.isSelf && (
         <TouchableOpacity
-          onPress={() => router.push('/group-ride' as never)}
+          onPress={invite}
+          disabled={inviting}
           accessibilityRole="button"
-          style={[styles.invite, { backgroundColor: d.ink, bottom: Math.max(30, insets.bottom + 12) }]}
+          style={[styles.invite, { backgroundColor: d.ink, bottom: Math.max(30, insets.bottom + 12), opacity: inviting ? 0.6 : 1 }]}
         >
-          <Text style={[styles.inviteText, { color: d.bg }]}>Invite {name.split(' ')[0]} to a ride</Text>
+          {inviting ? <ActivityIndicator color={d.bg} /> : <Text style={[styles.inviteText, { color: d.bg }]}>Invite {name.split(' ')[0]} to a ride</Text>}
         </TouchableOpacity>
       )}
     </View>
@@ -132,7 +201,10 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   cover: { height: 296, paddingHorizontal: 16 },
-  coverTop: { flexDirection: 'row' },
+  coverTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  follow: { height: 44, paddingHorizontal: 20, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  following: { backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
+  followText: { fontFamily: F.black, fontSize: 14 },
   glass: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
   lastRide: { position: 'absolute', right: 16, bottom: 20, height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.14)', justifyContent: 'center' },
   lastRideText: { color: '#FFFDF8', fontFamily: F.extra, fontSize: 12 },

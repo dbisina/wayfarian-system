@@ -291,7 +291,18 @@ export default function RideScreen() {
           <Text style={[styles.recLabel, { color: d.ink }]}>{paused ? 'PAUSED' : 'REC'}</Text>
           <Text style={[styles.recTime, { color: d.ink }]}>{hms(elapsed)}</Text>
         </View>
-        <View style={styles.round} />
+        {groupRideId ? (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/group-live', params: { id: String(groupRideId) } } as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Group live view"
+            style={[styles.round, { backgroundColor: d.surface }, sh]}
+          >
+            <Icon name="route" size={20} color={d.ink} stroke={1.9} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.round} />
+        )}
       </View>
 
       {step && (

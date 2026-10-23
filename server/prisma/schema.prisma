@@ -49,6 +49,9 @@ model User {
   rides              Ride[]
   groupRidesLed      GroupRide[]            @relation("GroupRideLeader")
   groupRideParts     GroupRideParticipant[]
+  groupMessages      GroupMessage[]
+  following          Follow[]               @relation("Follower")
+  followers          Follow[]               @relation("Following")
   vehicleServiceLogs VehicleServiceLog[]
   stats              UserStats?
   xpLedger           XpLedger[]
@@ -299,6 +302,8 @@ model Group {
   members       GroupMember[]
   journeys      Journey[]
   groupJourneys GroupJourney[]
+  crewRides     GroupRide[]    @relation("CrewRides")
+  messages      GroupMessage[]
   // Not a direct relation, events are tied to GroupJourney
 
   @@index([creatorId])
@@ -552,16 +557,49 @@ model GroupRide {
   scheduledAt     DateTime?
   startedAt       DateTime?
   endedAt         DateTime?
+  // Set when the ride belongs to a crew (a persistent group); null for a one-off group ride.
+  crewId          String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   leader       User                   @relation("GroupRideLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  crew         Group?                 @relation("CrewRides", fields: [crewId], references: [id], onDelete: SetNull)
   participants GroupRideParticipant[]
   rides        Ride[]
 
   @@index([leaderId])
   @@index([status, updatedAt])
+  @@index([crewId, status])
   @@map("group_rides")
+}
+
+// One rider following another.
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+// A message in a crew's activity feed.
+model GroupMessage {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+  @@map("group_messages")
 }
 
 model GroupRideParticipant {

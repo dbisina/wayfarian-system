@@ -141,8 +141,13 @@ export const getLastNotificationResponse = async () => {
  * Parse notification data for journey-related notifications
  */
 export interface JourneyNotificationData {
-    type: 'JOURNEY_REMINDER' | 'JOURNEY_READY' | 'GROUP_JOURNEY_STARTED';
+    type: 'JOURNEY_REMINDER' | 'JOURNEY_READY' | 'GROUP_JOURNEY_STARTED' | 'GROUP_RIDE_INVITE' | 'NEW_FOLLOWER';
     journeyId?: string;
+    /** Join code of the group ride a GROUP_RIDE_INVITE is for. */
+    code?: string;
+    groupRideId?: string;
+    /** The rider a NEW_FOLLOWER notification is about. */
+    userId?: string;
     reminderType?: '3_DAYS' | '2_DAYS' | '1_DAY' | 'D_DAY' | 'READY';
     groupJourneyId?: string;
 }

@@ -117,6 +117,12 @@ export default function NewJourneyScreen() {
   const handleSaveAndStart = async () => {
     const trimmedJourneyName = journeyName.trim() || endLocation?.address?.split(',')[0]?.trim() || '';
 
+    // Rides for a crew start from the crew page.
+    if (groupId) {
+      router.replace({ pathname: '/group-detail', params: { groupId: String(groupId) } } as never);
+      return;
+    }
+
     // A solo ride runs on the v2 recorder and needs no destination: it is optional and only adds
     // the "heading to" card on the live screen. A ride started for a group still uses the old flow.
     if (!groupId) {

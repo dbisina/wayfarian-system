@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 vi.mock('../../services/liveNotificationService', () => ({ dismissJourneyNotification: vi.fn(), updateJourneyNotification: vi.fn() }));
 vi.mock('../runtime', () => ({ getRuntime: () => ({ liveListeners: new Set() }) }));
+vi.mock('../rideNotification', () => ({ hideRideNotification: vi.fn(), isRichNotificationEnabled: vi.fn(async () => false), showRideNotification: vi.fn() }));
 
 import { toActivityData } from '../liveActivity';
 

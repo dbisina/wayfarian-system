@@ -365,19 +365,32 @@ const getUserGroups = async (req, res) => {
     // What the Groups screen shows next to each group: the live ride (if any) and the distance
     // the crew has ridden together. Two grouped queries for the whole page, not one per group.
     const groupIds = memberships.map((m) => m.group.id);
-    const [liveRides, distances] = groupIds.length
+    // Crew rides are v2 group rides linked to the group. Distance adds the old journeys to them.
+    const [crewRides, legacyKm] = groupIds.length
       ? await Promise.all([
-          prisma.groupJourney.findMany({
-            where: { groupId: { in: groupIds }, status: 'ACTIVE' },
-            orderBy: { startedAt: 'desc' },
-            select: { id: true, groupId: true, title: true, startedAt: true },
+          prisma.groupRide.findMany({
+            where: { crewId: { in: groupIds } },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, crewId: true, title: true, status: true, startedAt: true },
           }),
           prisma.journey.groupBy({ by: ['groupId'], where: { groupId: { in: groupIds } }, _sum: { totalDistance: true } }),
         ])
       : [[], []];
+    const crewOf = new Map(crewRides.map((r) => [r.id, r.crewId]));
+    const v2Km = crewRides.length
+      ? await prisma.ride.groupBy({
+          by: ['groupRideId'],
+          where: { groupRideId: { in: crewRides.map((r) => r.id) }, status: 'FINALIZED', distanceM: { gte: 100 } },
+          _sum: { distanceM: true },
+        })
+      : [];
     const liveByGroup = new Map();
-    for (const r of liveRides) if (!liveByGroup.has(r.groupId)) liveByGroup.set(r.groupId, r);
-    const kmByGroup = new Map(distances.map((r) => [r.groupId, r._sum.totalDistance || 0]));
+    for (const r of crewRides) if ((r.status === 'ACTIVE' || r.status === 'PLANNED') && !liveByGroup.has(r.crewId)) liveByGroup.set(r.crewId, r);
+    const kmByGroup = new Map(legacyKm.map((r) => [r.groupId, r._sum.totalDistance || 0]));
+    for (const r of v2Km) {
+      const crew = crewOf.get(r.groupRideId);
+      if (crew) kmByGroup.set(crew, (kmByGroup.get(crew) || 0) + (r._sum.distanceM || 0) / 1000);
+    }
 
     const groups = memberships.map(membership => ({
       ...membership.group,

@@ -74,6 +74,27 @@ export function useV2GroupRides() {
   return useQuery({ queryKey: qk.groupRides(uid ?? 'none'), queryFn: () => getRuntime().client.groupRides(), enabled: !!uid });
 }
 
+/** A crew's live ride and weekly quest. Refreshes every 10 s while the screen is open. */
+export function useCrewState(crewId: string | undefined) {
+  const uid = useUid();
+  return useQuery({
+    queryKey: ['u', uid ?? 'none', 'crew', crewId ?? ''],
+    queryFn: () => getRuntime().client.crewState(crewId!),
+    enabled: !!uid && !!crewId,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useCrewActivity(crewId: string | undefined) {
+  const uid = useUid();
+  return useQuery({
+    queryKey: ['u', uid ?? 'none', 'crew-activity', crewId ?? ''],
+    queryFn: () => getRuntime().client.crewActivity(crewId!),
+    enabled: !!uid && !!crewId,
+    refetchInterval: 10_000,
+  });
+}
+
 export function useV2GroupRide(id: string | undefined) {
   const uid = useUid();
   return useQuery({ queryKey: qk.groupRide(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.groupRide(id!), enabled: !!uid && !!id });
@@ -87,6 +108,11 @@ export function useV2GroupSummary(id: string | undefined) {
 export function useV2Rider(id: string | undefined) {
   const uid = useUid();
   return useQuery({ queryKey: qk.rider(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.rider(id!), enabled: !!uid && !!id });
+}
+
+export function useMyFollows() {
+  const uid = useUid();
+  return useQuery({ queryKey: ['u', uid ?? 'none', 'follows'], queryFn: () => getRuntime().client.myFollows(), enabled: !!uid, staleTime: 60_000 });
 }
 
 export function useV2Vehicle(id: string | undefined) {
