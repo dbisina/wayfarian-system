@@ -362,10 +362,29 @@ const getUserGroups = async (req, res) => {
       prisma.groupMember.count({ where: whereClause }),
     ]);
     
+    // What the Groups screen shows next to each group: the live ride (if any) and the distance
+    // the crew has ridden together. Two grouped queries for the whole page, not one per group.
+    const groupIds = memberships.map((m) => m.group.id);
+    const [liveRides, distances] = groupIds.length
+      ? await Promise.all([
+          prisma.groupJourney.findMany({
+            where: { groupId: { in: groupIds }, status: 'ACTIVE' },
+            orderBy: { startedAt: 'desc' },
+            select: { id: true, groupId: true, title: true, startedAt: true },
+          }),
+          prisma.journey.groupBy({ by: ['groupId'], where: { groupId: { in: groupIds } }, _sum: { totalDistance: true } }),
+        ])
+      : [[], []];
+    const liveByGroup = new Map();
+    for (const r of liveRides) if (!liveByGroup.has(r.groupId)) liveByGroup.set(r.groupId, r);
+    const kmByGroup = new Map(distances.map((r) => [r.groupId, r._sum.totalDistance || 0]));
+
     const groups = memberships.map(membership => ({
       ...membership.group,
       userRole: membership.role,
       joinedAt: membership.joinedAt,
+      activeJourney: liveByGroup.get(membership.group.id) || null,
+      totalDistanceKm: kmByGroup.get(membership.group.id) || 0,
     }));
     
     res.json({

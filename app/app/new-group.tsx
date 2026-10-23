@@ -106,7 +106,8 @@ export default function NewGroupScreen() {
           <Text style={[styles.h1, { color: d.ink }]}>New group</Text>
         </View>
 
-        <View style={[styles.preview, { backgroundColor: d.surface2 }]}>
+        <View style={[styles.preview, { backgroundColor: INK }]}>
+          {coverUri ? null : <View style={styles.previewGlow} />}
           {coverUri ? <Image source={{ uri: coverUri }} style={StyleSheet.absoluteFill} /> : null}
           <View style={styles.previewShade} />
           <View style={styles.previewChip}>
@@ -216,6 +217,7 @@ const styles = StyleSheet.create({
   round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   h1: { fontFamily: F.black, fontSize: 26, letterSpacing: -0.5 },
   preview: { height: 200, borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end' },
+  previewGlow: { position: 'absolute', right: -70, top: -70, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(245,165,36,0.18)' },
   previewShade: { ...StyleSheet.absoluteFillObject, top: 80, backgroundColor: 'rgba(17,16,14,0.55)' },
   previewChip: { position: 'absolute', left: 14, top: 14, height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
   previewChipText: { fontFamily: F.extra, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase', color: '#FFFDF8' },
