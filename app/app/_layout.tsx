@@ -124,6 +124,13 @@ function RootLayoutContent() {
           router.push('/future-rides' as any);
         }
         break;
+      case 'GROUP_RIDE_INVITE':
+        // Someone invited you to a group ride: open the join screen with the code filled in
+        if (data.code) router.push({ pathname: '/group-ride', params: { code: String(data.code) } } as any);
+        break;
+      case 'NEW_FOLLOWER':
+        if (data.userId) router.push({ pathname: '/rider-profile', params: { riderId: String(data.userId) } } as any);
+        break;
       case 'GROUP_JOURNEY_STARTED':
         // Navigate to the group journey
         if (data.groupJourneyId) {

@@ -117,6 +117,10 @@ export function createV2Client(deps: V2ClientDeps) {
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
     summary: () => request<any>('GET', '/me/summary'),
     rider: (id: string) => request<any>('GET', `/riders/${enc(id)}`),
+    followRider: (id: string) => request<any>('POST', `/riders/${enc(id)}/follow`),
+    unfollowRider: (id: string) => request<any>('DELETE', `/riders/${enc(id)}/follow`),
+    inviteRider: (id: string, groupRideId: string) => request<any>('POST', `/riders/${enc(id)}/invite`, { groupRideId }),
+    myFollows: () => request<{ followers: number; following: number }>('GET', '/me/follows'),
     vehicle: (id: string) => request<any>('GET', `/vehicles/${enc(id)}`),
     logService: (vehicleId: string, serviceId: string, input: { kind?: string; intervalKm?: number; doneAt?: string; notes?: string } = {}) =>
       request<any>('PUT', `/vehicles/${enc(vehicleId)}/services/${enc(serviceId)}`, input),

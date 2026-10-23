@@ -50,6 +50,8 @@ model User {
   groupRidesLed      GroupRide[]            @relation("GroupRideLeader")
   groupRideParts     GroupRideParticipant[]
   groupMessages      GroupMessage[]
+  following          Follow[]               @relation("Follower")
+  followers          Follow[]               @relation("Following")
   vehicleServiceLogs VehicleServiceLog[]
   stats              UserStats?
   xpLedger           XpLedger[]
@@ -569,6 +571,20 @@ model GroupRide {
   @@index([status, updatedAt])
   @@index([crewId, status])
   @@map("group_rides")
+}
+
+// One rider following another.
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
 }
 
 // A message in a crew's activity feed.

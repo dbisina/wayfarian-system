@@ -13,6 +13,7 @@ import notifee, {
     AndroidVisibility,
 } from '@notifee/react-native';
 import * as Location from 'expo-location';
+import { handleRideAction, isRideAction } from '../v2/rideNotification';
 import { locationService } from './locationService';
 
 // Action IDs for Android notification buttons
@@ -439,7 +440,12 @@ async function endIOSLiveActivity(): Promise<void> {
 
 // Handle notification events
 export function setupNotificationEventHandlers(): void {
+    // notifee keeps ONE background listener, so the v2 ride notification's buttons are handled here too.
     notifee.onForegroundEvent(async ({ type, detail }) => {
+        if (type === EventType.ACTION_PRESS && isRideAction(detail.pressAction?.id)) {
+            await handleRideAction(detail.pressAction?.id).catch((e) => console.warn('[LiveNotification] ride action failed:', e?.message));
+            return;
+        }
         if (type === EventType.PRESS) {
             console.log('[LiveNotification] Notification pressed:', detail.notification?.id);
         }
@@ -467,6 +473,10 @@ export function setupNotificationEventHandlers(): void {
     });
 
     notifee.onBackgroundEvent(async ({ type, detail }) => {
+        if (type === EventType.ACTION_PRESS && isRideAction(detail.pressAction?.id)) {
+            await handleRideAction(detail.pressAction?.id).catch((e) => console.warn('[LiveNotification] ride action failed:', e?.message));
+            return;
+        }
         if (type === EventType.PRESS) {
             console.log('[LiveNotification] Background notification pressed:', detail.notification?.id);
         }

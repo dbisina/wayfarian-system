@@ -64,6 +64,11 @@ export interface TrackingOptions {
   notificationBody?: string;
   /** Slower, more battery friendly sampling for walking/cycling style vehicles. */
   vehicleType?: string;
+  /**
+   * Android: false when the rich ride notification is the foreground service instead, so there is
+   * still only one notification. Defaults to true.
+   */
+  plainNotification?: boolean;
 }
 
 /** Start (or restart after a resume) the OS location updates. Idempotent. */
@@ -80,7 +85,7 @@ export async function startTracking(opts: TrackingOptions = {}): Promise<void> {
     pausesUpdatesAutomatically: false, // iOS must not decide the ride is over at a red light
     showsBackgroundLocationIndicator: true,
     // Android: the one and only foreground notification for a ride. iOS ignores this block.
-    foregroundService: Platform.OS === 'android'
+    foregroundService: Platform.OS === 'android' && opts.plainNotification !== false
       ? {
           notificationTitle: opts.notificationTitle ?? 'Wayfarian is recording your ride',
           notificationBody: opts.notificationBody ?? 'Tap to return to your ride',

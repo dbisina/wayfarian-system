@@ -20,6 +20,7 @@ import { selectDefaultVehicle } from '../store/slices/vehicleSlice';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
+import { isRichNotificationEnabled, setRichNotificationEnabled } from '../v2/rideNotification';
 import { useSettings, MapType, Vehicle, Units } from '../contexts/SettingsContext';
 import LanguageSelector from '../components/LanguageSelector';
 import { LANGUAGES } from '../i18n';
@@ -42,6 +43,8 @@ export default function SettingsScreen() {
     setVehicle,
   } = useSettings();
   const [showUnitsModal, setShowUnitsModal] = React.useState(false);
+  const [richNote, setRichNote] = React.useState(false);
+  React.useEffect(() => { isRichNotificationEnabled().then(setRichNote); }, []);
   const [showLanguageModal, setShowLanguageModal] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   
@@ -121,6 +124,23 @@ export default function SettingsScreen() {
     },
     { label: t('settings.language'), meta: currentLanguage.nativeName, icon: 'globe', onPress: () => setShowLanguageModal(true) },
     { label: t('settings.units'), meta: units === 'km' ? 'km' : 'mi', icon: 'route', onPress: () => setShowUnitsModal(true) },
+    // Android only: the rich ride notification (beta). Off by default; takes effect on the next ride.
+    ...(Platform.OS === 'android'
+      ? [{
+          label: 'Rich ride notification (beta)',
+          meta: richNote ? 'On' : 'Off',
+          icon: 'bell' as IconName,
+          onPress: () =>
+            Alert.alert(
+              'Rich ride notification',
+              'Shows your distance, speed and a timer with Photo, Pause and Finish buttons while you ride. It is in beta, so if tracking ever misbehaves, switch it off. It applies from your next ride.',
+              [
+                { text: richNote ? 'Turn off' : 'Turn on', onPress: async () => { await setRichNotificationEnabled(!richNote); setRichNote(!richNote); } },
+                { text: 'Cancel', style: 'cancel' as const },
+              ]
+            ),
+        }]
+      : []),
     { label: t('settings.managePrivacySettings'), meta: '', icon: 'lock', onPress: () => Alert.alert(t('alerts.privacy'), t('alerts.comingSoon')) },
     { label: t('settings.helpCenter'), meta: '', icon: 'help', onPress: () => Alert.alert(t('settings.helpCenter'), t('alerts.comingSoon')) },
   ];

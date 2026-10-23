@@ -110,6 +110,11 @@ export function useV2Rider(id: string | undefined) {
   return useQuery({ queryKey: qk.rider(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.rider(id!), enabled: !!uid && !!id });
 }
 
+export function useMyFollows() {
+  const uid = useUid();
+  return useQuery({ queryKey: ['u', uid ?? 'none', 'follows'], queryFn: () => getRuntime().client.myFollows(), enabled: !!uid, staleTime: 60_000 });
+}
+
 export function useV2Vehicle(id: string | undefined) {
   const uid = useUid();
   return useQuery({ queryKey: qk.vehicle(uid ?? 'none', id ?? ''), queryFn: () => getRuntime().client.vehicle(id!), enabled: !!uid && !!id });

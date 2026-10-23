@@ -3,7 +3,7 @@
 
 const express = require('express');
 const multer = require('multer');
-const { rideService, groupRides, crews, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
+const { rideService, groupRides, crews, follows, profiles, photos, leaderboards, RideError, LeaderboardError } = require('../../services/rideServices');
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -60,7 +60,11 @@ router.post('/crews/:crewId/messages', wrap((req) => crews.postMessage(req.user.
 router.post('/crews/:crewId/rides', wrap((req) => crews.startRide(req.user.id, req.params.crewId, req.body || {})));
 router.post('/crews/:crewId/rides/join', wrap((req) => crews.joinRide(req.user.id, req.params.crewId)));
 router.post('/crews/:crewId/rides/end', wrap((req) => crews.endRide(req.user.id, req.params.crewId)));
-router.get('/riders/:id', wrap((req) => profiles.getRider(req.user.id, req.params.id)));
+router.get('/riders/:id', wrap(async (req) => ({ ...(await profiles.getRider(req.user.id, req.params.id)), ...(await follows.relation(req.user.id, req.params.id)) })));
+router.post('/riders/:id/follow', wrap((req) => follows.follow(req.user.id, req.params.id)));
+router.delete('/riders/:id/follow', wrap((req) => follows.unfollow(req.user.id, req.params.id)));
+router.post('/riders/:id/invite', wrap((req) => follows.invite(req.user.id, req.params.id, req.body && req.body.groupRideId)));
+router.get('/me/follows', wrap((req) => follows.counts(req.user.id)));
 router.get('/vehicles/:id', wrap((req) => profiles.getVehicle(req.user.id, req.params.id)));
 router.put('/vehicles/:id/services/:serviceId', wrap((req) => profiles.logService(req.user.id, req.params.id, req.params.serviceId, req.body)));
 router.get('/me/summary', wrap((req) => rideService.getSummary(req.user.id)));

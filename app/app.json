@@ -98,7 +98,8 @@
       "./plugins/withPodfileFix",
       "./plugins/withNotificationIcon",
       "./plugins/withLintFix",
-      "expo-updates"
+      "expo-updates",
+      "./plugins/withNotifeeLocationService"
     ],
     "ios": {
       "supportsTablet": true,
