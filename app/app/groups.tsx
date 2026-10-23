@@ -15,6 +15,8 @@ interface GroupItem {
   memberCount: number;
   coverPhotoURL?: string;
   isAdmin: boolean;
+  activeJourney?: { id: string; title: string } | null;
+  totalKm: number;
 }
 
 const initials = (name: string) =>
@@ -46,7 +48,10 @@ export default function GroupsScreen(): React.JSX.Element {
             name: g.name,
             memberCount: resolveMemberCount(g),
             coverPhotoURL: g.coverPhotoURL,
-            isAdmin: g.role === 'ADMIN' || g.myRole === 'ADMIN' || g.isAdmin === true,
+            // The server sends the rider's role as userRole (CREATOR, ADMIN or MEMBER).
+            isAdmin: [g.userRole, g.role, g.myRole].some((r: string) => r === 'ADMIN' || r === 'CREATOR') || g.isAdmin === true,
+            activeJourney: g.activeJourney ? { id: g.activeJourney.id, title: g.activeJourney.title } : null,
+            totalKm: typeof g.totalDistanceKm === 'number' ? g.totalDistanceKm : 0,
           }))
         );
       } else {
@@ -85,6 +90,7 @@ export default function GroupsScreen(): React.JSX.Element {
   };
 
   const top = Math.max(56, insets.top + 8);
+  const live = groups.find((g) => !!g.activeJourney);
 
   return (
     <View style={[styles.root, { backgroundColor: d.bg }]}>
@@ -113,6 +119,31 @@ export default function GroupsScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {live && (
+          <TouchableOpacity
+            onPress={() => router.push(`/group-detail?groupId=${live.id}`)}
+            activeOpacity={0.92}
+            accessibilityRole="button"
+            accessibilityLabel={`Riding now: ${live.name}`}
+            style={styles.feature}
+          >
+            <View style={styles.featureGlow} />
+            {live.coverPhotoURL ? <Image source={{ uri: live.coverPhotoURL }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+            <View style={styles.featureShade} />
+            <View style={styles.featureChip}>
+              <View style={styles.liveDot} />
+              <Text style={styles.featureChipText}>Riding now</Text>
+            </View>
+            <View style={styles.featureBottom}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.featureName} numberOfLines={1}>{live.name}</Text>
+                <Text style={styles.featureSub} numberOfLines={1}>{live.activeJourney?.title}</Text>
+              </View>
+              <View style={styles.featureJoin}><Text style={styles.featureJoinText}>Join ride</Text></View>
+            </View>
+          </TouchableOpacity>
+        )}
+
         <View style={[styles.codeBar, shadow(d, 8), { backgroundColor: d.surface }]}>
           <Text style={[styles.codeLabel, { color: d.ink2 }]}>Got a code?</Text>
           <TextInput
@@ -158,8 +189,8 @@ export default function GroupsScreen(): React.JSX.Element {
                   {g.coverPhotoURL ? (
                     <Image source={{ uri: g.coverPhotoURL }} style={styles.cover} />
                   ) : (
-                    <View style={[styles.cover, { backgroundColor: d.surface2, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Icon name="route" size={22} color={d.ink2} stroke={2} />
+                    <View style={[styles.cover, { backgroundColor: INK, alignItems: 'center', justifyContent: 'center' }]}>
+                      <Icon name="route" size={22} color={AMBER} stroke={2} />
                     </View>
                   )}
                   <View
@@ -178,7 +209,7 @@ export default function GroupsScreen(): React.JSX.Element {
                     {g.isAdmin ? ' · you are admin' : ''}
                   </Text>
                 </View>
-                <Icon name="chevron" size={18} color={d.ink2} />
+                <Text style={[styles.km, { color: d.ink2 }]}>{Math.round(g.totalKm).toLocaleString('en-US')} km</Text>
               </TouchableOpacity>
             ))
           )}
@@ -208,5 +239,17 @@ const styles = StyleSheet.create({
   markText: { fontFamily: F.black, fontSize: 9 },
   name: { fontFamily: F.extra, fontSize: 16 },
   meta: { fontFamily: F.regular, fontSize: 12 },
+  km: { fontFamily: F.monoBold, fontSize: 12 },
+  feature: { height: 220, borderRadius: 28, overflow: 'hidden', backgroundColor: INK },
+  featureGlow: { position: 'absolute', right: -70, top: -70, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(245,165,36,0.18)' },
+  featureShade: { ...StyleSheet.absoluteFillObject, top: 70, backgroundColor: 'rgba(17,16,14,0.62)' },
+  featureChip: { position: 'absolute', left: 16, top: 16, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(26,24,20,0.45)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4CD38F' },
+  featureChipText: { color: '#FFFDF8', fontFamily: F.extra, fontSize: 12 },
+  featureBottom: { position: 'absolute', left: 16, right: 16, bottom: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+  featureName: { color: '#FFFDF8', fontFamily: F.black, fontSize: 22, letterSpacing: -0.4 },
+  featureSub: { color: 'rgba(255,253,248,0.82)', fontFamily: F.regular, fontSize: 13 },
+  featureJoin: { height: 46, paddingHorizontal: 18, borderRadius: 23, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
+  featureJoinText: { color: INK, fontFamily: F.black, fontSize: 14 },
   empty: { fontFamily: F.medium, fontSize: 14, textAlign: 'center', paddingVertical: 40 },
 });
