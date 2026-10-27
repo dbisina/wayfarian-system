@@ -110,3 +110,64 @@ describe('Geoapify route step limits', () => {
     expect(new GeoapifyProvider('k').credits('autocomplete')).toBe(1);
   });
 });
+
+describe('SpeedLimitService with several Overpass servers', () => {
+  const ok = (kmh) => ({ data: { elements: [{ tags: { maxspeed: String(kmh) }, center: { lat: 6.5, lon: 3.4 } }] } });
+  const busy = Object.assign(new Error('502'), { response: { status: 502 } });
+
+  test('moves on to the next server when one is at capacity', async () => {
+    const http = { post: jest.fn(async (url) => { if (url.includes('first')) throw busy; return ok(80); }) };
+    const svc = new SpeedLimitService({ http, cache: new TtlCache(10), guard: new ProviderGuard('t', { ratePerSec: 100 }), endpoints: ['https://first.test', 'https://second.test'] });
+    await expect(svc.lookup(6.5, 3.4)).resolves.toEqual({ kmh: 80 });
+    expect(http.post.mock.calls.map((c) => c[0])).toEqual(['https://first.test', 'https://second.test']);
+  });
+
+  test('every server failing is one failure and answers "unknown"', async () => {
+    const http = { post: jest.fn(async () => { throw busy; }) };
+    const guard = new ProviderGuard('t', { ratePerSec: 100 });
+    const svc = new SpeedLimitService({ http, cache: new TtlCache(10), guard, endpoints: ['https://a.test', 'https://b.test', 'https://c.test'] });
+    await expect(svc.lookup(6.5, 3.4)).resolves.toEqual({ kmh: null });
+    expect(http.post).toHaveBeenCalledTimes(3);
+    expect(guard.stats().errors).toBe(1);
+  });
+});
+
+describe('Geoapify buildSteps', () => {
+  const { buildSteps } = require('../geoapify');
+  const pts = Array.from({ length: 10 }, (_, i) => ({ latitude: 6 + i * 0.01, longitude: 3 }));
+  const text = (t, type) => ({ text: t, type });
+
+  test('pieces with no instruction extend the manoeuvre before them instead of becoming blank cards', () => {
+    const steps = buildSteps(
+      [
+        { distance: 100, to_index: 2, speed_limit: 50, instruction: text('Head north.', 'StartAt') },
+        { distance: 400, to_index: 5, speed_limit: 50, instruction: text('Turn left onto Admiralty Way.', 'Left') },
+        { distance: 30, to_index: 6, speed_limit: 50 },
+        { distance: 900, to_index: 9, speed_limit: 100 },
+      ],
+      pts
+    );
+    expect(steps.map((s) => s.instruction)).toEqual(['Head north.', 'Turn left onto Admiralty Way.']);
+    expect(steps[1].distanceM).toBe(1330);
+    expect(steps[1].end).toEqual(pts[9]);
+    expect(steps[1].maneuver).toBe('turn-left');
+  });
+
+  test('the step carries the limit that holds for most of its length', () => {
+    const steps = buildSteps(
+      [
+        { distance: 400, to_index: 3, speed_limit: 50, instruction: text('Merge onto the expressway.', 'Merge') },
+        { distance: 5000, to_index: 9, speed_limit: 100 },
+      ],
+      pts
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].speedLimitKmh).toBe(100);
+  });
+
+  test('a route that starts with an unlabelled piece still gets a first step, and unknown limits stay unknown', () => {
+    const steps = buildSteps([{ distance: 50, to_index: 4 }, { distance: 80, to_index: 9, instruction: text('Turn right.', 'Right') }], pts);
+    expect(steps.map((s) => s.instruction)).toEqual(['Continue', 'Turn right.']);
+    expect(steps[0].speedLimitKmh).toBeNull();
+  });
+});
