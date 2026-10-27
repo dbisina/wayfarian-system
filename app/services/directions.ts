@@ -3,12 +3,6 @@ import Constants from 'expo-constants';
 
 export type LatLng = { latitude: number; longitude: number };
 
-export interface DirectionsResult {
-  coordinates: LatLng[];
-  distanceMeters?: number;
-  durationSeconds?: number;
-}
-
 /**
  * Resolves a Google Maps API key from the available configuration sources.
  *
@@ -73,50 +67,4 @@ export function decodePolyline(encoded: string): LatLng[] {
   }
 
   return path;
-}
-
-/**
- * Fetches a route between two coordinates using the Google Directions API.
- *
- * @param origin - Start coordinate.
- * @param destination - End coordinate.
- * @param options.mode - Travel mode (default: `'driving'`).
- * @param options.apiKey - Override the resolved API key (useful for testing).
- * @returns Decoded route coordinates plus distance/duration metadata,
- *          or `null` if the API returns an error or no routes are found.
- */
-export async function fetchDirections(
-  origin: LatLng,
-  destination: LatLng,
-  options?: { mode?: 'driving' | 'walking' | 'bicycling' | 'transit'; apiKey?: string }
-): Promise<DirectionsResult | null> {
-  const mode = options?.mode || 'driving';
-  const key = options?.apiKey || getGoogleMapsApiKey();
-  if (!key) {
-    console.warn('No Google Maps API key available for directions');
-    return null;
-  }
-
-  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=${mode}&key=${key}`;
-
-  try {
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status !== 'OK' || !json.routes || json.routes.length === 0) {
-      console.warn('Directions API error:', json.status, json.error_message);
-      return null;
-    }
-    const route = json.routes[0];
-    const overview = route.overview_polyline?.points as string | undefined;
-    const legs = route.legs?.[0];
-    const distanceMeters = legs?.distance?.value as number | undefined;
-    const durationSeconds = legs?.duration?.value as number | undefined;
-
-    if (!overview) return null;
-    const coordinates = decodePolyline(overview);
-    return { coordinates, distanceMeters, durationSeconds };
-  } catch (err) {
-    console.warn('Directions fetch failed:', err);
-    return null;
-  }
 }

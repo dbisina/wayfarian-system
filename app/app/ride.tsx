@@ -19,7 +19,7 @@ import { useLiveRide, useSyncState } from '../v2/hooks';
 import { endRide, pauseRide, resumeRide, startRide, takeRidePhoto } from '../v2/rideController';
 import { formatDistance, formatDuration } from '../v2/format';
 import { fallbackRegion } from '../v2/countryRegion';
-import { advanceStep, distanceFromRouteM, fetchNavRoute, haversineM, turnKind, type NavRoute, type TurnKind } from '../v2/navigation';
+import { advanceStep, fetchNavRoute, haversineM, locateOnRoute, remainingRouteM, turnKind, type NavRoute, type TurnKind } from '../v2/navigation';
 
 const hms = (s: number) => {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -149,26 +149,47 @@ export default function RideScreen() {
   }, [fix?.lat, fix?.lng, fix, flyTo]);
 
   // Turn-by-turn: fetch the route to the destination, follow the current step, and fetch a fresh
-  // route if the rider leaves it.
+  // route if the rider stays off it. A failed fetch keeps the old route on screen and waits longer
+  // before the next try (10 s, 20 s, 40 s, then every 60 s), so a dead network never spams requests.
   const [navRoute, setNavRoute] = useState<NavRoute | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
+  const [routeLeftM, setRouteLeftM] = useState<number | null>(null);
   const fetching = useRef(false);
   const offSince = useRef<number | null>(null);
+  const retryAt = useRef(0);
+  const failures = useRef(0);
   const routeTotalM = useRef(0);
   useEffect(() => {
     if (!dest || !fix || live?.status !== 'RECORDING') return;
     const pos = { latitude: fix.lat, longitude: fix.lng };
     if (navRoute) {
       setStepIdx((i) => advanceStep(pos, navRoute.steps, i));
-      if (distanceFromRouteM(pos, navRoute.coordinates) <= OFF_ROUTE_M) { offSince.current = null; return; }
+      const at = locateOnRoute(pos, navRoute.coordinates);
+      if (at.offRouteM <= OFF_ROUTE_M) {
+        offSince.current = null;
+        setRouteLeftM(remainingRouteM(at, navRoute.coordinates));
+        return;
+      }
       offSince.current = offSince.current ?? Date.now();
       if (Date.now() - offSince.current < 8000) return;
     }
-    if (fetching.current) return;
+    if (fetching.current || Date.now() < retryAt.current) return;
     fetching.current = true;
-    offSince.current = null;
     fetchNavRoute(pos, dest, vehicleType)
-      .then((r) => { if (r) { setNavRoute(r); setStepIdx(0); routeTotalM.current = r.distanceM; } })
+      .then((r) => {
+        if (!r) {
+          failures.current++;
+          retryAt.current = Date.now() + Math.min(60000, 10000 * 2 ** (failures.current - 1));
+          return;
+        }
+        failures.current = 0;
+        retryAt.current = 0;
+        offSince.current = null;
+        setNavRoute(r);
+        setStepIdx(0);
+        setRouteLeftM(r.distanceM);
+        routeTotalM.current = r.distanceM;
+      })
       .finally(() => { fetching.current = false; });
   }, [fix, dest, live?.status, navRoute, vehicleType]);
 
@@ -241,12 +262,16 @@ export default function RideScreen() {
   }
 
   const here = fix ? { latitude: fix.lat, longitude: fix.lng } : null;
-  const toDestM = dest && here ? haversineM(here, dest) : null;
+  // Road distance left along the route; straight-line only while there is no route yet.
+  const toDestM = routeLeftM ?? (dest && here ? haversineM(here, dest) : null);
   const step = navRoute?.steps[stepIdx] ?? null;
   const then = navRoute?.steps[stepIdx + 1] ?? null;
   const toTurnM = step && here ? haversineM(here, step.end) : null;
-  const eta = toDestM != null && live.avgSpeedMps > 1.5
-    ? new Date(now + (toDestM / live.avgSpeedMps) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  // The route's own pace (it knows road speeds) until the rider has a moving average of their own.
+  const routePaceMps = navRoute && navRoute.durationS > 0 ? navRoute.distanceM / navRoute.durationS : 0;
+  const paceMps = live.movingTimeS > 120 && live.avgSpeedMps > 1.5 ? live.avgSpeedMps : routePaceMps;
+  const eta = toDestM != null && paceMps > 0
+    ? new Date(now + (toDestM / paceMps) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
     : null;
   const progress = toDestM != null && routeTotalM.current > 0 ? Math.min(1, Math.max(0, 1 - toDestM / routeTotalM.current)) : 0;
   const kmh = Math.round(Math.max(0, fix?.speedMps ?? 0) * 3.6);

@@ -3,13 +3,14 @@ import { View, Text, StyleSheet, TouchableOpacity, Keyboard, LayoutAnimation, Pl
 import TextInput from './dw/DWTextInput';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Skeleton } from './Skeleton';
-import { placesAPI } from '../services/api';
+import { newSearchSession, placesAPI } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import { AMBER, F, useDW } from '../constants/design';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 
-const DEBOUNCE_MS = 140; // short enough to feel live, long enough not to search on every keystroke
+const DEBOUNCE_MS = 300; // searches once the rider pauses, not on every keystroke
+const MIN_CHARS = 3; // shorter queries match too much to be worth a lookup
 const smooth = () => LayoutAnimation.configureNext(LayoutAnimation.create(140, 'easeInEaseOut', 'opacity'));
 
 interface LocationSuggestion {
@@ -65,6 +66,8 @@ export default function LocationPicker({
   const latestSearch = useRef(0);
   // Answers already fetched, so typing back over a query shows its results instantly.
   const cache = useRef(new Map<string, LocationSuggestion[]>());
+  // One search session (keystrokes through to the picked place) is billed as one.
+  const session = useRef(newSearchSession());
 
   // Sync internal query state with value prop
   useEffect(() => {
@@ -92,7 +95,7 @@ export default function LocationPicker({
     const id = ++latestSearch.current;
     setSearching(true);
     try {
-      const params: any = { input: text };
+      const params: any = { input: text, sessionToken: session.current };
       if (currentLocation) {
         params.latitude = currentLocation.latitude;
         params.longitude = currentLocation.longitude;
@@ -144,6 +147,11 @@ export default function LocationPicker({
     // Open the list straight away (with a searching row) instead of popping in after the network
     // answer; results from the previous letters stay visible until the new ones arrive.
     setShowSuggestions(true);
+    if (text.trim().length < MIN_CHARS) {
+      latestSearch.current++;
+      setSearching(false);
+      return;
+    }
     debounceRef.current = setTimeout(() => {
       fetchAutocomplete(text.trim());
     }, DEBOUNCE_MS);
@@ -157,8 +165,10 @@ export default function LocationPicker({
       setShowSuggestions(false);
       Keyboard.dismiss();
 
-      // Get place details to get coordinates
-      const details = await placesAPI.placeDetails(suggestion.placeId);
+      // Get place details to get coordinates. This closes the search session.
+      const token = session.current;
+      session.current = newSearchSession();
+      const details = await placesAPI.placeDetails(suggestion.placeId, token);
       const lat = details?.place?.location?.latitude;
       const lng = details?.place?.location?.longitude;
       const address = details?.place?.address || suggestion.description;

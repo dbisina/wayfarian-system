@@ -939,14 +939,23 @@ export const placesAPI = {
     const params = new URLSearchParams({ address });
     return apiRequest(`/maps/geocode?${params.toString()}`, 'GET');
   },
-  autocomplete: async (params: { input: string; latitude?: number; longitude?: number; radius?: number }) => {
+  /** `sessionToken` groups one search's keystrokes with the final details call for billing. */
+  autocomplete: async (params: { input: string; latitude?: number; longitude?: number; radius?: number; sessionToken?: string }) => {
     const query = new URLSearchParams(params as any).toString();
     return apiRequest(`/maps/autocomplete?${query}`, 'GET');
   },
-  placeDetails: async (placeId: string) => {
-    return apiRequest(`/maps/place-details/${placeId}`, 'GET');
+  placeDetails: async (placeId: string, sessionToken?: string) => {
+    const query = sessionToken ? `?${new URLSearchParams({ sessionToken }).toString()}` : '';
+    return apiRequest(`/maps/place-details/${encodeURIComponent(placeId)}${query}`, 'GET');
+  },
+  directions: async (params: { origin_lat: number; origin_lng: number; dest_lat: number; dest_lng: number; mode: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return apiRequest(`/maps/directions?${query}`, 'GET', null, true, 15000);
   },
 };
+
+/** A fresh token for one search session (keystrokes through to the picked place). */
+export const newSearchSession = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
 // Export wrapper with options object for custom API calls (modern API)
 export const apiRequestWithOptions = async (

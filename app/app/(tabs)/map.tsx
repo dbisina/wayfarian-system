@@ -15,7 +15,7 @@ import ClipCard from '../../components/dw/ClipCard';
 import Icon from '../../components/dw/Icon';
 import { useAuth } from '../../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
-import { placesAPI } from '../../services/api';
+import { newSearchSession, placesAPI } from '../../services/api';
 import { fallbackRegion } from '../../v2/countryRegion';
 import { haversineM } from '../../v2/navigation';
 import { formatDistance } from '../../v2/format';
@@ -89,8 +89,14 @@ export default function MapScreen() {
   const [suggestions, setSuggestions] = useState<{ id: string; description: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [markersLive, setMarkersLive] = useState(true);
+  // What went wrong last, shown instead of an empty map: 'none' = searched and found nothing,
+  // 'down' = search unavailable, so the rider can long-press the map to drop a pin instead.
+  const [notice, setNotice] = useState<'none' | 'down' | null>(null);
   const latestSearch = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const session = useRef(newSearchSession());
+  // Last good results per chip, so switching back shows them at once and a failed refresh keeps them.
+  const lastNearby = useRef<Record<string, Place[]>>({});
 
   const region = useMemo(
     () => fallbackRegion({ profileCountryCode: user?.countryCode, deviceRegionCode: Localization.getLocales()[0]?.regionCode }),
@@ -130,6 +136,9 @@ export default function MapScreen() {
     const def = CHIPS.find((c) => c.key === chip);
     if (!def || !me) { setPlaces([]); return; }
     let cancelled = false;
+    const kept = lastNearby.current[def.key];
+    if (kept?.length) setPlaces(kept);
+    setNotice(null);
     setLoading(true);
     placesAPI
       .searchNearby({ latitude: me.latitude, longitude: me.longitude, type: def.type, radius: 5000 })
@@ -143,10 +152,15 @@ export default function MapScreen() {
           })
           .filter(Boolean)
           .slice(0, 20);
+        if (list.length) lastNearby.current[def.key] = list;
         setPlaces(list);
+        setNotice(list.length ? null : 'none');
         setSelected((s) => (s && list.some((p) => p.id === s.id) ? s : list[0] ?? null));
       })
-      .catch(() => { if (!cancelled) setPlaces([]); })
+      .catch(() => {
+        // Keep whatever was already on the map; only say so when there is nothing to show.
+        if (!cancelled && !kept?.length) { setPlaces([]); setNotice('down'); }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [chip, me?.latitude, me?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -161,35 +175,65 @@ export default function MapScreen() {
   const onQuery = (text: string) => {
     setQuery(text);
     if (debounce.current) clearTimeout(debounce.current);
-    if (!text.trim()) { latestSearch.current++; setSuggestions([]); setSearching(false); return; }
+    // Two letters match half the map; wait for a third before spending a lookup.
+    if (text.trim().length < 3) { latestSearch.current++; setSuggestions([]); setSearching(false); return; }
     debounce.current = setTimeout(async () => {
       const id = ++latestSearch.current;
       setSearching(true);
       try {
-        const res: any = await placesAPI.autocomplete({ input: text.trim(), ...(me ? { latitude: me.latitude, longitude: me.longitude, radius: 20000 } : {}) });
+        const res: any = await placesAPI.autocomplete({
+          input: text.trim(),
+          sessionToken: session.current,
+          ...(me ? { latitude: me.latitude, longitude: me.longitude, radius: 20000 } : {}),
+        });
         if (id !== latestSearch.current) return;
-        setSuggestions((res?.predictions ?? []).slice(0, 5).map((p: any) => ({ id: p.placeId, description: p.description })));
+        const list = (res?.predictions ?? []).slice(0, 5).map((p: any) => ({ id: p.placeId, description: p.description }));
+        setSuggestions(list);
+        setNotice(list.length ? null : 'none');
       } catch {
-        if (id === latestSearch.current) setSuggestions([]);
+        if (id === latestSearch.current) { setSuggestions([]); setNotice('down'); }
       } finally {
         if (id === latestSearch.current) setSearching(false);
       }
-    }, 140);
+    }, 300);
+  };
+
+  const showPlace = (place: Place) => {
+    setChip(null);
+    setPlaces([place]);
+    setSelected(place);
+    setNotice(null);
+    flyTo(place.latitude, place.longitude, 14);
   };
 
   const pick = async (s: { id: string; description: string }) => {
     setQuery(s.description);
     setSuggestions([]);
+    const token = session.current;
+    session.current = newSearchSession(); // the next search is a new billing session
     try {
-      const res: any = await placesAPI.placeDetails(s.id);
+      const res: any = await placesAPI.placeDetails(s.id, token);
       const c = coord(res?.place);
-      if (!c) return;
-      const place: Place = { id: s.id, name: s.description.split(',')[0], ...c, kind: 'pin', subtitle: res?.place?.address || s.description };
-      setChip(null);
-      setPlaces([place]);
-      setSelected(place);
-      flyTo(c.latitude, c.longitude, 14);
-    } catch { /* leave the search as typed */ }
+      if (!c) throw new Error('no position');
+      showPlace({ id: s.id, name: s.description.split(',')[0], ...c, kind: 'pin', subtitle: res?.place?.address || s.description });
+    } catch {
+      // Details failed: try the words themselves before giving up.
+      try {
+        const g: any = await placesAPI.geocode(s.description);
+        const c = coord(g?.result);
+        if (!c) throw new Error('no position');
+        showPlace({ id: s.id, name: s.description.split(',')[0], ...c, kind: 'pin', subtitle: g?.result?.formattedAddress || s.description });
+      } catch {
+        setNotice('down');
+      }
+    }
+  };
+
+  // Long-press anywhere to ride there: the fallback when search can't find (or reach) a place.
+  const dropPin = (e: { nativeEvent: { coordinate: { latitude: number; longitude: number } } }) => {
+    const c = e.nativeEvent.coordinate;
+    setSuggestions([]);
+    showPlace({ id: `pin-${c.latitude.toFixed(5)},${c.longitude.toFixed(5)}`, name: 'Dropped pin', ...c, kind: 'pin', subtitle: `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}` });
   };
 
   const rideHere = () => {
@@ -217,6 +261,7 @@ export default function MapScreen() {
         toolbarEnabled={false}
         initialRegion={me ? { ...me, latitudeDelta: 0.05, longitudeDelta: 0.05 } : region}
         onPress={() => setSuggestions([])}
+        onLongPress={dropPin}
       >
         {places.map((p) => {
           const on = p.id === selected?.id;
@@ -259,6 +304,7 @@ export default function MapScreen() {
                 <Text style={[styles.suggestionText, { color: d.ink }]} numberOfLines={2}>{s.description}</Text>
               </TouchableOpacity>
             ))}
+            <Text style={[styles.attribution, { color: d.ink2, borderTopWidth: 1, borderTopColor: d.line }]}>© OpenStreetMap contributors · Geoapify · Google</Text>
           </View>
         )}
 
@@ -288,6 +334,14 @@ export default function MapScreen() {
           </Svg>
         </TouchableOpacity>
       </View>
+
+      {notice && !loading && !selected && suggestions.length === 0 && (
+        <View style={[styles.notice, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]} accessibilityRole="text" accessibilityLiveRegion="polite">
+          <Text style={[styles.loadingText, { color: d.ink2 }]}>
+            {notice === 'none' ? 'Nothing found here. Long-press the map to drop a pin' : 'Search is having trouble. Long-press the map to drop a pin'}
+          </Text>
+        </View>
+      )}
 
       {loading && !selected && (
         <View style={[styles.loading, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]}>
@@ -342,6 +396,8 @@ const styles = StyleSheet.create({
   railBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   loading: { position: 'absolute', alignSelf: 'center', height: 40, borderRadius: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
   loadingText: { fontFamily: F.semi, fontSize: 13 },
+  notice: { position: 'absolute', left: 16, right: 16, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 11, alignItems: 'center' },
+  attribution: { fontFamily: F.regular, fontSize: 10, paddingHorizontal: 16, paddingVertical: 6, textAlign: 'right' },
   card: { position: 'absolute', left: 16, right: 16 },
   cardBody: { padding: 16, gap: 14 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },

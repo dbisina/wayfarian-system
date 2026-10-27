@@ -3,8 +3,23 @@
 const express = require('express');
 const { query, param, validationResult } = require('express-validator');
 const mapsService = require('../services/MapsService');
+const { geoService } = require('../services/geo');
+const authMiddleware = require('../middleware/auth');
+const { requireOperator } = require('../middleware/authorization');
 
 const router = express.Router();
+
+/**
+ * Sends a geo failure without leaking which provider failed. NO_RESULTS is a normal empty answer;
+ * anything else tells the app search is unavailable so it can offer a dropped pin instead.
+ */
+const sendGeoError = (res, error, label) => {
+  if (error?.code === 'NO_RESULTS') {
+    return res.status(404).json({ error: label, code: 'NO_RESULTS', message: 'Nothing found' });
+  }
+  console.error(`${label}:`, error?.code || '', error?.message || error);
+  return res.status(503).json({ error: label, code: 'UNAVAILABLE', message: 'Map search is unavailable right now' });
+};
 
 // Validation middleware
 const handleValidationErrors = (req, res, next) => {
@@ -50,12 +65,12 @@ router.get(
     try {
       const { latitude, longitude, type = 'point_of_interest', radius = 5000 } = req.query;
       
-      const places = await mapsService.findNearbyPlaces(
-        parseFloat(latitude),
-        parseFloat(longitude),
+      const places = await geoService.nearby({
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
         type,
-        parseInt(radius)
-      );
+        radius: parseInt(radius),
+      });
 
       res.json({
         success: true,
@@ -68,13 +83,9 @@ router.get(
         },
         count: places.length,
       });
-      
+
     } catch (error) {
-      console.error('Nearby places error:', error);
-      res.status(500).json({
-        error: 'Failed to find nearby places',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to find nearby places');
     }
   }
 );
@@ -95,20 +106,17 @@ router.get(
   async (req, res) => {
     try {
       const { placeId } = req.params;
-      
-      const placeDetails = await mapsService.getPlaceDetails(placeId);
+      const { sessionToken } = req.query;
+
+      const placeDetails = await geoService.details({ placeId, sessionToken });
 
       res.json({
         success: true,
         place: placeDetails,
       });
-      
+
     } catch (error) {
-      console.error('Place details error:', error);
-      res.status(500).json({
-        error: 'Failed to get place details',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to get place details');
     }
   }
 );
@@ -130,20 +138,16 @@ router.get(
     try {
       const { address } = req.query;
       
-      const result = await mapsService.geocodeAddress(address);
+      const result = await geoService.geocode({ address });
 
       res.json({
         success: true,
         result,
         query: address,
       });
-      
+
     } catch (error) {
-      console.error('Geocode error:', error);
-      res.status(500).json({
-        error: 'Failed to geocode address',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to geocode address');
     }
   }
 );
@@ -168,10 +172,10 @@ router.get(
     try {
       const { latitude, longitude } = req.query;
       
-      const result = await mapsService.reverseGeocode(
-        parseFloat(latitude),
-        parseFloat(longitude)
-      );
+      const result = await geoService.reverseGeocode({
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+      });
 
       res.json({
         success: true,
@@ -183,11 +187,7 @@ router.get(
       });
       
     } catch (error) {
-      console.error('Reverse geocode error:', error);
-      res.status(500).json({
-        error: 'Failed to reverse geocode coordinates',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to reverse geocode coordinates');
     }
   }
 );
@@ -214,7 +214,7 @@ router.get(
       .withMessage('Destination longitude must be between -180 and 180'),
     query('mode')
       .optional()
-      .isIn(['driving', 'walking', 'bicycling', 'transit'])
+      .isIn(['driving', 'motorcycle', 'walking', 'bicycling'])
       .withMessage('Invalid travel mode'),
   ],
   handleValidationErrors,
@@ -232,7 +232,7 @@ router.get(
         longitude: parseFloat(dest_lng),
       };
       
-      const directions = await mapsService.getDirections(origin, destination, mode);
+      const directions = await geoService.directions({ origin, destination, mode });
 
       res.json({
         success: true,
@@ -245,11 +245,7 @@ router.get(
       });
       
     } catch (error) {
-      console.error('Directions error:', error);
-      res.status(500).json({
-        error: 'Failed to get directions',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to get directions');
     }
   }
 );
@@ -353,24 +349,34 @@ router.get(
     query('latitude').optional().isFloat({ min: -90, max: 90 }),
     query('longitude').optional().isFloat({ min: -180, max: 180 }),
     query('radius').optional().isInt({ min: 100, max: 50000 }),
+    query('sessionToken').optional().isString().isLength({ max: 64 }),
   ],
   handleValidationErrors,
   async (req, res) => {
     try {
-      const { input, latitude, longitude, radius = 20000 } = req.query;
-      const predictions = await mapsService.autocomplete(
+      const { input, latitude, longitude, radius = 20000, sessionToken } = req.query;
+      const predictions = await geoService.autocomplete({
         input,
-        latitude ? parseFloat(latitude) : undefined,
-        longitude ? parseFloat(longitude) : undefined,
-        parseInt(radius)
-      );
+        latitude: latitude ? parseFloat(latitude) : undefined,
+        longitude: longitude ? parseFloat(longitude) : undefined,
+        radius: parseInt(radius),
+        sessionToken,
+      });
       res.json({ success: true, predictions });
     } catch (error) {
-      console.error('Autocomplete error:', error);
-      res.status(500).json({ error: 'Failed to get autocomplete predictions', message: error.message });
+      sendGeoError(res, error, 'Failed to get autocomplete predictions');
     }
   }
 );
+
+/**
+ * @route GET /api/maps/_stats
+ * @desc Provider credits used today, pauses and cache hit rate
+ * @access Operator
+ */
+router.get('/_stats', authMiddleware, requireOperator, (req, res) => {
+  res.json({ success: true, ...geoService.stats() });
+});
 
 /**
  * @route GET /api/places/nearby
@@ -404,12 +410,12 @@ router.get(
     try {
       const { latitude, longitude, type = 'point_of_interest', radius = 5000 } = req.query;
       
-      const places = await mapsService.findNearbyPlaces(
-        parseFloat(latitude),
-        parseFloat(longitude),
+      const places = await geoService.nearby({
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
         type,
-        parseInt(radius)
-      );
+        radius: parseInt(radius),
+      });
 
       res.json({
         success: true,
@@ -422,13 +428,9 @@ router.get(
         },
         count: places.length,
       });
-      
+
     } catch (error) {
-      console.error('Nearby places error:', error);
-      res.status(500).json({
-        error: 'Failed to find nearby places',
-        message: error.message,
-      });
+      sendGeoError(res, error, 'Failed to find nearby places');
     }
   }
 );
@@ -456,12 +458,15 @@ router.get(
       const lng = parseFloat(longitude);
 
       // Get essential places for travelers
+      // One empty or failed category shouldn't sink the others.
+      const near = (type, radius) =>
+        geoService.nearby({ latitude: lat, longitude: lng, type, radius }).catch(() => []);
       const [gasStations, restaurants, lodging, atms, hospitals] = await Promise.all([
-        mapsService.findNearbyPlaces(lat, lng, 'gas_station', 10000),
-        mapsService.findNearbyPlaces(lat, lng, 'restaurant', 5000),
-        mapsService.findNearbyPlaces(lat, lng, 'lodging', 15000),
-        mapsService.findNearbyPlaces(lat, lng, 'atm', 3000),
-        mapsService.findNearbyPlaces(lat, lng, 'hospital', 20000),
+        near('gas_station', 10000),
+        near('restaurant', 5000),
+        near('lodging', 15000),
+        near('atm', 3000),
+        near('hospital', 20000),
       ]);
 
       const suggestions = {
