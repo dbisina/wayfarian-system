@@ -64,13 +64,24 @@ Run on one iPhone and one Android, ideally side by side:
 ## Vehicle photo cut-out (free, own Railway service)
 
 Vehicle photos are turned into transparent cut-outs by `cutout-service/`, a separate Railway service
-(`wayfarian-cutout`) so the model never uses the main server's compute. It runs the free silueta
-(U2-Net) model with onnxruntime, one photo at a time, and sleeps when idle.
+(`wayfarian-cutout`) so the model never uses the main server's compute. It runs a free open-source
+model with onnxruntime, one photo at a time, and sleeps when idle.
 
+- **Model:** `isnet-general-use` (DIS, Apache-2.0, 1024 px input, ~170 MB) by default. It keeps thin
+  parts (spokes, forks, mirrors, antennas) that the old 320 px `silueta` model dropped. Set
+  `MODEL_NAME=silueta` on the service and redeploy to go back (lighter: ~45 MB, ~1 s per photo).
+  The download is checked against its published md5 at build time.
+- **Pipeline:** the server sends a 1600 px photo (the stored fallback is still 800x600, now upright);
+  the service returns a PNG up to 1200 px with a crisp edge, small stray blobs removed and the old
+  background colour pulled out of the edge pixels.
+- **Cost:** about 1.5 GB RAM at peak and 2-4 s per photo on a fast machine (measure on Railway: a
+  shared vCPU is slower). Output PNGs are 0.5-1.7 MB.
 - Deploy: `cd cutout-service && railway up --ci -s wayfarian-cutout -e production -p <project id>`.
-- Cutout service variables: `CUTOUT_SECRET` (shared secret), `PORT=3000`.
+- Cutout service variables: `CUTOUT_SECRET` (shared secret), `PORT=3000`, optional `MODEL_NAME`.
 - Main server variables: `CUTOUT_URL=http://wayfarian-cutout.railway.internal:3000` and the same
   `CUTOUT_SECRET`. With `CUTOUT_URL` unset nothing changes: photos stay as uploaded.
-- The upload answers immediately with the normal photo; the cut-out replaces it a few seconds later
-  (the app re-checks at 6, 14 and 28 seconds). Any failure keeps the original photo.
-- Check locally: `cd cutout-service && node run-local.js some-photo.jpg` writes `some-photo.cutout.png`.
+- The upload answers immediately with the normal photo; the cut-out replaces it shortly after (the
+  app re-checks at 6, 14, 28, 45 and 70 seconds; the server waits up to 90 s per attempt). Any
+  failure, or a photo with no clear vehicle in it, keeps the original photo.
+- Check locally: `cd cutout-service && node run-local.js some-photo.jpg` writes
+  `some-photo.<model>.cutout.png` (downloads the model on first run).

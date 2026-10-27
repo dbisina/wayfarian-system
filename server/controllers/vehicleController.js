@@ -3,7 +3,7 @@
 
 const prisma = require('../prisma/client');
 const multer = require('multer');
-const sharp = require('sharp');
+const { prepareVehiclePhotos } = require('../utils/vehiclePhoto');
 const { v4: uuidv4 } = require('uuid');
 
 // Lazy-load Firebase to avoid crashing when env vars absent in test
@@ -217,11 +217,7 @@ const uploadVehiclePhoto = async (req, res) => {
 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    // Resize to reasonable dimensions
-    const processed = await sharp(req.file.buffer)
-      .resize(800, 600, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85 })
-      .toBuffer();
+    const { stored: processed, forCutout } = await prepareVehiclePhotos(req.file.buffer, { forCutout: !!process.env.CUTOUT_URL });
 
     const filename = `vehicles/${req.user.id}/${id}-${uuidv4()}.jpg`;
     const { uploadToStorage: upload } = getFirebase();
@@ -251,7 +247,7 @@ const uploadVehiclePhoto = async (req, res) => {
         vehicleId: id,
         userId: req.user.id,
         originalURL: photoURL,
-        jpeg: processed,
+        jpeg: forCutout || processed,
         newId: uuidv4,
       }).catch(() => {});
     }

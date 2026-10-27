@@ -81,8 +81,10 @@ export const uploadVehiclePhoto = createAsyncThunk(
   async ({ id, uri }: { id: string; uri: string }, { rejectWithValue, dispatch }) => {
     try {
       const res = await vehicleAPI.uploadPhoto(id, uri);
-      // The server swaps in a transparent cut-out of the vehicle a few seconds after the upload.
-      for (const ms of [6000, 14000, 28000]) setTimeout(() => dispatch(fetchVehicles({ quiet: true })), ms);
+      // The server swaps in a transparent cut-out of the vehicle shortly after the upload. The
+      // sharper model takes longer (a few seconds, more when the service has been asleep), so the
+      // last checks reach about 70 s.
+      for (const ms of [6000, 14000, 28000, 45000, 70000]) setTimeout(() => dispatch(fetchVehicles({ quiet: true })), ms);
       return res.vehicle;
     } catch (err: any) {
       return rejectWithValue(err?.message ?? 'Failed to upload photo');
