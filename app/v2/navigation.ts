@@ -5,6 +5,7 @@
 
 import { decodePolyline, type LatLng } from '../services/directions';
 import { placesAPI } from '../services/api';
+import { haversineM } from './mapCamera';
 
 export interface NavStep {
   instruction: string;
@@ -12,6 +13,8 @@ export interface NavStep {
   distanceM: number;
   /** Where this step ends, which is where the next turn happens. */
   end: LatLng;
+  /** Posted limit on this stretch in km/h, when the route provider knows it. */
+  speedLimitKmh?: number | null;
 }
 
 export interface NavRoute {
@@ -23,13 +26,8 @@ export interface NavRoute {
 
 export type TravelMode = 'driving' | 'motorcycle' | 'bicycling' | 'walking';
 
-export function haversineM(a: LatLng, b: LatLng): number {
-  const rad = Math.PI / 180;
-  const h =
-    Math.sin(((b.latitude - a.latitude) * rad) / 2) ** 2 +
-    Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin(((b.longitude - a.longitude) * rad) / 2) ** 2;
-  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
+// Lives in mapCamera so the pure helpers can use it without pulling in the network client.
+export { haversineM };
 
 export const travelModeFor = (vehicleType?: string): TravelMode => {
   const t = String(vehicleType ?? '').toLowerCase();
@@ -55,7 +53,7 @@ export async function fetchNavRoute(origin: LatLng, dest: LatLng, vehicleType?: 
     const coordinates = decodePolyline(r.polyline);
     const steps: NavStep[] = (r.steps ?? [])
       .filter((s: any) => s?.end && Number.isFinite(s.end.latitude) && Number.isFinite(s.end.longitude))
-      .map((s: any) => ({ instruction: s.instruction ?? '', maneuver: s.maneuver ?? null, distanceM: s.distanceM ?? 0, end: s.end }));
+      .map((s: any) => ({ instruction: s.instruction ?? '', maneuver: s.maneuver ?? null, distanceM: s.distanceM ?? 0, end: s.end, speedLimitKmh: s.speedLimitKmh ?? null }));
     if (coordinates.length < 2 || !steps.length) return null;
     return { coordinates, steps, distanceM: r.distance?.value ?? 0, durationS: r.duration?.value ?? 0 };
   } catch {

@@ -18,11 +18,13 @@ import ClipCard from '../../components/dw/ClipCard';
 import Icon from '../../components/dw/Icon';
 import MemoryPin from '../../components/MemoryPin';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
 import { newSearchSession, placesAPI } from '../../services/api';
 import { getFirebaseDownloadUrl } from '../../utils/storage';
 import { fallbackRegion } from '../../v2/countryRegion';
 import { regionAt } from '../../v2/mapCamera';
+import { mapStyle, nativeMapType, usesCustomStyle } from '../../v2/mapStyle';
 import { haversineM } from '../../v2/navigation';
 import { formatDistance } from '../../v2/format';
 import { clockDuration, clusterPhotos, defaultYear } from '../../v2/memories';
@@ -56,24 +58,6 @@ const CHIPS = [
   { key: 'shop', label: 'Shops', type: 'shopping_mall', noun: 'Shopping' },
 ] as const;
 
-// A calm map in the app's own colours (Google Maps only; Apple Maps has no custom style).
-const mapStyle = (dark: boolean) => {
-  const c = dark
-    ? { land: '#161513', poi: '#1E1C19', road: '#2A2723', major: '#38332B', water: '#132029', text: '#A29B8D', stroke: '#161513' }
-    : { land: '#ECE6D9', poi: '#E2DBCB', road: '#FFFDF8', major: '#FFFDF8', water: '#C9DCDD', text: '#625C51', stroke: '#ECE6D9' };
-  return [
-    { elementType: 'geometry', stylers: [{ color: c.land }] },
-    { elementType: 'labels.text.fill', stylers: [{ color: c.text }] },
-    { elementType: 'labels.text.stroke', stylers: [{ color: c.stroke }] },
-    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-    { featureType: 'road', elementType: 'geometry', stylers: [{ color: c.road }] },
-    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: c.major }] },
-    { featureType: 'water', elementType: 'geometry', stylers: [{ color: c.water }] },
-    { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: c.poi }] },
-  ];
-};
-
 const coord = (p: any) => {
   const lat = p?.latitude ?? p?.location?.latitude ?? p?.geometry?.location?.lat;
   const lng = p?.longitude ?? p?.location?.longitude ?? p?.geometry?.location?.lng;
@@ -90,6 +74,8 @@ export default function MapScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { mapType } = useSettings();
+  const nativeType = nativeMapType(mapType, Platform.OS);
   const mapRef = useRef<MapView | null>(null);
   const [me, setMe] = useState<{ latitude: number; longitude: number } | null>(null);
   const [chip, setChip] = useState<(typeof CHIPS)[number]['key'] | null>('fuel');
@@ -339,7 +325,8 @@ export default function MapScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        customMapStyle={Platform.OS === 'android' ? mapStyle(d.dark) : undefined}
+        mapType={nativeType}
+        customMapStyle={usesCustomStyle(nativeType, Platform.OS) ? mapStyle(d.dark) : undefined}
         userInterfaceStyle={d.dark ? 'dark' : 'light'}
         showsUserLocation
         showsMyLocationButton={false}
