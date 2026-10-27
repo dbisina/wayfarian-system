@@ -76,7 +76,7 @@ Alias for `getPersistedJourneyState()` with no side effects. Previously wiped st
 
 #### `getBufferedBackgroundPoints(): Promise<RoutePoint[]>`
 
-Returns the raw GPS points buffered since the last Roads-API snap, used by the foreground tracker to correct displayed distance after the app returns to foreground.
+Returns the raw GPS points buffered since the last foreground path flush, used by the foreground tracker to correct displayed distance after the app returns to foreground.
 
 ---
 
@@ -131,20 +131,9 @@ On every invocation the task:
 
 **File**: `services/directions.ts`
 
-Google Directions API wrapper and polyline decoder.
+Polyline decoder. Routes come from the server (`placesAPI.directions` in `services/api.ts`); the app has no Directions or Roads client.
 
 ### Exported Functions
-
----
-
-#### `getGoogleMapsApiKey(): string | undefined`
-
-Resolves the Google Maps API key from the first available source:
-1. `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` env var
-2. `GOOGLE_MAPS_API_KEY` env var
-3. `expoConfig.extra.googleMapsApiKey`
-4. `expoConfig.ios.config.googleMapsApiKey`
-5. `expoConfig.android.config.googleMaps.apiKey`
 
 ---
 
@@ -153,33 +142,6 @@ Resolves the Google Maps API key from the first available source:
 Decodes a Google Maps encoded polyline string (the standard variable-length encoding algorithm) into an array of `LatLng` coordinates.
 
 **Parameters**: `encoded` — the `overview_polyline.points` string from a Directions API response.
-
----
-
-#### `fetchDirections(origin, destination, options?): Promise<DirectionsResult | null>`
-
-Fetches a route between two coordinates using the Google Directions API.
-
-**Parameters**
-
-| Param | Type | Description |
-|---|---|---|
-| `origin` | `LatLng` | Start coordinate |
-| `destination` | `LatLng` | End coordinate |
-| `options.mode` | `'driving' \| 'walking' \| 'bicycling' \| 'transit'?` | Default: `'driving'` |
-| `options.apiKey` | `string?` | Override the resolved API key (useful for testing) |
-
-**Returns**: `DirectionsResult` or `null` if the API returns an error or no routes are found.
-
-```ts
-interface DirectionsResult {
-  coordinates: LatLng[];    // decoded overview polyline
-  distanceMeters?: number;
-  durationSeconds?: number;
-}
-
-type LatLng = { latitude: number; longitude: number };
-```
 
 ---
 
@@ -267,5 +229,4 @@ Re-export of `Sentry.wrap` — a higher-order component that wraps a React compo
 | `api` | `services/api.ts` | Authenticated HTTP client; caches Firebase ID token in memory |
 | `storage` | `services/storage.ts` | MMKV / AsyncStorage abstraction with migration helper |
 | `kalmanFilter` | `services/kalmanFilter.ts` | Kalman filter for GPS position smoothing (available for opt-in) |
-| `roads` | `services/roads.ts` | Direct Roads API client (also used internally by `useSmartTracking`) |
 | `offlineQueueService` | `services/offlineQueueService.ts` | Queues failed API requests for retry when connectivity is restored |

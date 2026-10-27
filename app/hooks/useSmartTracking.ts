@@ -1,13 +1,10 @@
-// Device speed is the primary source; Roads API corrects the path and distance;
-// Haversine accumulates distance in real-time and serves as the offline fallback.
+// Device speed is the primary source; Haversine accumulates distance from raw GPS in real time.
+// Google Roads snapping was removed: it billed per call from the phone with the public key.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
 import { StatsCalculator } from '../utils/StatsCalculator';
 
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-const ROADS_API_BASE_URL = 'https://roads.googleapis.com/v1/snapToRoads';
 const BUFFER_SIZE = 8;
 const FLUSH_INTERVAL_MS = 10000;
 
@@ -66,23 +63,13 @@ export interface SmartLocation {
   accuracy: number;
 }
 
-/** A coordinate snapped to the road network by the Google Roads API. */
-export interface SnappedPoint {
-  location: {
-    latitude: number;
-    longitude: number;
-  };
-  originalIndex: number;
-  placeId: string;
-}
-
 /**
- * Real-time journey tracking hook that combines device GPS, Google Roads API
- * snapping, and Haversine fallback into a single stream of stats.
+ * Real-time journey tracking hook that combines device GPS and Haversine
+ * distance into a single stream of stats.
  *
  * @param isTracking - Start/stop the location subscription. Toggling from false→true resets all accumulators.
  * @param vehicle - Determines the per-vehicle speed cap used for glitch rejection.
- * @returns Live location, snapped path, distance (km), moving time (s), avg speed (km/h), max speed (km/h).
+ * @returns Live location, recorded path (raw GPS, name kept for callers), distance (km), moving time (s), avg speed (km/h), max speed (km/h).
  */
 export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'car') {
   const vehicleSpeedCapKmh = VEHICLE_MAX_SPEED_KMH[vehicle] ?? VEHICLE_MAX_SPEED_KMH.car;
@@ -102,9 +89,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
   const haversineDistanceRef = useRef<number>(0); // km — accumulated from raw GPS
   const lastAccumulationPointRef = useRef<{ latitude: number; longitude: number; timestamp: number } | null>(null);
 
-  const roadsApiDistanceRef = useRef<number>(0); // km — from snapped points
-  const roadsApiActiveRef = useRef<boolean>(false); // true after first successful Roads API call
-
   const stationaryStartTimeRef = useRef<number | null>(null);
   const isDwellingRef = useRef<boolean>(false);
 
@@ -119,70 +103,19 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
   const lastGoodHeadingRef = useRef<number>(0);
   const lastPositionTimestampRef = useRef<number>(0);
 
-  /** Send the buffered GPS points to the Roads API and update the snapped path + distance. */
-  const flushBufferToRoadsAPI = useCallback(async () => {
+  /** Append the buffered GPS points to the recorded path. */
+  const flushBuffer = useCallback(() => {
     if (bufferRef.current.length < 2) return;
 
-    const pointsToSnap = [...bufferRef.current];
+    const points = [...bufferRef.current];
     // Retain last point so the next segment connects without a gap.
-    const lastPoint = pointsToSnap[pointsToSnap.length - 1];
-    bufferRef.current = [lastPoint];
+    bufferRef.current = [points[points.length - 1]];
     lastFlushTimeRef.current = Date.now();
 
-    if (!GOOGLE_MAPS_API_KEY) {
-      setOfficialSnappedPath(prev => {
-        const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
-        return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
-      });
-      return;
-    }
-
-    try {
-      const path = pointsToSnap.map(p => `${p.latitude},${p.longitude}`).join('|');
-      const url = `${ROADS_API_BASE_URL}?path=${path}&interpolate=true&key=${GOOGLE_MAPS_API_KEY}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.snappedPoints && data.snappedPoints.length > 0) {
-        const newSnappedPoints = data.snappedPoints.map((p: any) => ({
-          latitude: p.location.latitude,
-          longitude: p.location.longitude
-        }));
-
-        setOfficialSnappedPath(prev => {
-          const merged = [...prev, ...newSnappedPoints];
-          return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
-        });
-
-        let segmentDist = 0;
-        for (let i = 1; i < newSnappedPoints.length; i++) {
-          segmentDist += haversineDistance(
-            newSnappedPoints[i - 1].latitude, newSnappedPoints[i - 1].longitude,
-            newSnappedPoints[i].latitude, newSnappedPoints[i].longitude
-          );
-        }
-        roadsApiDistanceRef.current += segmentDist;
-        roadsApiActiveRef.current = true;
-
-        // Taking max(Roads API, Haversine) keeps the display monotonic: a mid-journey
-        // Roads API correction (e.g. 1.05 km → 0.95 km snapped) would otherwise visibly
-        // shrink the odometer, which users notice immediately.
-        setOfficialDistance(Math.max(roadsApiDistanceRef.current, haversineDistanceRef.current));
-      } else {
-        setOfficialSnappedPath(prev => {
-          const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
-          return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
-        });
-        setOfficialDistance(haversineDistanceRef.current);
-      }
-    } catch (error) {
-      setOfficialSnappedPath(prev => {
-        const merged = [...prev, ...pointsToSnap.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
-        return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
-      });
-      setOfficialDistance(haversineDistanceRef.current);
-    }
+    setOfficialSnappedPath(prev => {
+      const merged = [...prev, ...points.map(p => ({ latitude: p.latitude, longitude: p.longitude }))];
+      return merged.length > MAX_SNAPPED_PATH_POINTS ? merged.slice(-MAX_SNAPPED_PATH_POINTS) : merged;
+    });
   }, []);
 
   /** Process a raw Expo location event, updating speed, position, distance, and time accumulators. */
@@ -370,10 +303,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
 
       if (distMeters >= minMoveMeters && distKm <= MAX_DISTANCE_BETWEEN_POINTS_KM) {
         haversineDistanceRef.current += distKm;
-
-        if (!roadsApiActiveRef.current) {
-          setOfficialDistance(haversineDistanceRef.current);
-        }
+        setOfficialDistance(haversineDistanceRef.current);
       }
     }
 
@@ -381,7 +311,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
       lastAccumulationPointRef.current = { latitude, longitude, timestamp: now };
     }
 
-    // === BUFFERING FOR ROADS API ===
+    // === BUFFERING FOR PATH ===
     const accuracyOk = !accuracy || accuracy <= MIN_ACCURACY_FOR_TRACKING;
     if (accuracyOk) {
       const lastBuffered = bufferRef.current[bufferRef.current.length - 1];
@@ -400,10 +330,10 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
       bufferRef.current.length >= BUFFER_SIZE ||
       (Date.now() - lastFlushTimeRef.current > FLUSH_INTERVAL_MS && bufferRef.current.length > 1)
     ) {
-      flushBufferToRoadsAPI();
+      flushBuffer();
     }
 
-  }, [flushBufferToRoadsAPI]);
+  }, [flushBuffer]);
 
   const prevIsTrackingRef = useRef<boolean>(false);
 
@@ -429,8 +359,6 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         previousSpeedTimeRef.current = 0;
 
         haversineDistanceRef.current = 0;
-        roadsApiDistanceRef.current = 0;
-        roadsApiActiveRef.current = false;
         lastAccumulationPointRef.current = null;
 
         smoothedPositionRef.current = null;
@@ -469,7 +397,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         subscriptionRef.current = null;
       }
       if (bufferRef.current.length > 1) {
-        flushBufferToRoadsAPI();
+        flushBuffer();
       }
     }
 
@@ -478,7 +406,7 @@ export function useSmartTracking(isTracking: boolean, vehicle: VehicleKind = 'ca
         subscriptionRef.current.remove();
       }
     };
-  }, [isTracking, handleLocationUpdate, flushBufferToRoadsAPI]);
+  }, [isTracking, handleLocationUpdate, flushBuffer]);
 
   return {
     liveRawLocation,

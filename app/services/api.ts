@@ -610,7 +610,7 @@ export const journeyAPI = {
     endLongitude?: number;
     latitude?: number;
     longitude?: number;
-    totalDistance?: number; // Roads API snapped distance in kilometers
+    totalDistance?: number; // distance in kilometers
     totalTime?: number; // Client-calculated total time in seconds
     topSpeed?: number; // Max speed in km/h
     avgSpeed?: number; // Avg speed in km/h
@@ -620,7 +620,7 @@ export const journeyAPI = {
       latitude: endData.latitude ?? endData.endLatitude,
       longitude: endData.longitude ?? endData.endLongitude,
     };
-    // Include totalDistance if provided (from Roads API snapped data)
+    // Include totalDistance if provided (raw GPS haversine distance)
     if (endData.totalDistance !== undefined) {
       payload.totalDistance = endData.totalDistance;
     }

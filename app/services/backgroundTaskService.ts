@@ -595,7 +595,7 @@ export async function recoverJourneyState(): Promise<PersistedJourneyState | nul
 }
 
 /**
- * Returns the raw GPS points buffered since the last Roads-API snap,
+ * Returns the raw GPS points buffered since the last foreground path flush,
  * used by the foreground tracker to correct the displayed distance.
  */
 export async function getBufferedBackgroundPoints(): Promise<{ latitude: number; longitude: number; timestamp: number; speed?: number }[]> {

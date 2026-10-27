@@ -1,14 +1,14 @@
 /**
  * Pure journey-statistics helpers.
  *
- * Distance inputs are expected in kilometres from the Roads API (or Haversine
- * fallback); time inputs are expected in seconds from the moving-time accumulator.
+ * Distance inputs are expected in kilometres (Haversine over raw GPS); time
+ * inputs are expected in seconds from the moving-time accumulator.
  * Speed outputs are always in km/h to match the `JourneyStats` interface.
  */
 export const StatsCalculator = {
   /**
    * Calculates average speed in km/h.
-   * @param distanceKm - The official distance from Google Roads API in kilometers.
+   * @param distanceKm - Tracked distance in kilometers.
    * @param movingTimeSeconds - The accumulated moving time in seconds.
    * @returns Average speed in km/h.
    */
