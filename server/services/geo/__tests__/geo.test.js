@@ -123,3 +123,55 @@ describe('helpers', () => {
     expect(out).toHaveLength(2);
   });
 });
+
+describe('asking Google when the first provider does not know the place', () => {
+  const { matchesQuery, autocompleteSatisfied, rankByMatch } = require('..');
+  const pred = (description, id = description) => ({ id, placeId: id, description });
+
+  test('a prediction matches when it mentions every typed word, and the last word may be half typed', () => {
+    expect(matchesQuery('shoprite lek', pred('Shoprite, Lekki-Epe Expressway'))).toBe(true);
+    expect(matchesQuery('mama cass', pred('Mama Put Cass Kitchen'))).toBe(true);
+    expect(matchesQuery('mama cass yaba', pred('Mama Cafe, Ikeja'))).toBe(false);
+    expect(matchesQuery('ñandú', pred('Nandu Bar'))).toBe(true); // accents are ignored
+    expect(matchesQuery('ab', pred('anything'))).toBe(true); // too short to judge
+  });
+
+  test('Geoapify is enough when at least two results fit what was typed', () => {
+    expect(autocompleteSatisfied('shoprite lekki', [pred('Shoprite Lekki A'), pred('Shoprite Lekki B')])).toBe(true);
+  });
+
+  test('a full list of look-alikes is not enough', () => {
+    const fuzzy = ['Mama Africa Bar', 'Cass Street', 'Yaba Road', 'Market', 'Cafe'].map((d) => pred(d));
+    expect(autocompleteSatisfied('mama cass yaba', fuzzy)).toBe(false);
+  });
+
+  test('a place Geoapify does not know is looked up on Google, and the matching result comes first', async () => {
+    const geoFuzzy = ['Lagos Road', 'Yaba Market', 'Cass Street'].map((d) => pred(d, `geo:${d}`));
+    const { svc, b } = setup({
+      primary: { autocomplete: async () => geoFuzzy },
+      fallback: { autocomplete: async () => [pred('Mama Cass Restaurant, Yaba, Lagos', 'ChIJ1')] },
+    });
+    const out = await svc.autocomplete({ input: 'mama cass yaba', latitude: 6.5, longitude: 3.4 });
+    expect(b.autocomplete).toHaveBeenCalledTimes(1);
+    expect(out[0].placeId).toBe('ChIJ1');
+    expect(out).toHaveLength(4);
+  });
+
+  test('a place Geoapify does know never costs a Google call', async () => {
+    const { svc, b } = setup({
+      primary: { autocomplete: async () => [pred('Shoprite, Lekki', 'geo:1'), pred('ShopRite Lekki Phase 1', 'geo:2')] },
+    });
+    await svc.autocomplete({ input: 'shoprite lekki', latitude: 6.5, longitude: 3.4 });
+    expect(b.autocomplete).not.toHaveBeenCalled();
+  });
+
+  test('if Google is down the rider still gets Geoapify’s closest matches', async () => {
+    const geoFuzzy = ['Lagos Road', 'Yaba Market'].map((d) => pred(d, `geo:${d}`));
+    const { svc } = setup({
+      primary: { autocomplete: async () => geoFuzzy },
+      fallback: { autocomplete: async () => { throw new GeoError('DENIED', 'no'); } },
+    });
+    const out = await svc.autocomplete({ input: 'mama cass yaba', latitude: 6.5, longitude: 3.4 });
+    expect(out.map((p) => p.description)).toEqual(['Lagos Road', 'Yaba Market']);
+  });
+});
