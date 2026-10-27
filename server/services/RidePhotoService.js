@@ -26,6 +26,8 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
     takenAt: p.takenAt,
     latitude: p.latitude,
     longitude: p.longitude,
+    speedMps: p.speedMps ?? null,
+    rideDistanceM: p.rideDistanceM ?? null,
     imageUrl: urlFor(p.path),
     thumbnailUrl: urlFor(p.thumbPath),
   });
@@ -53,6 +55,14 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
     const lat = meta.latitude == null || meta.latitude === '' ? null : Number(meta.latitude);
     const lng = meta.longitude == null || meta.longitude === '' ? null : Number(meta.longitude);
     const hasPos = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    // Optional, and dropped (not rejected) when implausible: a bad reading must not lose the photo.
+    const inRange = (v, max) => {
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
+    };
+    const speedMps = inRange(meta.speedMps, 120); // 120 m/s is over 430 km/h
+    const rideDistanceM = inRange(meta.rideDistanceM, 5_000_000);
 
     let processed;
     try {
@@ -74,7 +84,7 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
 
     try {
       const row = await prisma.ridePhoto.create({
-        data: { id: photoId, rideId, userId, path, thumbPath, takenAt, latitude: hasPos ? lat : null, longitude: hasPos ? lng : null },
+        data: { id: photoId, rideId, userId, path, thumbPath, takenAt, latitude: hasPos ? lat : null, longitude: hasPos ? lng : null, speedMps, rideDistanceM },
       });
       return view(row);
     } catch (err) {
@@ -122,7 +132,36 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
     };
   }
 
-  return { putPhoto, listPhotos, listAlbums };
+  /**
+   * The rider's photos that have a position, newest first, for the map's Memories layer. Each comes
+   * with its ride's title and stats so a pin can show where and when it was taken. `years` lists every
+   * year that has a pinned photo, so the picker never offers an empty year.
+   */
+  async function listMapPhotos(userId, { year, limit = 300 } = {}) {
+    const take = Math.min(Math.max(parseInt(limit, 10) || 300, 1), 500);
+    const base = { userId, latitude: { not: null }, longitude: { not: null }, ride: { status: { not: 'DELETED' } } };
+    const y = parseInt(year, 10);
+    const where = Number.isFinite(y) ? { ...base, takenAt: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) } } : base;
+    const [rows, dates] = await Promise.all([
+      prisma.ridePhoto.findMany({
+        where,
+        orderBy: [{ takenAt: 'desc' }, { id: 'asc' }],
+        take,
+        include: { ride: { select: { title: true, startedAt: true, distanceM: true, elapsedTimeS: true } } },
+      }),
+      prisma.ridePhoto.findMany({ where: base, select: { takenAt: true }, orderBy: { takenAt: 'desc' } }),
+    ]);
+    const years = [...new Set(dates.map((d) => d.takenAt.getUTCFullYear()))];
+    return {
+      years,
+      items: rows.map((p) => ({
+        ...view(p),
+        ride: { title: p.ride.title, startedAt: p.ride.startedAt, distanceM: p.ride.distanceM, elapsedTimeS: p.ride.elapsedTimeS },
+      })),
+    };
+  }
+
+  return { putPhoto, listPhotos, listAlbums, listMapPhotos };
 }
 
 /** The real dependencies: sharp for resizing, the existing storage helper for uploads. */

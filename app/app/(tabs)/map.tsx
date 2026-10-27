@@ -1,11 +1,14 @@
 // app/app/(tabs)/map.tsx
 // The Map tab, laid out as the "Map" board: a calm map, a "Where to?" search, nearby-place chips,
-// square place pins, and a card for the selected place with "Ride here". Rides themselves are
-// recorded on the ride screen; this tab only finds places and hands a destination over.
+// square place pins, and a card for the selected place with "Ride here". A Places | Memories switch
+// swaps the nearby places for the rider's own geotagged photos, pinned where they were taken.
+// Rides themselves are recorded on the ride screen; this tab only finds places and hands a
+// destination over.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
+import { useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
 import * as Localization from 'expo-localization';
 import { router } from 'expo-router';
@@ -13,12 +16,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import ClipCard from '../../components/dw/ClipCard';
 import Icon from '../../components/dw/Icon';
+import MemoryPin from '../../components/MemoryPin';
 import { useAuth } from '../../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../../constants/design';
 import { newSearchSession, placesAPI } from '../../services/api';
+import { getFirebaseDownloadUrl } from '../../utils/storage';
 import { fallbackRegion } from '../../v2/countryRegion';
+import { regionAt } from '../../v2/mapCamera';
 import { haversineM } from '../../v2/navigation';
 import { formatDistance } from '../../v2/format';
+import { clockDuration, clusterPhotos, defaultYear } from '../../v2/memories';
+import { getRuntime } from '../../v2/runtime';
 
 interface Place {
   id: string;
@@ -72,6 +80,9 @@ const coord = (p: any) => {
   return typeof lat === 'number' && typeof lng === 'number' ? { latitude: lat, longitude: lng } : null;
 };
 
+// Photo urls come back either whole or as a storage path; the album screen resolves them the same way.
+const photoUri = (u?: string | null) => (u ? getFirebaseDownloadUrl(u) || u : undefined);
+
 const initialsOf = (name?: string | null) =>
   (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || 'W';
 
@@ -98,13 +109,40 @@ export default function MapScreen() {
   // Last good results per chip, so switching back shows them at once and a failed refresh keeps them.
   const lastNearby = useRef<Record<string, Place[]>>({});
 
+  // Memories layer: the rider's geotagged photos.
+  const [layer, setLayer] = useState<'places' | 'memories'>('places');
+  const memoriesOn = layer === 'memories';
+  const [year, setYear] = useState<number | null>(null);
+  const [regionDelta, setRegionDelta] = useState(0.05);
+  const [photoId, setPhotoId] = useState<string | null>(null);
+  const fitted = useRef('');
+  const photoQuery = useQuery({
+    queryKey: ['map-photos'],
+    queryFn: () => getRuntime().client.photoMap(),
+    enabled: memoriesOn,
+    staleTime: 60_000,
+  });
+  const years = useMemo(() => photoQuery.data?.years ?? [], [photoQuery.data]);
+  useEffect(() => { if (year == null && years.length) setYear(defaultYear(years) ?? null); }, [year, years]);
+  const shownPhotos = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (photoQuery.data?.items ?? []).filter(
+      (p) => (year == null || new Date(p.takenAt).getUTCFullYear() === year) && (!q || (p.ride.title ?? '').toLowerCase().includes(q))
+    );
+  }, [photoQuery.data, year, query]);
+  const clusters = useMemo(() => clusterPhotos(shownPhotos, regionDelta), [shownPhotos, regionDelta]);
+  const cluster = clusters.find((c) => c.photos.some((p) => p.id === photoId)) ?? clusters[0] ?? null;
+  const photoIdx = cluster ? Math.max(0, cluster.photos.findIndex((p) => p.id === photoId)) : 0;
+  const photo = cluster?.photos[photoIdx] ?? null;
+
   const region = useMemo(
     () => fallbackRegion({ profileCountryCode: user?.countryCode, deviceRegionCode: Localization.getLocales()[0]?.regionCode }),
     [user?.countryCode]
   );
 
   const flyTo = useCallback((latitude: number, longitude: number, zoom = 15) => {
-    mapRef.current?.animateCamera({ center: { latitude, longitude }, zoom }, { duration: 500 });
+    // A region, not camera `zoom`: Apple Maps (iOS) ignores zoom, so the map moved but stayed zoomed out.
+    mapRef.current?.animateToRegion(regionAt(latitude, longitude, zoom), 500);
   }, []);
 
   // Find the rider: last known position first, then a fresh fix.
@@ -172,8 +210,56 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [places, selected?.id]);
 
+  // Show every pinned photo of the chosen year when the layer opens or the year changes: the pins sit
+  // wherever the rides were, which is usually nowhere near the rider's current position.
+  useEffect(() => {
+    if (!memoriesOn || !shownPhotos.length) return;
+    const key = `${year}:${photoQuery.dataUpdatedAt}`;
+    if (fitted.current === key) return;
+    fitted.current = key;
+    const t = setTimeout(() => {
+      mapRef.current?.fitToCoordinates(
+        shownPhotos.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+        { edgePadding: { top: 230, right: 70, bottom: 360, left: 70 }, animated: true }
+      );
+    }, 250);
+    return () => clearTimeout(t);
+  }, [memoriesOn, shownPhotos, year, photoQuery.dataUpdatedAt]);
+
+  const switchLayer = (next: 'places' | 'memories') => {
+    if (next === layer) return;
+    setQuery('');
+    setSuggestions([]);
+    setSearching(false);
+    latestSearch.current++;
+    setLayer(next);
+  };
+
+  const cycleYear = () => {
+    if (years.length < 2 || year == null) return;
+    setYear(years[(years.indexOf(year) + 1) % years.length]);
+    setPhotoId(null);
+  };
+
+  const nextPhoto = () => {
+    if (!cluster || cluster.photos.length < 2) return;
+    setPhotoId(cluster.photos[(photoIdx + 1) % cluster.photos.length].id);
+  };
+
+  const onRegion = (r: Region) => setRegionDelta((prev) => (Math.abs(Math.log(r.latitudeDelta / prev)) > 0.2 ? r.latitudeDelta : prev));
+
+  const openAlbum = () => {
+    if (photo) router.push({ pathname: '/gallery-album', params: { rideId: photo.rideId } } as never);
+  };
+
+  const rideItAgain = () => {
+    if (!photo || !cluster) return;
+    router.push({ pathname: '/new-journey', params: { destName: photo.ride.title || 'Photo spot', destLat: String(cluster.latitude), destLng: String(cluster.longitude) } } as never);
+  };
+
   const onQuery = (text: string) => {
     setQuery(text);
+    if (memoriesOn) return; // memories are filtered on the phone as you type
     if (debounce.current) clearTimeout(debounce.current);
     // Two letters match half the map; wait for a third before spending a lookup.
     if (text.trim().length < 3) { latestSearch.current++; setSuggestions([]); setSearching(false); return; }
@@ -261,9 +347,22 @@ export default function MapScreen() {
         toolbarEnabled={false}
         initialRegion={me ? { ...me, latitudeDelta: 0.05, longitudeDelta: 0.05 } : region}
         onPress={() => setSuggestions([])}
-        onLongPress={dropPin}
+        onLongPress={memoriesOn ? undefined : dropPin}
+        onRegionChangeComplete={memoriesOn ? onRegion : undefined}
       >
-        {places.map((p) => {
+        {memoriesOn && clusters.map((c) => (
+          <MemoryPin
+            key={c.id}
+            coordinate={{ latitude: c.latitude, longitude: c.longitude }}
+            uri={photoUri(c.photos[0].thumbnailUrl || c.photos[0].imageUrl)}
+            count={c.photos.length}
+            selected={c.id === cluster?.id}
+            label={`${c.photos[0].ride.title || 'Ride photos'}, ${c.photos.length} ${c.photos.length === 1 ? 'photo' : 'photos'}`}
+            surface={d.surface}
+            onPress={() => setPhotoId(c.photos[0].id)}
+          />
+        ))}
+        {!memoriesOn && places.map((p) => {
           const on = p.id === selected?.id;
           const size = on ? 44 : 36;
           return (
@@ -286,9 +385,9 @@ export default function MapScreen() {
           <TextInput
             value={query}
             onChangeText={onQuery}
-            placeholder="Where to?"
+            placeholder={memoriesOn ? "Find a place you've been" : 'Where to?'}
             placeholderTextColor={d.ink2}
-            accessibilityLabel="Search destination"
+            accessibilityLabel={memoriesOn ? 'Search your memories' : 'Search destination'}
             returnKeyType="search"
             style={[styles.input, { color: d.ink }]}
           />
@@ -296,7 +395,48 @@ export default function MapScreen() {
           <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
         </View>
 
-        {suggestions.length > 0 && (
+        <View style={styles.layerRow}>
+          <View accessibilityRole="tablist" style={[styles.layer, { backgroundColor: d.surface }, sh]}>
+            <TouchableOpacity
+              accessibilityRole="tab"
+              accessibilityState={{ selected: !memoriesOn }}
+              onPress={() => switchLayer('places')}
+              style={[styles.layerTab, !memoriesOn && { backgroundColor: INK }]}
+            >
+              <Text style={[styles.layerText, { color: !memoriesOn ? AMBER : d.ink2, fontFamily: !memoriesOn ? F.black : F.extra }]}>Places</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="tab"
+              accessibilityState={{ selected: memoriesOn }}
+              onPress={() => switchLayer('memories')}
+              style={[styles.layerTab, memoriesOn && { backgroundColor: INK }]}
+            >
+              {memoriesOn && (
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                  <Path d="M4 8h3l2-3h6l2 3h3v11H4z" stroke={AMBER} strokeWidth={2.2} strokeLinejoin="round" />
+                  <Path d="M12 9.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" stroke={AMBER} strokeWidth={2.2} />
+                </Svg>
+              )}
+              <Text style={[styles.layerText, { color: memoriesOn ? AMBER : d.ink2, fontFamily: memoriesOn ? F.black : F.extra }]}>Memories</Text>
+            </TouchableOpacity>
+          </View>
+          {memoriesOn && year != null && (
+            <TouchableOpacity
+              onPress={cycleYear}
+              disabled={years.length < 2}
+              accessibilityRole="button"
+              accessibilityLabel={`Year ${year}${years.length > 1 ? ', tap for the next year' : ''}`}
+              style={[styles.yearBtn, { backgroundColor: d.surface }, sh]}
+            >
+              <Text style={[styles.layerText, { color: d.ink, fontFamily: F.extra }]}>{year}</Text>
+              {years.length > 1 && (
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"><Path d="m6 9 6 6 6-6" stroke={d.ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!memoriesOn && suggestions.length > 0 && (
           <View style={[styles.suggestions, { backgroundColor: d.surface }, sh]}>
             {suggestions.map((s, i) => (
               <TouchableOpacity key={s.id} onPress={() => pick(s)} accessibilityRole="button" style={[styles.suggestion, i > 0 && { borderTopWidth: 1, borderTopColor: d.line }]}>
@@ -308,25 +448,27 @@ export default function MapScreen() {
           </View>
         )}
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled" accessibilityRole="radiogroup">
-          {CHIPS.map((c) => {
-            const on = chip === c.key;
-            return (
-              <TouchableOpacity
-                key={c.key}
-                onPress={() => { setSelected(null); setChip(on ? null : c.key); }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                style={[styles.chip, { backgroundColor: on ? INK : d.surface }, sh]}
-              >
-                <Text style={[styles.chipText, { color: on ? AMBER : d.ink }]}>{c.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        {!memoriesOn && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled" accessibilityRole="radiogroup">
+            {CHIPS.map((c) => {
+              const on = chip === c.key;
+              return (
+                <TouchableOpacity
+                  key={c.key}
+                  onPress={() => { setSelected(null); setChip(on ? null : c.key); }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.chip, { backgroundColor: on ? INK : d.surface }, sh]}
+                >
+                  <Text style={[styles.chipText, { color: on ? AMBER : d.ink }]}>{c.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
-      <View style={[styles.rail, { bottom: (selected ? 262 : 146) + Math.max(0, insets.bottom - 20) }]}>
+      <View style={[styles.rail, { bottom: (memoriesOn ? (photo ? 302 : 146) : selected ? 262 : 146) + Math.max(0, insets.bottom - 20) }]}>
         <TouchableOpacity onPress={() => locate(true)} accessibilityRole="button" accessibilityLabel="Centre on me" style={[styles.railBtn, { backgroundColor: d.surface }, sh]}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
             <Path d="M12 5.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM12 2v3M12 19v3M2 12h3M19 12h3" stroke={d.ink} strokeWidth={1.9} strokeLinecap="round" />
@@ -335,7 +477,71 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
 
-      {notice && !loading && !selected && suggestions.length === 0 && (
+      {memoriesOn && photoQuery.isPending && (
+        <View style={[styles.loading, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]}>
+          <ActivityIndicator size="small" color={AMBER} />
+          <Text style={[styles.loadingText, { color: d.ink2 }]}>Finding your photos</Text>
+        </View>
+      )}
+
+      {memoriesOn && photoQuery.isError && (
+        <TouchableOpacity
+          onPress={() => photoQuery.refetch()}
+          accessibilityRole="button"
+          style={[styles.notice, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]}
+        >
+          <Text style={[styles.loadingText, { color: d.ink2 }]}>Couldn't load your photos. Tap to try again</Text>
+        </TouchableOpacity>
+      )}
+
+      {memoriesOn && photoQuery.isSuccess && !cluster && (
+        <View style={[styles.notice, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]} accessibilityRole="text">
+          <Text style={[styles.loadingText, { color: d.ink2 }]}>
+            {query.trim() ? 'No photos match that search' : 'No pinned photos yet. Photos you take during a ride appear here'}
+          </Text>
+        </View>
+      )}
+
+      {memoriesOn && cluster && photo && (
+        <ClipCard color={d.surface} corner={20} radius={24} style={[styles.card, { bottom: 104 + Math.max(0, insets.bottom - 20) }, sh]}>
+          <View style={[styles.cardBody, { padding: 14 }]}>
+            <View style={styles.memTop}>
+              <TouchableOpacity
+                onPress={nextPhoto}
+                disabled={cluster.photos.length < 2}
+                accessibilityRole="button"
+                accessibilityLabel={cluster.photos.length > 1 ? `Photo ${photoIdx + 1} of ${cluster.photos.length}, tap for the next` : 'Ride photo'}
+                style={styles.memThumbWrap}
+              >
+                <Image source={{ uri: photoUri(photo.thumbnailUrl || photo.imageUrl) }} style={styles.memThumb} resizeMode="cover" />
+                <View style={styles.memCount}>
+                  <Text style={styles.memCountText}>{photoIdx + 1}/{cluster.photos.length}</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.memInfo}>
+                <Text style={[styles.memTitle, { color: d.ink }]} numberOfLines={2}>{photo.ride.title || 'Ride photo'}</Text>
+                <Text style={[styles.cardSub, { color: d.ink2 }]} numberOfLines={1}>
+                  {`Taken here · ${new Date(photo.takenAt).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${new Date(photo.takenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`}
+                </Text>
+                <Text style={[styles.memStats, { color: d.ink2 }]} numberOfLines={1}>
+                  {`${formatDistance(photo.ride.distanceM)} · ${clockDuration(photo.ride.elapsedTimeS)}`}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.memActions}>
+              <TouchableOpacity onPress={openAlbum} accessibilityRole="button" style={[styles.albumBtn, { borderColor: d.line }]}>
+                <Text style={[styles.albumText, { color: d.ink }]}>Open album</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={rideItAgain} accessibilityRole="button" style={[styles.rideBtn, { flex: 1.3 }]}>
+                <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M12 3 20 20 12 15.5 4 20z" fill={INK} /></Svg>
+                <Text style={styles.rideText}>Ride it again</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ClipCard>
+      )}
+
+      {!memoriesOn && notice && !loading && !selected && suggestions.length === 0 && (
         <View style={[styles.notice, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]} accessibilityRole="text" accessibilityLiveRegion="polite">
           <Text style={[styles.loadingText, { color: d.ink2 }]}>
             {notice === 'none' ? 'Nothing found here. Long-press the map to drop a pin' : 'Search is having trouble. Long-press the map to drop a pin'}
@@ -343,14 +549,14 @@ export default function MapScreen() {
         </View>
       )}
 
-      {loading && !selected && (
+      {!memoriesOn && loading && !selected && (
         <View style={[styles.loading, { bottom: 122 + Math.max(0, insets.bottom - 20), backgroundColor: d.surface }, sh]}>
           <ActivityIndicator size="small" color={AMBER} />
           <Text style={[styles.loadingText, { color: d.ink2 }]}>Finding places nearby</Text>
         </View>
       )}
 
-      {selected && (
+      {!memoriesOn && selected && (
         <ClipCard color={d.surface} corner={20} radius={24} style={[styles.card, { bottom: 104 + Math.max(0, insets.bottom - 20) }, sh]}>
           <View style={styles.cardBody}>
             <View style={styles.cardTop}>
@@ -388,6 +594,22 @@ const styles = StyleSheet.create({
   suggestions: { borderRadius: 18, overflow: 'hidden' },
   suggestion: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
   suggestionText: { flex: 1, fontFamily: F.semi, fontSize: 14 },
+  layerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  layer: { width: 216, height: 40, borderRadius: 20, padding: 4, flexDirection: 'row' },
+  layerTab: { flex: 1, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  layerText: { fontSize: 13 },
+  yearBtn: { height: 40, paddingHorizontal: 14, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  memTop: { flexDirection: 'row', gap: 14 },
+  memThumbWrap: { width: 96, height: 96 },
+  memThumb: { width: 96, height: 96, borderRadius: 18, backgroundColor: AMBER },
+  memCount: { position: 'absolute', left: 6, bottom: 6, height: 22, paddingHorizontal: 8, borderRadius: 11, backgroundColor: 'rgba(26,24,20,0.55)', justifyContent: 'center' },
+  memCountText: { color: '#FFFDF8', fontFamily: F.monoBold, fontSize: 11 },
+  memInfo: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 3 },
+  memTitle: { fontFamily: F.black, fontSize: 18, lineHeight: 22, letterSpacing: -0.2 },
+  memStats: { fontFamily: F.monoBold, fontSize: 12 },
+  memActions: { flexDirection: 'row', gap: 8 },
+  albumBtn: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  albumText: { fontFamily: F.extra, fontSize: 14 },
   chips: { gap: 6, paddingRight: 16 },
   chip: { height: 34, paddingHorizontal: 13, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   chipText: { fontFamily: F.extra, fontSize: 13 },

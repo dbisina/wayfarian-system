@@ -40,6 +40,7 @@ router.patch('/rides/:id', wrap((req) => rideService.updateRide(req.user.id, req
 const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('file');
 router.put('/rides/:id/photos/:photoId', (req, res, next) => uploadPhoto(req, res, (err) => (err ? res.status(400).json({ ok: false, error: { code: 'invalid_input', message: err.message } }) : next())), wrap((req) => photos().putPhoto(req.user.id, req.params.id, req.params.photoId, req.file, req.body)));
 router.get('/photos/albums', wrap((req) => photos().listAlbums(req.user.id, { limit: req.query.limit })));
+router.get('/photos/map', wrap((req) => photos().listMapPhotos(req.user.id, { year: req.query.year, limit: req.query.limit })));
 router.get('/rides/:id/photos', wrap((req) => photos().listPhotos(req.user.id, req.params.id)));
 router.get('/rides/:id/route', wrap((req) => rideService.getRoute(req.user.id, req.params.id, { maxPoints: req.query.maxPoints })));
 router.get('/rides/:id', wrap((req) => rideService.getRide(req.user.id, req.params.id)));

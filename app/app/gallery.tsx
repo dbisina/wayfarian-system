@@ -6,17 +6,23 @@ import TextInput from '../components/dw/DWTextInput';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { ClipPath, Defs, Image as SvgImage, Path, Rect } from 'react-native-svg';
+import GlassPill from '../components/GlassPill';
 import { userAPI } from '../services/api';
 import { getRuntime } from '../v2/runtime';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { getFirebaseDownloadUrl } from '../utils/storage';
-import Icon from '../components/dw/Icon';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 
 const FILTERS = ['All', 'Solo', 'Group', 'Night'] as const;
 const ROT = [-4, 3, -2, 4, -3];
+
+const COVER_H = 380;
+
+/** The design's album card: rounded, with a notch cut into the top-left that the title sits in. */
+const notchPath = (w: number, h = COVER_H) =>
+  `M0 84 Q0 56 28 56 L140 56 Q150 56 154 47 L170 9 Q174 0 184 0 L${w - 28} 0 Q${w} 0 ${w} 28 L${w} ${h - 28} Q${w} ${h} ${w - 28} ${h} L28 ${h} Q0 ${h} 0 ${h - 28} Z`;
 
 const photoUri = (p: any) => getFirebaseDownloadUrl(p?.thumbnailUrl || p?.imageUrl || p?.firebasePath) || p?.thumbnailUrl || p?.imageUrl || p?.firebasePath;
 
@@ -29,6 +35,7 @@ export default function GalleryScreen() {
   const [v2Albums, setV2Albums] = useState<any[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
   const [query, setQuery] = useState('');
+  const [coverW, setCoverW] = useState(358);
 
   useFocusEffect(
     useCallback(() => {
@@ -158,20 +165,35 @@ export default function GalleryScreen() {
           >
             <View style={[styles.layer2, { backgroundColor: d.dark ? '#221F1C' : '#E8E2D5' }]} />
             <View style={[styles.layer1, { backgroundColor: d.dark ? '#2C2925' : '#DCD5C6' }]} />
-            <View style={[styles.albumBody, { backgroundColor: d.surface2 }]}>
-              {cover ? <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} /> : null}
-              <View style={styles.albumShade} />
-              <View style={styles.albumPill}>
-                <Text style={styles.albumPillText}>
-                  {latest.photoCount || latest.photos?.length || 1} photos · {convertDistance(latest.totalDistance || 0)} ·{' '}
-                  {new Date(latest.startTime).toLocaleDateString(undefined, { weekday: 'short' })}
-                </Text>
-              </View>
+            <View style={styles.albumBody} onLayout={(e) => setCoverW(Math.round(e.nativeEvent.layout.width))}>
+              <Svg width={coverW} height={COVER_H}>
+                <Defs>
+                  <ClipPath id="albumNotch"><Path d={notchPath(coverW)} /></ClipPath>
+                </Defs>
+                <Path d={notchPath(coverW)} fill={d.surface2} />
+                {cover ? <SvgImage href={{ uri: cover }} x={0} y={0} width={coverW} height={COVER_H} preserveAspectRatio="xMidYMid slice" clipPath="url(#albumNotch)" /> : null}
+                <Rect x={0} y={240} width={coverW} height={COVER_H - 240} fill="rgba(17,16,14,0.35)" clipPath="url(#albumNotch)" />
+              </Svg>
+              <GlassPill style={styles.albumPill} radius={17} tint={0.3}>
+                <View style={styles.albumPillInner}>
+                  <Text style={styles.albumPillText}>
+                    {latest.photoCount || latest.photos?.length || 1} photos · {convertDistance(latest.totalDistance || 0)} ·{' '}
+                    {new Date(latest.startTime).toLocaleDateString(undefined, { weekday: 'short' })}
+                  </Text>
+                </View>
+              </GlassPill>
               <View style={styles.albumGo}>
-                <Icon name="chevron" size={18} color={INK} stroke={2.4} />
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M7 17 17 7M9 7h8v8" stroke={INK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
               </View>
             </View>
-            <Text style={[styles.albumTitle, { color: d.ink }]} numberOfLines={1}>{latest.customTitle || latest.title}</Text>
+            <View style={styles.albumTitleRow} pointerEvents="none">
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21zM12 7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" stroke={d.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+              <Text style={[styles.albumTitle, { color: d.ink }]} numberOfLines={1}>{latest.customTitle || latest.title}</Text>
+            </View>
           </TouchableOpacity>
         ) : (
           <Text style={[styles.empty, { color: d.ink2 }]}>No photos yet. Take some on your next ride.</Text>
@@ -212,10 +234,11 @@ const styles = StyleSheet.create({
   album: { marginHorizontal: 16, marginTop: 6 },
   layer2: { position: 'absolute', top: -14, left: 196, right: 22, height: 40, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
   layer1: { position: 'absolute', top: -7, left: 186, right: 11, height: 40, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  albumBody: { height: 380, borderRadius: 28, overflow: 'hidden' },
-  albumShade: { ...StyleSheet.absoluteFillObject, top: 240, backgroundColor: 'rgba(17,16,14,0.35)' },
-  albumTitle: { position: 'absolute', top: 14, left: 14, fontFamily: F.black, fontSize: 16, color: '#FFFDF8' },
-  albumPill: { position: 'absolute', left: 14, bottom: 14, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
+  albumBody: { height: COVER_H },
+  albumTitleRow: { position: 'absolute', top: 12, left: 4, right: 190, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  albumTitle: { flexShrink: 1, fontFamily: F.black, fontSize: 16, letterSpacing: -0.2 },
+  albumPill: { position: 'absolute', left: 14, bottom: 14, height: 34 },
+  albumPillInner: { height: 34, paddingHorizontal: 12, justifyContent: 'center' },
   albumPillText: { fontFamily: F.monoBold, fontSize: 12, color: '#FFFDF8' },
   albumGo: { position: 'absolute', right: 14, bottom: 14, width: 44, height: 44, borderRadius: 22, backgroundColor: AMBER, alignItems: 'center', justifyContent: 'center' },
   empty: { fontFamily: F.medium, fontSize: 14, textAlign: 'center', paddingVertical: 40 },

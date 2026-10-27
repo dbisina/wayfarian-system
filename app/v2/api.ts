@@ -30,6 +30,17 @@ export interface V2ClientDeps {
   timeoutMs?: number;
 }
 
+export interface MapPhoto {
+  id: string;
+  rideId: string;
+  takenAt: string;
+  latitude: number;
+  longitude: number;
+  imageUrl: string;
+  thumbnailUrl: string;
+  ride: { title: string | null; startedAt: string; distanceM: number; elapsedTimeS: number };
+}
+
 export interface WirePoint { seq: number; segment: number; lat: number; lng: number; t: string; accuracy?: number | null }
 export interface WireEvent { id: string; type: 'START' | 'PAUSE' | 'RESUME' | 'END'; at: string }
 
@@ -102,16 +113,18 @@ export function createV2Client(deps: V2ClientDeps) {
     finalizeRide: (id: string) => request<any>('POST', `/rides/${enc(id)}/finalize`),
     renameRide: (id: string, title: string) => request<any>('PATCH', `/rides/${enc(id)}`, { title }),
     rideRoute: (id: string, maxPoints = 1500) => request<{ total: number; points: { segment: number; lat: number; lng: number; t: number }[] }>('GET', `/rides/${enc(id)}/route?maxPoints=${maxPoints}`),
-    uploadPhoto: (rideId: string, photoId: string, p: { uri: string; takenAt?: string; latitude?: number | null; longitude?: number | null }) => {
+    uploadPhoto: (rideId: string, photoId: string, p: { uri: string; takenAt?: string; latitude?: number | null; longitude?: number | null; speedMps?: number | null; rideDistanceM?: number | null }) => {
       const form = new FormData();
       // React Native's FormData reads the file from the uri; the object shape is its convention.
       form.append('file', { uri: p.uri, name: `${photoId}.jpg`, type: 'image/jpeg' } as never);
       if (p.takenAt) form.append('takenAt', p.takenAt);
       if (p.latitude != null) form.append('latitude', String(p.latitude));
       if (p.longitude != null) form.append('longitude', String(p.longitude));
+      if (p.speedMps != null) form.append('speedMps', String(p.speedMps));
+      if (p.rideDistanceM != null) form.append('rideDistanceM', String(p.rideDistanceM));
       return request<any>('PUT', `/rides/${enc(rideId)}/photos/${enc(photoId)}`, form, { form: true });
     },
-    ridePhotos: (rideId: string) => request<{ items: { id: string; takenAt: string; imageUrl: string; thumbnailUrl: string }[] }>('GET', `/rides/${enc(rideId)}/photos`),
+    ridePhotos: (rideId: string) => request<{ items: { id: string; takenAt: string; imageUrl: string; thumbnailUrl: string; speedMps?: number | null; rideDistanceM?: number | null }[] }>('GET', `/rides/${enc(rideId)}/photos`),
     deleteRide: (id: string) => request('DELETE', `/rides/${enc(id)}`),
     getRide: (id: string) => request<any>('GET', `/rides/${enc(id)}`),
     listRides: (cursor?: string, limit = 20) => request<{ items: any[]; nextCursor: string | null }>('GET', `/rides?limit=${limit}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
@@ -121,6 +134,8 @@ export function createV2Client(deps: V2ClientDeps) {
     unfollowRider: (id: string) => request<any>('DELETE', `/riders/${enc(id)}/follow`),
     inviteRider: (id: string, groupRideId: string) => request<any>('POST', `/riders/${enc(id)}/invite`, { groupRideId }),
     photoAlbums: () => request<{ items: any[] }>('GET', '/photos/albums'),
+    /** The rider's photos that have a position, for the map's Memories layer. */
+    photoMap: (year?: number) => request<{ years: number[]; items: MapPhoto[] }>('GET', `/photos/map${year ? `?year=${year}` : ''}`),
     questWeek: () => request<any>('GET', '/me/quests/week'),
     openQuestChest: () => request<any>('POST', '/me/quests/chest'),
     myFollows: () => request<{ followers: number; following: number }>('GET', '/me/follows'),

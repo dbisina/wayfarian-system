@@ -9,7 +9,9 @@ import { journeyAPI } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 import { getFirebaseDownloadUrl } from '../utils/storage';
 import { getRuntime } from '../v2/runtime';
+import Svg, { Path } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
+import GlassPill from '../components/GlassPill';
 import { AMBER, F, shadow, useDW } from '../constants/design';
 
 const uri = (p: any) => getFirebaseDownloadUrl(p?.imageUrl || p?.firebasePath) || p?.imageUrl || p?.firebasePath;
@@ -121,10 +123,12 @@ export default function GalleryAlbumScreen() {
             {photos.map((p, i) => {
               const sel = i === idx;
               return (
-                <TouchableOpacity key={p.id} onPress={() => goTo(i)} accessibilityRole="button" accessibilityLabel={`Photo ${i + 1}`} accessibilityState={{ selected: sel }}>
+                <TouchableOpacity key={p.id} onPress={() => goTo(i)} accessibilityRole="button" accessibilityLabel={`Photo ${i + 1}`} accessibilityState={{ selected: sel }} style={sel ? styles.thumbSelWrap : undefined}>
+                  {/* The selected photo wears a 3 px gap and a 2 px amber ring outside its edge, as in the design. */}
+                  {sel && <View pointerEvents="none" style={[styles.thumbRing, { backgroundColor: d.bg }]} />}
                   <Image
                     source={{ uri: thumbUri(p) }}
-                    style={[sel ? styles.thumbSel : styles.thumb, sel && { borderWidth: 3, borderColor: AMBER }, { backgroundColor: d.surface2 }]}
+                    style={[sel ? styles.thumbSel : styles.thumb, { backgroundColor: d.surface2 }]}
                   />
                 </TouchableOpacity>
               );
@@ -146,10 +150,36 @@ export default function GalleryAlbumScreen() {
               <View style={{ width: page, paddingHorizontal: 16 }}>
                 <View style={[styles.figure, shadow(d, 10), { backgroundColor: d.surface2 }]}>
                   <Image source={{ uri: uri(item) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                  {item?.takenAt ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{hm(item.takenAt)}</Text>
-                    </View>
+                  {item?.speedMps != null ? (
+                    <GlassPill style={styles.speedPill} radius={16}>
+                      <View style={styles.speedInner}>
+                        <Text style={styles.speedNum}>
+                          {convertSpeed(item.speedMps * 3.6).split(' ')[0]}
+                          <Text style={styles.speedUnit}> {convertSpeed(item.speedMps * 3.6).split(' ')[1]}</Text>
+                        </Text>
+                        <View>
+                          <Text style={styles.speedLabel}>Speed</Text>
+                          {item?.takenAt ? <Text style={styles.speedAt}>at {hm(item.takenAt)}</Text> : null}
+                        </View>
+                      </View>
+                    </GlassPill>
+                  ) : null}
+                  {item?.rideDistanceM != null ? (
+                    <GlassPill style={styles.badge} radius={16}>
+                      <View style={styles.badgeInner}>
+                        <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+                          <Path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z" stroke="#FFFDF8" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                        </Svg>
+                        <Text style={styles.badgeLabel}>{convertDistance(item.rideDistanceM / 1000)} in</Text>
+                      </View>
+                    </GlassPill>
+                  ) : item?.takenAt ? (
+                    // Older photos carry no distance: keep the time so there is still a tag.
+                    <GlassPill style={styles.badge} radius={16}>
+                      <View style={styles.badgeInner}>
+                        <Text style={styles.badgeText}>{hm(item.takenAt)}</Text>
+                      </View>
+                    </GlassPill>
                   ) : null}
                 </View>
               </View>
@@ -195,10 +225,20 @@ const styles = StyleSheet.create({
   thumbsContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
   thumb: { width: 54, height: 54, borderRadius: 16 },
   thumbSel: { width: 68, height: 68, borderRadius: 20 },
+  thumbSelWrap: { marginHorizontal: 5 },
+  thumbRing: { position: 'absolute', top: -5, left: -5, right: -5, bottom: -5, borderRadius: 25, borderWidth: 2, borderColor: AMBER },
   pager: { flexGrow: 0, marginTop: 16 },
   figure: { height: 348, borderRadius: 28, overflow: 'hidden' },
-  badge: { position: 'absolute', right: 14, bottom: 14, height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: 'rgba(26,24,20,0.45)', justifyContent: 'center' },
+  badge: { position: 'absolute', right: 14, bottom: 14, height: 32 },
+  badgeInner: { height: 32, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
   badgeText: { fontFamily: F.monoBold, fontSize: 12, color: '#FFFDF8' },
+  badgeLabel: { fontFamily: F.extra, fontSize: 12, color: '#FFFDF8' },
+  speedPill: { position: 'absolute', top: 14, alignSelf: 'center' },
+  speedInner: { paddingHorizontal: 14, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  speedNum: { fontFamily: F.monoBold, fontSize: 20, color: '#FFFDF8' },
+  speedUnit: { fontFamily: F.monoBold, fontSize: 11 },
+  speedLabel: { fontFamily: F.extra, fontSize: 11, color: '#FFFDF8' },
+  speedAt: { fontFamily: F.regular, fontSize: 11, color: 'rgba(255,253,248,0.8)' },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 12 },
   dot: { width: 5, height: 5, borderRadius: 3 },
   dotOn: { width: 18, height: 5, borderRadius: 3 },
