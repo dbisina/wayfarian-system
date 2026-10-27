@@ -234,8 +234,11 @@ export default function MapScreen() {
 
   const onRegion = (r: Region) => setRegionDelta((prev) => (Math.abs(Math.log(r.latitudeDelta / prev)) > 0.2 ? r.latitudeDelta : prev));
 
+  // v2 photos open their ride's album, v1 photos their journey's. A v1 photo whose journey was
+  // deleted has no album, so the button is not shown.
+  const albumParams = photo?.rideId ? { rideId: photo.rideId } : photo?.journeyId ? { journeyId: photo.journeyId } : null;
   const openAlbum = () => {
-    if (photo) router.push({ pathname: '/gallery-album', params: { rideId: photo.rideId } } as never);
+    if (albumParams) router.push({ pathname: '/gallery-album', params: albumParams } as never);
   };
 
   const rideItAgain = () => {
@@ -510,15 +513,19 @@ export default function MapScreen() {
                 <Text style={[styles.cardSub, { color: d.ink2 }]} numberOfLines={1}>
                   {`Taken here · ${new Date(photo.takenAt).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${new Date(photo.takenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`}
                 </Text>
-                <Text style={[styles.memStats, { color: d.ink2 }]} numberOfLines={1}>
-                  {`${formatDistance(photo.ride.distanceM)} · ${clockDuration(photo.ride.elapsedTimeS)}`}
-                </Text>
+                {photo.ride.distanceM > 0 && (
+                  <Text style={[styles.memStats, { color: d.ink2 }]} numberOfLines={1}>
+                    {`${formatDistance(photo.ride.distanceM)} · ${clockDuration(photo.ride.elapsedTimeS)}`}
+                  </Text>
+                )}
               </View>
             </View>
             <View style={styles.memActions}>
-              <TouchableOpacity onPress={openAlbum} accessibilityRole="button" style={[styles.albumBtn, { borderColor: d.line }]}>
-                <Text style={[styles.albumText, { color: d.ink }]}>Open album</Text>
-              </TouchableOpacity>
+              {albumParams && (
+                <TouchableOpacity onPress={openAlbum} accessibilityRole="button" style={[styles.albumBtn, { borderColor: d.line }]}>
+                  <Text style={[styles.albumText, { color: d.ink }]}>Open album</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={rideItAgain} accessibilityRole="button" style={[styles.rideBtn, { flex: 1.3 }]}>
                 <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M12 3 20 20 12 15.5 4 20z" fill={INK} /></Svg>
                 <Text style={styles.rideText}>Ride it again</Text>
