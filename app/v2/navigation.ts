@@ -1,8 +1,10 @@
 // app/v2/navigation.ts
-// Turn-by-turn guidance on top of the Google Directions API: the route, its steps, which step the
-// rider is on, and whether they have left the route. Guidance only; it never affects recorded stats.
+// Turn-by-turn guidance: the route, its steps, which step the rider is on, how far is left along the
+// road, and whether they have left the route. Routes come from our server, which picks the provider,
+// so no map API key ships in the app. Guidance only; it never affects recorded stats.
 
-import { decodePolyline, getGoogleMapsApiKey, type LatLng } from '../services/directions';
+import { decodePolyline, type LatLng } from '../services/directions';
+import { placesAPI } from '../services/api';
 
 export interface NavStep {
   instruction: string;
@@ -19,6 +21,8 @@ export interface NavRoute {
   durationS: number;
 }
 
+export type TravelMode = 'driving' | 'motorcycle' | 'bicycling' | 'walking';
+
 export function haversineM(a: LatLng, b: LatLng): number {
   const rad = Math.PI / 180;
   const h =
@@ -27,54 +31,85 @@ export function haversineM(a: LatLng, b: LatLng): number {
   return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-const stripHtml = (s: string) =>
-  s.replace(/<div[^>]*>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-
-export const travelModeFor = (vehicleType?: string): 'driving' | 'bicycling' | 'walking' => {
+export const travelModeFor = (vehicleType?: string): TravelMode => {
   const t = String(vehicleType ?? '').toLowerCase();
-  if (t.includes('cycl') || t === 'bicycle' || t === 'bike' || t === 'cycle') return 'bicycling';
-  if (t.includes('walk') || t.includes('run')) return 'walking';
+  // "motorcycle" contains "cycl", so motor vehicles are matched first.
+  if (t.includes('motor') || t.includes('scooter') || t.includes('moped') || t === 'okada') return 'motorcycle';
+  if (t.includes('cycl') || t.includes('bike')) return 'bicycling';
+  if (t.includes('walk') || t.includes('run') || t.includes('hike')) return 'walking';
   return 'driving';
 };
 
-/** Fetches a route with its turn steps. Returns null with no key, no network or no route. */
+/** Fetches a route with its turn steps. Returns null with no network or no route. */
 export async function fetchNavRoute(origin: LatLng, dest: LatLng, vehicleType?: string): Promise<NavRoute | null> {
-  const key = getGoogleMapsApiKey();
-  if (!key) return null;
-  const url =
-    `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}` +
-    `&destination=${dest.latitude},${dest.longitude}&mode=${travelModeFor(vehicleType)}&key=${key}`;
   try {
-    const json = await (await fetch(url)).json();
-    if (json.status !== 'OK' || !json.routes?.length) return null;
-    const leg = json.routes[0].legs?.[0];
-    if (!leg) return null;
-    const coordinates: LatLng[] = [];
-    const steps: NavStep[] = [];
-    for (const s of leg.steps ?? []) {
-      if (s.polyline?.points) coordinates.push(...decodePolyline(s.polyline.points));
-      steps.push({
-        instruction: stripHtml(s.html_instructions ?? ''),
-        maneuver: s.maneuver ?? null,
-        distanceM: s.distance?.value ?? 0,
-        end: { latitude: s.end_location.lat, longitude: s.end_location.lng },
-      });
-    }
-    if (!coordinates.length || !steps.length) return null;
-    return { coordinates, steps, distanceM: leg.distance?.value ?? 0, durationS: leg.duration?.value ?? 0 };
+    const res: any = await placesAPI.directions({
+      origin_lat: origin.latitude,
+      origin_lng: origin.longitude,
+      dest_lat: dest.latitude,
+      dest_lng: dest.longitude,
+      mode: travelModeFor(vehicleType),
+    });
+    const r = res?.directions;
+    if (!r?.polyline) return null;
+    const coordinates = decodePolyline(r.polyline);
+    const steps: NavStep[] = (r.steps ?? [])
+      .filter((s: any) => s?.end && Number.isFinite(s.end.latitude) && Number.isFinite(s.end.longitude))
+      .map((s: any) => ({ instruction: s.instruction ?? '', maneuver: s.maneuver ?? null, distanceM: s.distanceM ?? 0, end: s.end }));
+    if (coordinates.length < 2 || !steps.length) return null;
+    return { coordinates, steps, distanceM: r.distance?.value ?? 0, durationS: r.duration?.value ?? 0 };
   } catch {
     return null;
   }
 }
 
-/** Distance from a position to the nearest point of the route, in metres. */
-export function distanceFromRouteM(pos: LatLng, coordinates: LatLng[]): number {
-  let best = Infinity;
-  for (const c of coordinates) {
-    const d = haversineM(pos, c);
-    if (d < best) best = d;
+/** Where a position sits on the route: distance off it, and which segment it is nearest to. */
+export interface RoutePosition {
+  offRouteM: number;
+  /** Index of the segment start (coordinates[i] → coordinates[i + 1]). */
+  segment: number;
+  /** Fraction along that segment, 0..1. */
+  t: number;
+}
+
+/**
+ * Projects `pos` onto the route line (not just its vertices), on a local flat-earth approximation,
+ * which is accurate to well under a metre over a route segment's length.
+ */
+export function locateOnRoute(pos: LatLng, coordinates: LatLng[]): RoutePosition {
+  const kx = 111320 * Math.cos((pos.latitude * Math.PI) / 180);
+  const ky = 110540;
+  let best: RoutePosition = { offRouteM: Infinity, segment: 0, t: 0 };
+  if (coordinates.length === 1) return { offRouteM: haversineM(pos, coordinates[0]), segment: 0, t: 0 };
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const a = coordinates[i];
+    const b = coordinates[i + 1];
+    const ax = (a.longitude - pos.longitude) * kx;
+    const ay = (a.latitude - pos.latitude) * ky;
+    const dx = (b.longitude - a.longitude) * kx;
+    const dy = (b.latitude - a.latitude) * ky;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.min(1, Math.max(0, -(ax * dx + ay * dy) / len2)) : 0;
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    const d = Math.sqrt(px * px + py * py);
+    if (d < best.offRouteM) best = { offRouteM: d, segment: i, t };
   }
   return best;
+}
+
+/** Distance from a position to the nearest point of the route line, in metres. */
+export function distanceFromRouteM(pos: LatLng, coordinates: LatLng[]): number {
+  return locateOnRoute(pos, coordinates).offRouteM;
+}
+
+/** Road distance left from a located position to the end of the route, in metres. */
+export function remainingRouteM(at: RoutePosition, coordinates: LatLng[]): number {
+  if (coordinates.length < 2) return 0;
+  const i = Math.min(at.segment, coordinates.length - 2);
+  let m = haversineM(coordinates[i], coordinates[i + 1]) * (1 - at.t);
+  for (let j = i + 1; j < coordinates.length - 1; j++) m += haversineM(coordinates[j], coordinates[j + 1]);
+  return m;
 }
 
 /**

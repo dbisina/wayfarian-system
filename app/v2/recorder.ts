@@ -145,9 +145,10 @@ export function createRecorder(deps: RecorderDeps) {
       let seg = -1;
       for (const p of pts) {
         if (p.segment !== seg) { acc.startSegment(); seg = p.segment; }
+        const rejectedBefore = acc.snapshot().pointsRejected;
         acc.add(p);
         lastFixT = p.t;
-        lastFix = { lat: p.lat, lng: p.lng, t: p.t, speedMps: null };
+        if (acc.snapshot().pointsRejected === rejectedBefore) lastFix = { lat: p.lat, lng: p.lng, t: p.t, speedMps: null };
       }
       buffer = pts.filter((p) => p.seq > found.flushedSeq);
       lastFlushAt = now();
@@ -161,10 +162,15 @@ export function createRecorder(deps: RecorderDeps) {
       if (!ride || ride.status !== 'RECORDING') return null;
       if (!(fix.t > lastFixT)) return snapshot(); // duplicate or out-of-order delivery from the OS
       lastFixT = fix.t;
-      lastFix = { lat: fix.lat, lng: fix.lng, t: fix.t, speedMps: fix.speedMps ?? null };
       const p: LocalPoint = { seq: ride.nextSeq++, segment: ride.segment, lat: fix.lat, lng: fix.lng, t: fix.t, accuracy: fix.accuracy ?? null };
       await deps.local.appendPoints(ride.id, [p]);
+      const rejectedBefore = acc.snapshot().pointsRejected;
       acc.add(p);
+      // A fix the stats engine threw out (poor accuracy, impossible jump) must not move the rider's
+      // marker or what group members see either.
+      if (acc.snapshot().pointsRejected === rejectedBefore) {
+        lastFix = { lat: fix.lat, lng: fix.lng, t: fix.t, speedMps: fix.speedMps ?? null };
+      }
       buffer.push(p);
       if (buffer.length >= flushEveryPoints || now() - lastFlushAt >= flushEveryMs) await flush();
       else await deps.local.putRide(ride);

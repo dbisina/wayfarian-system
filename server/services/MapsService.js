@@ -1,6 +1,11 @@
 // server/services/MapsService.js
 
 const axios = require('axios');
+const { GeoError, codeForStatus, fromAxios, encodePolyline, decodePolyline } = require('./geo/normalize');
+
+/** A Google status that isn't OK, kept as a GeoError so callers can tell a bad key from no results. */
+const googleError = (api, status, detail) =>
+  new GeoError(codeForStatus(status), `${api} error: ${status}${detail ? ` (${detail})` : ''}`, status);
 
 class MapsService {
   constructor() {
@@ -37,7 +42,7 @@ class MapsService {
       });
 
       if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
-        throw new Error(`Google Places API error: ${response.data.status}`);
+        throw googleError('Google Places', response.data.status, response.data.error_message);
       }
 
       return response.data.results.map(place => ({
@@ -63,8 +68,8 @@ class MapsService {
         ),
       }));
     } catch (error) {
-      console.error('Find nearby places error:', error);
-      throw new Error('Failed to find nearby places');
+      console.error('Find nearby places error:', error.message);
+      throw fromAxios('google', error);
     }
   }
 
@@ -73,7 +78,7 @@ class MapsService {
    * @param {string} placeId - Google Places ID
    * @returns {Promise<object>} Place details
    */
-  async getPlaceDetails(placeId) {
+  async getPlaceDetails(placeId, sessionToken) {
     if (!this.googleMapsApiKey) {
       throw new Error('Google Maps API key not configured');
     }
@@ -82,14 +87,18 @@ class MapsService {
       const response = await axios.get('https://maps.googleapis.com/maps/api/place/details/json', {
         params: {
           place_id: placeId,
-          fields: 'name,vicinity,formatted_address,formatted_phone_number,website,opening_hours,rating,price_level,photos,geometry',
+          // Basic Data fields only: the app shows name, address and position. Contact and
+          // Atmosphere fields (phone, website, hours, rating) are billed at a higher rate.
+          fields: 'name,vicinity,formatted_address,geometry,place_id',
           key: this.googleMapsApiKey,
+          // Closes the autocomplete session, so its keystrokes are billed as one session.
+          ...(sessionToken ? { sessiontoken: sessionToken } : {}),
         },
         timeout: 10000,
       });
 
       if (response.data.status !== 'OK') {
-        throw new Error(`Google Places API error: ${response.data.status}`);
+        throw googleError('Google Place Details', response.data.status, response.data.error_message);
       }
 
       const place = response.data.result;
@@ -113,8 +122,8 @@ class MapsService {
         })) || [],
       };
     } catch (error) {
-      console.error('Get place details error:', error);
-      throw new Error('Failed to get place details');
+      console.error('Get place details error:', error.message);
+      throw fromAxios('google', error);
     }
   }
 
@@ -138,7 +147,7 @@ class MapsService {
       });
 
       if (response.data.status !== 'OK') {
-        throw new Error(`Geocoding API error: ${response.data.status}`);
+        throw googleError('Geocoding', response.data.status, response.data.error_message);
       }
 
       const result = response.data.results[0];
@@ -152,8 +161,8 @@ class MapsService {
         placeId: result.place_id,
       };
     } catch (error) {
-      console.error('Geocode address error:', error);
-      throw new Error('Failed to geocode address');
+      console.error('Geocode address error:', error.message);
+      throw fromAxios('google', error);
     }
   }
 
@@ -178,7 +187,7 @@ class MapsService {
       });
 
       if (response.data.status !== 'OK') {
-        throw new Error(`Reverse geocoding API error: ${response.data.status}`);
+        throw googleError('Reverse geocoding', response.data.status, response.data.error_message);
       }
 
       const result = response.data.results[0];
@@ -189,8 +198,8 @@ class MapsService {
         types: result.types,
       };
     } catch (error) {
-      console.error('Reverse geocode error:', error);
-      throw new Error('Failed to reverse geocode coordinates');
+      console.error('Reverse geocode error:', error.message);
+      throw fromAxios('google', error);
     }
   }
 
@@ -198,7 +207,8 @@ class MapsService {
    * Get route directions between two points
    * @param {object} origin - Origin coordinates {latitude, longitude}
    * @param {object} destination - Destination coordinates {latitude, longitude}
-   * @param {string} mode - Travel mode (driving, walking, bicycling, transit)
+   * @param {string} mode - Travel mode (driving, motorcycle, walking, bicycling, transit). This API has
+   *   no motorcycle profile, so motorcycle routes as driving.
    * @returns {Promise<object>} Route information
    */
   async getDirections(origin, destination, mode = 'driving') {
@@ -211,18 +221,21 @@ class MapsService {
         params: {
           origin: `${origin.latitude},${origin.longitude}`,
           destination: `${destination.latitude},${destination.longitude}`,
-          mode,
+          mode: mode === 'motorcycle' ? 'driving' : mode,
           key: this.googleMapsApiKey,
         },
         timeout: 15000,
       });
 
       if (response.data.status !== 'OK') {
-        throw new Error(`Directions API error: ${response.data.status}`);
+        throw googleError('Directions', response.data.status, response.data.error_message);
       }
 
       const route = response.data.routes[0];
       const leg = route.legs[0];
+      // The step polylines together are much finer than the overview line, which matters for
+      // off-route checks on winding roads.
+      const detailed = leg.steps.flatMap(step => (step.polyline?.points ? decodePolyline(step.polyline.points) : []));
 
       return {
         distance: {
@@ -235,18 +248,23 @@ class MapsService {
         },
         startAddress: leg.start_address,
         endAddress: leg.end_address,
-        polyline: route.overview_polyline.points,
+        polyline: detailed.length > 1 ? encodePolyline(detailed) : route.overview_polyline.points,
         steps: leg.steps.map(step => ({
-          instruction: step.html_instructions.replace(/<[^>]*>/g, ''), // Remove HTML tags
-          distance: step.distance,
-          duration: step.duration,
-          startLocation: step.start_location,
-          endLocation: step.end_location,
+          instruction: (step.html_instructions || '')
+            .replace(/<div[^>]*>/gi, ' ')
+            .replace(/<[^>]*>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/\s+/g, ' ')
+            .trim(),
+          maneuver: step.maneuver || null,
+          distanceM: step.distance?.value ?? 0,
+          end: { latitude: step.end_location.lat, longitude: step.end_location.lng },
         })),
       };
     } catch (error) {
-      console.error('Get directions error:', error);
-      throw new Error('Failed to get directions');
+      console.error('Get directions error:', error.message);
+      throw fromAxios('google', error);
     }
   }
 
@@ -363,9 +381,10 @@ class MapsService {
    * @param {number} [latitude]
    * @param {number} [longitude]
    * @param {number} [radius]
+   * @param {string} [sessionToken] groups one search's keystrokes into a single billed session
    * @returns {Promise<Array>} predictions
    */
-  async autocomplete(input, latitude, longitude, radius = 20000) {
+  async autocomplete(input, latitude, longitude, radius = 20000, sessionToken) {
     if (!this.googleMapsApiKey) {
       throw new Error('Google Maps API key not configured');
     }
@@ -374,8 +393,9 @@ class MapsService {
       const params = {
         input,
         key: this.googleMapsApiKey,
-        types: 'geocode',
       };
+      // No `types` filter: 'geocode' hid businesses and landmarks, which is most of what riders search for.
+      if (sessionToken) params.sessiontoken = sessionToken;
       if (this.isValidCoordinate(latitude, longitude)) {
         params.location = `${latitude},${longitude}`;
         params.radius = radius;
@@ -387,7 +407,7 @@ class MapsService {
       });
 
       if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
-        throw new Error(`Places Autocomplete error: ${response.data.status}`);
+        throw googleError('Places Autocomplete', response.data.status, response.data.error_message);
       }
 
       return response.data.predictions.map(p => ({
@@ -402,7 +422,7 @@ class MapsService {
       if (error.response) {
         console.error('Autocomplete API response:', error.response.status, error.response.data);
       }
-      throw new Error(`Failed to get autocomplete predictions: ${error.message}`);
+      throw fromAxios('google', error);
     }
   }
 }
