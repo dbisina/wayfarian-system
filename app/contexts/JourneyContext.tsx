@@ -708,7 +708,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
         'FG distance:', officialDistance.toFixed(2));
 
       // If background tracked new points while suspended, store them so the next
-      // Roads API snap flush can prepend them — this fills the polyline gap.
+      // path flush can prepend them — this fills the polyline gap.
       if (bgState.totalDistance > officialDistance && bgState.routePoints.length > 1) {
         const gapPoints: RoutePoint[] = bgState.routePoints.map(p => ({
           latitude: p.latitude,
@@ -719,7 +719,7 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
           altitude: 0,
         }));
         bgMergedRoutePointsRef.current = gapPoints;
-          // Will be replaced by next Roads API snap; this fills the visual gap immediately
+          // This fills the visual gap immediately
         dispatch(setRoutePoints([...routePoints, ...gapPoints]));
       }
 

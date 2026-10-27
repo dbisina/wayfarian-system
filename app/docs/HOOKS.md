@@ -8,7 +8,7 @@ All hooks live in `hooks/`.
 
 **File**: `hooks/useSmartTracking.ts`
 
-Real-time journey tracking hook. Combines device GPS (Doppler speed), Google Roads API path snapping, and Haversine fallback distance into a single stream of clean stats.
+Real-time journey tracking hook. Combines device GPS (Doppler speed) and Haversine distance into a single stream of clean stats. `officialSnappedPath` keeps its name but holds raw GPS points.
 
 ### Signature
 
@@ -41,7 +41,7 @@ interface SmartLocation {
 
 ### Behaviour
 
-Toggling `isTracking` from `false` → `true` **resets all accumulators** (distance, time, path, speed buffers). Toggling to `false` removes the location subscription and flushes any buffered points to the Roads API.
+Toggling `isTracking` from `false` → `true` **resets all accumulators** (distance, time, path, speed buffers). Toggling to `false` removes the location subscription and appends any buffered points to the path.
 
 The GPS subscription uses `Location.watchPositionAsync` on all platforms (500 ms / 3 m intervals, `BestForNavigation` accuracy).
 
@@ -62,15 +62,15 @@ The GPS subscription uses `Location.watchPositionAsync` on all platforms (500 ms
 10. **Max speed**: requires `MAX_SPEED_SAMPLES_REQUIRED` (4) consecutive readings within 15% of each other, and below the per-vehicle cap. Median of those samples is used.
 11. **Distance accumulation (Haversine)**: gated on `rawSpeed > 0.2 m/s`. Min move = `max(3 m, accuracy * 0.5)`. Max jump = 0.5 km (teleport guard).
 12. **Moving time**: accumulated only when `filteredSpeed > 0` and not dwelling. Delta capped at 30 s to swallow app-suspension gaps.
-13. **Roads API buffer**: accurate fixes (accuracy ≤ 30 m, distance from last > 2 m) are buffered. Flush triggers at 8 points or 10 s.
-14. **Distance displayed**: `max(roadsApiDistance, haversineDistance)` — monotonically increasing even when Roads API corrects a segment downward.
+13. **Path buffer**: accurate fixes (accuracy ≤ 30 m, distance from last > 2 m) are buffered and appended to `officialSnappedPath` at 8 points or 10 s.
+14. **Distance displayed**: Haversine distance from raw GPS (no road snapping).
 
 ### Constants Table
 
 | Constant | Value | Purpose |
 |---|---|---|
-| `BUFFER_SIZE` | 8 | Roads API flush trigger (point count) |
-| `FLUSH_INTERVAL_MS` | 10 000 ms | Roads API flush trigger (time) |
+| `BUFFER_SIZE` | 8 | Path buffer flush trigger (point count) |
+| `FLUSH_INTERVAL_MS` | 10 000 ms | Path buffer flush trigger (time) |
 | `STATIONARY_SPEED_THRESHOLD_MPS` | 0.3 m/s | Speed below which display reads 0 |
 | `DWELL_SPEED_THRESHOLD_MPS` | 1.0 m/s | Speed below which dwell timer starts |
 | `DWELL_THRESHOLD_MS` | 5 000 ms | How long below dwell threshold before isDwelling |
@@ -146,7 +146,7 @@ interface RoutePoint {
 }
 ```
 
-Capped at 2 000 points in Redux to prevent OOM on long rides (matches background task and Roads API caps).
+Capped at 2 000 points in Redux to prevent OOM on long rides (matches background task and path caps).
 
 ---
 

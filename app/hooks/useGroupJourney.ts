@@ -132,7 +132,7 @@ export const useGroupJourney = ({
     }
     // Update timer every second.
     // Use max(smartTrackingDistance, localHaversineDistance) so that:
-    //   - On iOS, useSmartTracking (Roads API) provides the best distance and "wins"
+    //   - On iOS, useSmartTracking provides the best distance and "wins"
     //   - On Android, where dual GPS watchers conflict, local Haversine fallback provides data
     const updateTimer = () => {
       const startTime = clientStartTimeRef.current!;

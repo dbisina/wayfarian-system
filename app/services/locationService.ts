@@ -8,7 +8,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { journeyAPI } from './api';
 import { LOCATION_TASK_NAME } from './backgroundTasks';
 import { defaultKalmanFilter } from './kalmanFilter';
-import { snapToRoads } from './roads';
 
 // Movement filtering thresholds to reduce GPS jitter when stationary
 const MIN_ACCURACY_METERS = 10; // low-accuracy threshold
@@ -585,39 +584,11 @@ class LocationService {
 
       const currentLocation = this.routePoints[this.routePoints.length - 1];
 
-      // Calculate "Perfect" Final Distance using Road Snapping
-      let finalDistance = this.stats.totalDistance;
-      try {
-        if (this.routePoints.length > 1) {
-          console.log(`[LocationService] Snapping ${this.routePoints.length} points to roads for final accuracy...`);
-          // Snap the points to roads (batch of up to 100 points or use interpolation)
-          const snappedPoints = await snapToRoads(this.routePoints.map(p => ({
-            latitude: p.latitude,
-            longitude: p.longitude
-          })));
-
-          if (snappedPoints.length > 1) {
-            let snappedDist = 0;
-            for (let i = 1; i < snappedPoints.length; i++) {
-              snappedDist += this.calculateDistance(
-                snappedPoints[i - 1].latitude,
-                snappedPoints[i - 1].longitude,
-                snappedPoints[i].latitude,
-                snappedPoints[i].longitude
-              );
-            }
-            console.log(`[LocationService] Road snapped distance: ${snappedDist.toFixed(2)}km (Raw: ${finalDistance.toFixed(2)}km)`);
-            finalDistance = snappedDist;
-          }
-        }
-      } catch (e) {
-        console.warn('[LocationService] Road snapping failed at end, using raw distance:', e);
-      }
-
+      // Raw GPS (haversine) distance; Google Roads snapping was removed for cost.
       await journeyAPI.endJourney(this.currentJourneyId, {
         endLatitude: currentLocation.latitude,
         endLongitude: currentLocation.longitude,
-        totalDistance: finalDistance,
+        totalDistance: this.stats.totalDistance,
         totalTime: this.stats.totalTime,
       });
 

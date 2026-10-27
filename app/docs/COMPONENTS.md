@@ -155,7 +155,6 @@ The step 4 only appears when `notifee.getPowerManagerInfo()` returns a non-null 
 | `JourneyCardMenu` | Context menu (edit/delete) for a journey card |
 | `Header` | Screen header with back navigation |
 | `XPProgress` | XP progress bar for gamification |
-| `SpeedLimitSign` | Speed limit indicator overlay on the map |
 | `LoadingButton` | Button with built-in loading spinner |
 | `UserProfile` | User avatar + stats summary |
 | `AchievementCard` | Achievement unlock display |

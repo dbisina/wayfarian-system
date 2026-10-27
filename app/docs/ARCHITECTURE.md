@@ -15,8 +15,8 @@ Wayfarian is a React Native / Expo cycling and journey-tracking application for 
 | State | Redux Toolkit + redux-persist (AsyncStorage) |
 | Auth | Firebase Auth (email/password, Google, Apple) + Wayfarian backend JWT |
 | GPS | expo-location (`watchPositionAsync`, `startLocationUpdatesAsync`) |
-| Path snapping | Google Roads API (`snapToRoads`) |
-| Directions | Google Directions API |
+| Path snapping | none (raw GPS; Roads API removed for cost) |
+| Directions | Server proxy `/maps/directions` (Geoapify, Google fallback) |
 | Notifications | notifee (foreground service, Android channels) + expo-notifications (fallback) |
 | Real-time | Socket.IO (group journey events, member locations) |
 | Storage (fast) | MMKV (synchronous reads for auth/onboarding flags) |
@@ -40,13 +40,8 @@ useSmartTracking (hook)
     |-- dwell detection (< 1.0 m/s for > 5 s → isStationary)
     |-- exponential smoothing (alpha 0.2–0.85, speed+accuracy adaptive)
     |-- haversine distance accumulation (gate: rawSpeed > 0.2 m/s)
-    |-- Roads API buffer (flush every 8 pts or 10 s)
-    |       |
-    |       v
-    |   Google Roads API (snapToRoads, interpolate=true)
-    |       |-- snapped path → officialSnappedPath
-    |       |-- segment distance → roadsApiDistance
-    |       |-- displayed distance = max(roadsApiDist, haversineDist)
+    |-- path buffer (flush every 8 pts or 10 s) → officialSnappedPath (raw GPS)
+    |-- displayed distance = haversine distance
     |
     v
 JourneyContext (provider)
@@ -77,7 +72,7 @@ UI Components
 `useSmartTracking` runs inside `JourneyContext` via `Location.watchPositionAsync`:
 - 2 Hz sample rate (500 ms interval), 3 m distance interval
 - Accuracy: `BestForNavigation`
-- Roads API buffer flushes at 8 points or every 10 s
+- Path buffer flushes raw GPS points at 8 points or every 10 s
 - Stats synced to Redux on every GPS update (~1 Hz effective)
 - Map camera throttled to 1 s, marker animation 400 ms
 
