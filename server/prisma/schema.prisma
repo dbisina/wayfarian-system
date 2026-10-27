@@ -629,7 +629,11 @@ model RidePhoto {
   takenAt   DateTime
   latitude  Float?
   longitude Float?
-  createdAt DateTime @default(now())
+  // What the rider was doing when the photo was taken, for the album's "138 km/h" and "km 64" tags.
+  // Null on photos taken before these were recorded, or when the phone had no speed reading.
+  speedMps      Float?
+  rideDistanceM Float?
+  createdAt     DateTime @default(now())
 
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
 

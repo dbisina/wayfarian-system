@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "ride_photos" ADD COLUMN "speedMps" DOUBLE PRECISION,
+ADD COLUMN "rideDistanceM" DOUBLE PRECISION;

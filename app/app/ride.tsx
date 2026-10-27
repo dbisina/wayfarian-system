@@ -11,14 +11,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Localization from 'expo-localization';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
+import RiderMarker from '../components/RiderMarker';
 import { useAuth } from '../contexts/AuthContext';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { useLiveRide, useSyncState } from '../v2/hooks';
 import { endRide, pauseRide, resumeRide, startRide, takeRidePhoto } from '../v2/rideController';
 import { formatDistance, formatDuration } from '../v2/format';
 import { fallbackRegion } from '../v2/countryRegion';
+import { bearingDeg, regionAt } from '../v2/mapCamera';
 import { advanceStep, fetchNavRoute, haversineM, locateOnRoute, remainingRouteM, turnKind, type NavRoute, type TurnKind } from '../v2/navigation';
 
 const hms = (s: number) => {
@@ -31,6 +33,7 @@ const MIN_RIDE_M = 100; // the server rejects shorter rides, so there is nothing
 const MAX_TRAIL = 6000;
 const ZOOM = 16;
 const OFF_ROUTE_M = 70;
+const REC_RED = '#E5484D';
 const GAUGE_MAX_KMH = 180;
 const DASH_BG = '#161513';
 const DASH_INK = '#F2EEE5';
@@ -60,7 +63,21 @@ function Gauge({ kmh, topKmh }: { kmh: number; topKmh: number }) {
   return (
     <Svg width={300} height={160} viewBox="0 0 300 160">
       <Path d="M22 150 A128 128 0 0 1 278 150" fill="none" stroke="rgba(242,238,229,0.1)" strokeWidth={12} strokeLinecap="round" />
-      <Path d="M36 150 A114 114 0 0 1 264 150" fill="none" stroke="rgba(242,238,229,0.28)" strokeWidth={7} strokeDasharray="1.5 38.29" />
+      {/* Ticks are placed one by one: a dashed arc loses the one that lands exactly on its far end,
+          which left the 180 end of the dial bare. A big tick every 20 km/h, a small one every 5. */}
+      {Array.from({ length: 37 }, (_, i) => {
+        const major = i % 4 === 0;
+        const a = arcPoint(i / 36, major ? 110.5 : 112);
+        const b = arcPoint(i / 36, major ? 117.5 : 116);
+        return (
+          <Line
+            key={i}
+            x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+            stroke={major ? 'rgba(242,238,229,0.28)' : 'rgba(242,238,229,0.12)'}
+            strokeWidth={major ? 1.5 : 1}
+          />
+        );
+      })}
       {f > 0.01 && <Path d={`M22 150 A128 128 0 0 1 ${end.x.toFixed(1)} ${end.y.toFixed(1)}`} fill="none" stroke={AMBER} strokeWidth={12} strokeLinecap="round" />}
       {topKmh > 5 && <Path d={`M${t0.x.toFixed(1)} ${t0.y.toFixed(1)} L${t1.x.toFixed(1)} ${t1.y.toFixed(1)}`} stroke={DASH_INK} strokeWidth={3} strokeLinecap="round" />}
       {f > 0.01 && <Circle cx={end.x} cy={end.y} r={8} fill={AMBER} stroke={DASH_BG} strokeWidth={3} />}
@@ -117,7 +134,8 @@ export default function RideScreen() {
   const zoomed = useRef(false);
   const flyTo = useCallback((lat: number, lng: number) => {
     zoomed.current = true;
-    mapRef.current?.animateCamera({ center: { latitude: lat, longitude: lng }, zoom: ZOOM }, { duration: 500 });
+    // A region, not camera `zoom`: Apple Maps (iOS) ignores zoom and stayed zoomed out over the country.
+    mapRef.current?.animateToRegion(regionAt(lat, lng, ZOOM), 500);
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +154,19 @@ export default function RideScreen() {
 
   // Draw the route as fixes arrive and keep the camera on the rider.
   const fix = live?.lastFix;
+  // Which way the rider is heading, from their last two positions at least 5 m apart (a stopped
+  // rider's GPS jitter would otherwise spin the arrow).
+  const [heading, setHeading] = useState(0);
+  const lastPos = useRef<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => {
+    if (!fix) return;
+    const cur = { latitude: fix.lat, longitude: fix.lng };
+    if (!lastPos.current) lastPos.current = cur;
+    else if (haversineM(lastPos.current, cur) >= 5) {
+      setHeading(bearingDeg(lastPos.current, cur));
+      lastPos.current = cur;
+    }
+  }, [fix]);
   useEffect(() => {
     if (!fix) return;
     setTrail((prev) => {
@@ -291,7 +322,7 @@ export default function RideScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        showsUserLocation
+        showsUserLocation={!fix}
         showsMyLocationButton={false}
         showsCompass={false}
         initialRegion={fix ? { latitude: fix.lat, longitude: fix.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 } : region}
@@ -300,6 +331,7 @@ export default function RideScreen() {
         {navRoute && <Polyline coordinates={navRoute.coordinates} strokeColor={AMBER} strokeWidth={5} lineDashPattern={[2, 8]} lineCap="round" />}
         {trail.length > 1 && <Polyline coordinates={trail} strokeColor={AMBER} strokeWidth={6} lineCap="round" lineJoin="round" />}
         {dest && <Marker coordinate={{ latitude: dest.latitude, longitude: dest.longitude }} title={dest.name || 'Destination'} pinColor={AMBER} />}
+        {fix && <RiderMarker coordinate={{ latitude: fix.lat, longitude: fix.lng }} heading={heading} />}
       </MapView>
 
       <View style={[styles.topBar, { top: topInset }]}>
@@ -309,10 +341,14 @@ export default function RideScreen() {
           accessibilityLabel="Minimise ride"
           style={[styles.round, { backgroundColor: d.surface }, sh]}
         >
-          <Icon name="back" size={20} color={d.ink} stroke={2} />
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="m6 9 6 6 6-6" stroke={d.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
         </TouchableOpacity>
         <View style={[styles.rec, { backgroundColor: d.surface }, sh]} accessibilityRole="text">
-          <View style={[styles.recDot, { backgroundColor: paused ? d.ink2 : AMBER, shadowColor: AMBER }]} />
+          <View style={[styles.recHalo, paused && { backgroundColor: 'transparent' }]}>
+            <View style={[styles.recDot, { backgroundColor: paused ? d.ink2 : REC_RED }]} />
+          </View>
           <Text style={[styles.recLabel, { color: d.ink }]}>{paused ? 'PAUSED' : 'REC'}</Text>
           <Text style={[styles.recTime, { color: d.ink }]}>{hms(elapsed)}</Text>
         </View>
@@ -446,7 +482,8 @@ const styles = StyleSheet.create({
   topBar: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   rec: { height: 36, paddingHorizontal: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  recDot: { width: 8, height: 8, borderRadius: 4, shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
+  recDot: { width: 8, height: 8, borderRadius: 4 },
+  recHalo: { width: 16, height: 16, borderRadius: 8, marginLeft: -4, backgroundColor: 'rgba(229,72,77,0.18)', alignItems: 'center', justifyContent: 'center' },
   recLabel: { fontFamily: F.extra, fontSize: 12, letterSpacing: 1.2 },
   recTime: { fontFamily: F.monoBold, fontSize: 14 },
   turn: { position: 'absolute', left: 16, right: 16, height: 80, borderRadius: 22, backgroundColor: AMBER, paddingLeft: 12, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },

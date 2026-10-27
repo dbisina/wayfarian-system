@@ -228,6 +228,9 @@ export function createRecorder(deps: RecorderDeps) {
         takenAt: new Date(t).toISOString(),
         latitude: lastFix?.lat ?? null,
         longitude: lastFix?.lng ?? null,
+        // What the rider was doing at that moment, for the album's speed and distance tags.
+        speedMps: lastFix?.speedMps ?? null,
+        rideDistanceM: acc.snapshot().distanceM,
       }, t);
       kick();
       return true;
