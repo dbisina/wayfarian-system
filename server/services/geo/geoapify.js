@@ -47,6 +47,54 @@ function parseId(id) {
   return m ? { latitude: parseFloat(m[1]), longitude: parseFloat(m[2]), placeId: m[3] || null } : null;
 }
 
+const validLimit = (v) => (Number.isFinite(v) && v >= 5 && v <= 200 ? Math.round(v) : null);
+
+/**
+ * Turns Geoapify's route steps into one step per manoeuvre. With route details on, Geoapify also
+ * splits the route wherever a road attribute (such as the speed limit) changes, and those pieces
+ * have no instruction. They belong to the manoeuvre before them: they extend its distance and where
+ * it ends, and the limit it carries is the one that holds for most of its length. Left as they
+ * were, they would show up as blank turn cards.
+ * Geoapify's docs do not state the unit of speed_limit; with the default (metric) request it is km/h.
+ */
+function buildSteps(raw, points) {
+  const last = points.length - 1;
+  const steps = [];
+  let metresByLimit = null; // limit -> metres, for the manoeuvre being built
+
+  const settle = () => {
+    if (!steps.length || !metresByLimit) return;
+    let best = null;
+    for (const [limit, metres] of metresByLimit) if (!best || metres > best.metres) best = { limit, metres };
+    steps[steps.length - 1].speedLimitKmh = best ? best.limit : null;
+  };
+
+  for (const s of raw) {
+    const text = s.instruction?.text;
+    const end = points[Math.min(last, s.to_index ?? last)];
+    const metres = s.distance ?? 0;
+    const limit = validLimit(s.speed_limit);
+    if (text || !steps.length) {
+      settle();
+      steps.push({
+        instruction: text || 'Continue',
+        maneuver: MANEUVERS[s.instruction?.type] || null,
+        distanceM: metres,
+        end,
+        speedLimitKmh: null,
+      });
+      metresByLimit = new Map();
+    } else {
+      const prev = steps[steps.length - 1];
+      prev.distanceM += metres;
+      prev.end = end;
+    }
+    if (limit != null) metresByLimit.set(limit, (metresByLimit.get(limit) || 0) + metres);
+  }
+  settle();
+  return steps;
+}
+
 class GeoapifyProvider {
   constructor(apiKey = process.env.GEOAPIFY_API_KEY) {
     this.name = 'geoapify';
@@ -176,17 +224,7 @@ class GeoapifyProvider {
     const geom = Array.isArray(route?.geometry?.[0]) ? route.geometry[0] : route?.geometry;
     if (!route || !leg || !Array.isArray(geom) || geom.length < 2) throw new GeoError('NO_RESULTS', 'geoapify: no route');
     const points = geom.map((p) => ({ latitude: p.lat, longitude: p.lon }));
-    const steps = (leg.steps ?? []).map((s) => {
-      const end = points[Math.min(points.length - 1, s.to_index ?? points.length - 1)];
-      return {
-        instruction: s.instruction?.text || '',
-        maneuver: MANEUVERS[s.instruction?.type] || null,
-        distanceM: s.distance ?? 0,
-        end,
-        // Geoapify's docs do not state the unit; with the default (metric) request it is km/h.
-        speedLimitKmh: Number.isFinite(s.speed_limit) && s.speed_limit >= 5 && s.speed_limit <= 200 ? Math.round(s.speed_limit) : null,
-      };
-    });
+    const steps = buildSteps(leg.steps ?? [], points);
     return {
       distance: { text: formatKm(route.distance), value: route.distance },
       duration: { text: formatMin(route.time), value: Math.round(route.time) },
@@ -198,4 +236,4 @@ class GeoapifyProvider {
   }
 }
 
-module.exports = { GeoapifyProvider, parseId, CATEGORIES };
+module.exports = { GeoapifyProvider, parseId, CATEGORIES, buildSteps };
