@@ -3,7 +3,9 @@
 // Railway service (cutout-service/) so the model never uses this server's memory or CPU. Anything
 // that goes wrong leaves the original photo in place.
 
-const DEFAULT_TIMEOUT_MS = 45_000;
+// The sharper model takes a few seconds per photo and the service loads it after a sleep, so one
+// attempt gets 90 s before it is given up on.
+const DEFAULT_TIMEOUT_MS = 90_000;
 
 /**
  * Sends a JPEG to the cut-out service and returns the PNG, or null if the service is not set up,

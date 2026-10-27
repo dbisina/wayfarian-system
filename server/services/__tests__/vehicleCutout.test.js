@@ -74,3 +74,13 @@ describe('applyCutout', () => {
     expect(broken.prisma.vehicle.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe('requestCutout timing', () => {
+  test('gives the service 90 s per attempt, for the larger model and a cold start', async () => {
+    const spy = jest.spyOn(AbortSignal, 'timeout');
+    const fetchImpl = jest.fn().mockResolvedValue({ status: 200, arrayBuffer: async () => Buffer.from('PNG') });
+    await requestCutout(Buffer.from('x'), { url: 'http://c:3000', secret: 's', fetchImpl, retryDelayMs: 1, log: { warn: () => {} } });
+    expect(spy).toHaveBeenCalledWith(90_000);
+    spy.mockRestore();
+  });
+});

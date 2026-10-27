@@ -7,12 +7,9 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-
-const MODEL_URL = process.env.MODEL_URL || 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/silueta.onnx';
-// The model is fetched during the build (see scripts/fetch-model.js) so a service that has been
-// asleep starts straight away; if it is missing it is fetched on first use.
-const MODEL_PATH = process.env.MODEL_PATH || path.join(__dirname, 'models', 'silueta.onnx');
-const MIN_MODEL_BYTES = 30 * 1024 * 1024;
+const { pipeline } = require('stream/promises');
+const { Readable } = require('stream');
+const { resolveModel } = require('./models');
 
 function safeEqual(a, b) {
   const x = Buffer.from(String(a));
@@ -91,19 +88,47 @@ function createApp({ secret, getCutout, maxBytes = 10 * 1024 * 1024, maxQueue = 
   };
 }
 
-/** Downloads the model on first start. Written to a temp name first so a half file is never used. */
-async function ensureModel() {
-  if (fs.existsSync(MODEL_PATH) && fs.statSync(MODEL_PATH).size > MIN_MODEL_BYTES) return MODEL_PATH;
-  fs.mkdirSync(path.dirname(MODEL_PATH), { recursive: true });
-  console.log('[cutout] downloading model');
-  const res = await fetch(MODEL_URL, { redirect: 'follow' });
+/** Where a model lives on disk. MODEL_PATH overrides it (for a model fetched some other way). */
+const modelPathFor = (model) => process.env.MODEL_PATH || path.join(__dirname, 'models', model.file);
+
+/**
+ * Makes sure the model file is on disk and returns its path. A missing or too-small file is
+ * downloaded: streamed to a temp name, checked against the published checksum, and only then
+ * renamed into place, so a half-finished or tampered download is never used.
+ * `fetchImpl` and `dest` exist so the download can be tested without the network.
+ */
+async function ensureModel(model = resolveModel(), { fetchImpl = fetch, dest = modelPathFor(model) } = {}) {
+  if (fs.existsSync(dest) && fs.statSync(dest).size > model.minBytes) return dest;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const url = process.env.MODEL_URL || model.url;
+  console.log(`[cutout] downloading model ${model.name}`);
+  const res = await fetchImpl(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`Model download failed: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < MIN_MODEL_BYTES) throw new Error('Model download incomplete');
-  const tmp = `${MODEL_PATH}.part`;
-  fs.writeFileSync(tmp, buf);
-  fs.renameSync(tmp, MODEL_PATH);
-  return MODEL_PATH;
+
+  const tmp = `${dest}.part`;
+  const hash = crypto.createHash('md5');
+  let bytes = 0;
+  try {
+    await pipeline(
+      Readable.fromWeb(res.body),
+      async function* (source) {
+        for await (const chunk of source) {
+          hash.update(chunk);
+          bytes += chunk.length;
+          yield chunk;
+        }
+      },
+      fs.createWriteStream(tmp)
+    );
+    if (bytes < model.minBytes) throw new Error('Model download incomplete');
+    // A custom MODEL_URL is the operator's own file, so only the published one is checked.
+    if (!process.env.MODEL_URL && model.md5 && hash.digest('hex') !== model.md5) throw new Error('Model checksum mismatch');
+    fs.renameSync(tmp, dest);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+  return dest;
 }
 
 if (require.main === module) {
@@ -112,12 +137,14 @@ if (require.main === module) {
     console.error('CUTOUT_SECRET is required');
     process.exit(1);
   }
+  const model = resolveModel();
+  console.log(`[cutout] model: ${model.name}`);
   let loading;
   const getCutout = () => {
     // Loaded once on the first photo (or at boot below) and reused; a failed load is retried.
     if (!loading) {
-      loading = ensureModel()
-        .then((p) => require('./cutout').createCutout(p))
+      loading = ensureModel(model)
+        .then((p) => require('./cutout').createCutout(p, model))
         .catch((e) => { loading = null; throw e; });
     }
     return loading;
