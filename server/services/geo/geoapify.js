@@ -72,6 +72,7 @@ class GeoapifyProvider {
   credits(op, args = {}) {
     if (op === 'nearby') return Math.max(1, Math.ceil((args.limit || 20) / 20));
     if (op === 'details') return 0; // answered from the id, no request made
+    if (op === 'directions') return 2; // route_details (for speed limits) adds a credit per leg
     return 1;
   }
 
@@ -165,7 +166,8 @@ class GeoapifyProvider {
     const data = await this.get('/v1/routing', {
       waypoints: `${origin.latitude},${origin.longitude}|${destination.latitude},${destination.longitude}`,
       mode: MODES[mode] || 'drive',
-      details: 'instruction_details',
+      // instruction_details: maneuver types; route_details: the posted speed limit of each step.
+      details: 'instruction_details,route_details',
       format: 'json',
     });
     const route = data?.results?.[0];
@@ -181,6 +183,8 @@ class GeoapifyProvider {
         maneuver: MANEUVERS[s.instruction?.type] || null,
         distanceM: s.distance ?? 0,
         end,
+        // Geoapify's docs do not state the unit; with the default (metric) request it is km/h.
+        speedLimitKmh: Number.isFinite(s.speed_limit) && s.speed_limit >= 5 && s.speed_limit <= 200 ? Math.round(s.speed_limit) : null,
       };
     });
     return {

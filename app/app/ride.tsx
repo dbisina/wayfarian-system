@@ -5,8 +5,8 @@
 // phone and uploaded later. Stats come from the same ride-core code the server uses.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ActivityIndicator, Alert, Animated, Easing, Platform, Pressable, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polygon, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Localization from 'expo-localization';
 import * as Location from 'expo-location';
@@ -14,13 +14,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import Icon from '../components/dw/Icon';
 import RiderMarker from '../components/RiderMarker';
+import SosSheet from '../components/SosSheet';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { AMBER, F, INK, shadow, useDW } from '../constants/design';
 import { useLiveRide, useSyncState } from '../v2/hooks';
 import { endRide, pauseRide, resumeRide, startRide, takeRidePhoto } from '../v2/rideController';
 import { formatDistance, formatDuration } from '../v2/format';
 import { fallbackRegion } from '../v2/countryRegion';
-import { bearingDeg, regionAt } from '../v2/mapCamera';
+import { bearingDeg, regionAt, viewCone } from '../v2/mapCamera';
+import { mapStyle, nativeMapType, usesCustomStyle } from '../v2/mapStyle';
+import { shareSpotMessage } from '../v2/emergency';
+import { rideXp } from '../v2/rideXp';
+import { signValue } from '../v2/speedLimit';
+import { useSpeedLimit } from '../v2/useSpeedLimit';
 import { advanceStep, fetchNavRoute, haversineM, locateOnRoute, remainingRouteM, turnKind, type NavRoute, type TurnKind } from '../v2/navigation';
 
 const hms = (s: number) => {
@@ -90,6 +97,9 @@ export default function RideScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { mapType, units } = useSettings();
+  const nativeType = nativeMapType(mapType, Platform.OS);
+  const [sosOpen, setSosOpen] = useState(false);
   const { groupRideId, vehicleId, vehicleType, title, destName, destLat, destLng } = useLocalSearchParams<{
     groupRideId?: string; vehicleId?: string; vehicleType?: string; title?: string; destName?: string; destLat?: string; destLng?: string;
   }>();
@@ -224,6 +234,20 @@ export default function RideScreen() {
       .finally(() => { fetching.current = false; });
   }, [fix, dest, live?.status, navRoute, vehicleType]);
 
+  // The posted limit for the sign: this route step's when navigating, else a cached server lookup.
+  const hereNow = useMemo(() => (fix ? { latitude: fix.lat, longitude: fix.lng } : null), [fix?.lat, fix?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  const limitKmh = useSpeedLimit(hereNow, navRoute?.steps[stepIdx]?.speedLimitKmh, live?.status === 'RECORDING');
+
+  const onShare = useCallback(async () => {
+    if (!hereNow) {
+      Alert.alert('Waiting for GPS', 'Your position is not known yet. Try again in a moment.');
+      return;
+    }
+    try {
+      await Share.share({ message: shareSpotMessage(hereNow.latitude, hereNow.longitude, dest?.name) });
+    } catch { /* the rider dismissed the share sheet */ }
+  }, [hereNow, dest?.name]);
+
   const paused = live?.status === 'PAUSED';
   if (paused && frozenAt.current == null) frozenAt.current = now;
   if (!paused) frozenAt.current = null;
@@ -322,6 +346,9 @@ export default function RideScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        mapType={nativeType}
+        customMapStyle={usesCustomStyle(nativeType, Platform.OS) ? mapStyle(d.dark) : undefined}
+        userInterfaceStyle={d.dark ? 'dark' : 'light'}
         showsUserLocation={!fix}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -331,6 +358,10 @@ export default function RideScreen() {
         {navRoute && <Polyline coordinates={navRoute.coordinates} strokeColor={AMBER} strokeWidth={5} lineDashPattern={[2, 8]} lineCap="round" />}
         {trail.length > 1 && <Polyline coordinates={trail} strokeColor={AMBER} strokeWidth={6} lineCap="round" lineJoin="round" />}
         {dest && <Marker coordinate={{ latitude: dest.latitude, longitude: dest.longitude }} title={dest.name || 'Destination'} pinColor={AMBER} />}
+        {fix && lastPos.current && (
+          // The amber wedge ahead of the rider, as in the design. Hidden until there is a heading.
+          <Polygon coordinates={viewCone({ latitude: fix.lat, longitude: fix.lng }, heading)} fillColor="rgba(245,165,36,0.16)" strokeColor="rgba(245,165,36,0)" strokeWidth={0} />
+        )}
         {fix && <RiderMarker coordinate={{ latitude: fix.lat, longitude: fix.lng }} heading={heading} />}
       </MapView>
 
@@ -352,18 +383,11 @@ export default function RideScreen() {
           <Text style={[styles.recLabel, { color: d.ink }]}>{paused ? 'PAUSED' : 'REC'}</Text>
           <Text style={[styles.recTime, { color: d.ink }]}>{hms(elapsed)}</Text>
         </View>
-        {groupRideId ? (
-          <TouchableOpacity
-            onPress={() => router.push({ pathname: '/group-live', params: { id: String(groupRideId) } } as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Group live view"
-            style={[styles.round, { backgroundColor: d.surface }, sh]}
-          >
-            <Icon name="route" size={20} color={d.ink} stroke={1.9} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.round} />
-        )}
+        <TouchableOpacity onPress={onShare} accessibilityRole="button" accessibilityLabel="Share my spot" style={[styles.round, { backgroundColor: d.surface }, sh]}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke={d.ink} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </TouchableOpacity>
       </View>
 
       {step && (
@@ -395,7 +419,22 @@ export default function RideScreen() {
             <Path d="M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" fill={d.ink} />
           </Svg>
         </TouchableOpacity>
+        {groupRideId ? (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/group-live', params: { id: String(groupRideId) } } as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Group live view"
+            style={[styles.railBtn, { backgroundColor: d.surface }, sh]}
+          >
+            <Icon name="route" size={20} color={d.ink} stroke={1.9} />
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity onPress={() => setSosOpen(true)} accessibilityRole="button" accessibilityLabel="Emergency SOS" style={[styles.railBtn, styles.sosBtn, sh]}>
+          <Text style={styles.sosText}>SOS</Text>
+        </TouchableOpacity>
       </View>
+
+      <SosSheet visible={sosOpen} onClose={() => setSosOpen(false)} position={hereNow} />
 
       <View style={[styles.dash, { backgroundColor: dashBg, height: dashHeight, paddingBottom: Math.max(16, insets.bottom + 8) }]}>
         <View style={styles.handle} />
@@ -416,6 +455,17 @@ export default function RideScreen() {
         )}
 
         <View style={styles.gaugeWrap}>
+          {rideXp(live.distanceM) > 0 && (
+            <View style={styles.xpChip} accessibilityLabel={`${rideXp(live.distanceM)} experience points so far`}>
+              <Svg width={13} height={13} viewBox="0 0 24 24"><Path d="M12 2 22 12 12 22 2 12z" fill={AMBER} /></Svg>
+              <Text style={styles.xpText}>+{rideXp(live.distanceM)} XP</Text>
+            </View>
+          )}
+          {limitKmh != null && (
+            <View style={styles.limitSign} accessibilityRole="image" accessibilityLabel={`Speed limit ${signValue(limitKmh, units)}`}>
+              <Text style={styles.limitText}>{signValue(limitKmh, units)}</Text>
+            </View>
+          )}
           <Gauge kmh={kmh} topKmh={topKmh} />
           <View style={styles.gaugeCenter} pointerEvents="none">
             <Text style={styles.speed}>{kmh}</Text>
@@ -509,6 +559,13 @@ const styles = StyleSheet.create({
   progressYou: { position: 'absolute', width: 12, height: 12, marginLeft: -6, borderRadius: 3, backgroundColor: DASH_INK, transform: [{ rotate: '45deg' }] },
   progressEnd: { position: 'absolute', right: -2, width: 10, height: 10, borderRadius: 2, borderWidth: 2, borderColor: AMBER, transform: [{ rotate: '45deg' }] },
   gaugeWrap: { alignSelf: 'center', width: 300, height: 160, marginTop: 8 },
+  // The dash content is 350 wide and the dial 300, so -25 puts these on the dash's own side edges.
+  xpChip: { position: 'absolute', left: -25, top: 20, height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: 'rgba(245,165,36,0.16)', flexDirection: 'row', alignItems: 'center', gap: 5, zIndex: 2 },
+  xpText: { fontFamily: F.monoBold, fontSize: 13, color: AMBER },
+  limitSign: { position: 'absolute', right: -25, top: 12, width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFFDF8', borderWidth: 5, borderColor: '#D93A3A', alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  limitText: { fontFamily: F.black, fontSize: 17, letterSpacing: -0.4, color: INK },
+  sosBtn: { backgroundColor: '#E5484D' },
+  sosText: { fontFamily: F.black, fontSize: 12, letterSpacing: 0.7, color: '#FFFDF8' },
   gaugeCenter: { position: 'absolute', left: 0, right: 0, top: 60, alignItems: 'center' },
   speed: { fontFamily: F.black, fontSize: 78, lineHeight: 80, letterSpacing: -3, color: DASH_INK },
   speedUnit: { fontFamily: F.extra, fontSize: 12, letterSpacing: 1.7, color: DASH_MUTED },

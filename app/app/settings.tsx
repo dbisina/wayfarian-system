@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
-  ActionSheetIOS,
   StatusBar,
   Modal,
 } from 'react-native';
@@ -23,6 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isRichNotificationEnabled, setRichNotificationEnabled } from '../v2/rideNotification';
 import { useSettings, MapType, Vehicle, Units } from '../contexts/SettingsContext';
 import LanguageSelector from '../components/LanguageSelector';
+import OptionSheet from '../components/OptionSheet';
 import { LANGUAGES } from '../i18n';
 
 export default function SettingsScreen() {
@@ -43,6 +43,7 @@ export default function SettingsScreen() {
     setVehicle,
   } = useSettings();
   const [showUnitsModal, setShowUnitsModal] = React.useState(false);
+  const [showMapSheet, setShowMapSheet] = React.useState(false);
   const [richNote, setRichNote] = React.useState(false);
   React.useEffect(() => { isRichNotificationEnabled().then(setRichNote); }, []);
   const [showLanguageModal, setShowLanguageModal] = React.useState(false);
@@ -68,39 +69,12 @@ export default function SettingsScreen() {
     }
   };
 
-  // Cross-platform option pickers
-  const pickOption = (
-    title: string,
-    options: string[],
-    selectedIndex: number,
-    onPick: (index: number) => void
-  ) => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title,
-          options: [...options, t('common.cancel')],
-          cancelButtonIndex: options.length,
-          userInterfaceStyle: d.dark ? 'dark' : 'light',
-        },
-        (buttonIndex) => {
-          if (buttonIndex < options.length) onPick(buttonIndex);
-        }
-      );
-    } else {
-      Alert.alert(title, undefined, [
-        ...options.map((label, idx) => ({ text: `${idx === selectedIndex ? '• ' : ''}${label}`, onPress: () => onPick(idx) })),
-        { text: t('common.cancel'), style: 'cancel' },
-      ]);
-    }
-  };
-
   const themeOptions: { label: string; value: ThemePref; preview: string; bar: string }[] = [
     { label: 'Match phone', value: 'system', preview: '', bar: '#1C1A16' },
     { label: 'Light', value: 'light', preview: '#F4F1E9', bar: '#1C1A16' },
     { label: 'Dark', value: 'dark', preview: '#11100E', bar: '#3A362F' },
   ];
-  const mapTypes = ['standard', 'satellite', 'terrain'];
+  const mapTypes: MapType[] = ['standard', 'satellite', 'terrain'];
   const rows: { label: string; meta: string; icon: IconName; onPress: () => void; tile?: boolean }[] = [
     { label: 'Account', meta: '', icon: 'user', onPress: () => router.push('/edit-profile') },
     {
@@ -114,13 +88,7 @@ export default function SettingsScreen() {
       meta: t(`settings.${mapType}`),
       icon: 'map',
       tile: true,
-      onPress: () =>
-        pickOption(
-          t('settings.mapType'),
-          [t('settings.standard'), t('settings.satellite'), t('settings.terrain')],
-          mapTypes.indexOf(mapType),
-          (i) => setMapType(mapTypes[i] as MapType)
-        ),
+      onPress: () => setShowMapSheet(true),
     },
     { label: t('settings.language'), meta: currentLanguage.nativeName, icon: 'globe', onPress: () => setShowLanguageModal(true) },
     { label: t('settings.units'), meta: units === 'km' ? 'km' : 'mi', icon: 'route', onPress: () => setShowUnitsModal(true) },
@@ -141,8 +109,11 @@ export default function SettingsScreen() {
             ),
         }]
       : []),
+    { label: 'Emergency contacts', meta: '', icon: 'user', onPress: () => router.push('/emergency-contacts' as never) },
     { label: t('settings.managePrivacySettings'), meta: '', icon: 'lock', onPress: () => Alert.alert(t('alerts.privacy'), t('alerts.comingSoon')) },
     { label: t('settings.helpCenter'), meta: '', icon: 'help', onPress: () => Alert.alert(t('settings.helpCenter'), t('alerts.comingSoon')) },
+    { label: 'Report a bug', meta: '', icon: 'bolt', onPress: () => router.push('/bug-report' as never) },
+    { label: 'About the developers', meta: '', icon: 'globe', onPress: () => router.push('/about' as never) },
   ];
 
   return (
@@ -279,6 +250,19 @@ export default function SettingsScreen() {
          </View>
         </View>
       </Modal>
+
+      <OptionSheet
+        visible={showMapSheet}
+        title={t('settings.mapType')}
+        options={[
+          { label: t('settings.standard') },
+          { label: t('settings.satellite'), hint: 'Aerial photos with street names' },
+          { label: t('settings.terrain'), hint: Platform.OS === 'ios' ? 'Android only. iPhones show Standard' : 'Hills and elevation' },
+        ]}
+        selectedIndex={mapTypes.indexOf(mapType)}
+        onPick={(i) => setMapType(mapTypes[i])}
+        onClose={() => setShowMapSheet(false)}
+      />
 
       {/* Language Selector Modal */}
       <LanguageSelector 

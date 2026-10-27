@@ -4,13 +4,15 @@
 // ride is recorded normally by the ride screen.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/dw/Icon';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { AMBER, F, INK, useDW } from '../constants/design';
+import { mapStyle, nativeMapType, usesCustomStyle } from '../v2/mapStyle';
 import { useLiveRide, useV2GroupRide } from '../v2/hooks';
 import { usePresence } from '../v2/usePresence';
 import { endRide } from '../v2/rideController';
@@ -22,6 +24,8 @@ export default function GroupLiveScreen() {
   const d = useDW();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { mapType } = useSettings();
+  const nativeType = nativeMapType(mapType, Platform.OS);
   const { id } = useLocalSearchParams<{ id: string }>();
   const group = useV2GroupRide(id);
   const live = useLiveRide();
@@ -82,6 +86,10 @@ export default function GroupLiveScreen() {
     <View style={[styles.root, { backgroundColor: d.bg }]}>
       <MapView
         style={StyleSheet.absoluteFill}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        mapType={nativeType}
+        customMapStyle={usesCustomStyle(nativeType, Platform.OS) ? mapStyle(d.dark) : undefined}
+        userInterfaceStyle={d.dark ? 'dark' : 'light'}
         showsUserLocation
         initialRegion={me ? { latitude: me.lat, longitude: me.lng, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
       >

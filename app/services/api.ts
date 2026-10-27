@@ -948,6 +948,11 @@ export const placesAPI = {
     const query = sessionToken ? `?${new URLSearchParams({ sessionToken }).toString()}` : '';
     return apiRequest(`/maps/place-details/${encodeURIComponent(placeId)}${query}`, 'GET');
   },
+  /** The posted speed limit at a spot in km/h, or null when nothing is known for that road. */
+  speedLimit: async (latitude: number, longitude: number): Promise<{ success: boolean; kmh: number | null }> => {
+    const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) }).toString();
+    return apiRequest(`/maps/speed-limit?${query}`, 'GET', null, true, 8000);
+  },
   directions: async (params: { origin_lat: number; origin_lng: number; dest_lat: number; dest_lng: number; mode: string }) => {
     const query = new URLSearchParams(params as any).toString();
     return apiRequest(`/maps/directions?${query}`, 'GET', null, true, 15000);

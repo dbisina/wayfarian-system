@@ -4,6 +4,7 @@ const express = require('express');
 const { query, param, validationResult } = require('express-validator');
 const mapsService = require('../services/MapsService');
 const { geoService } = require('../services/geo');
+const { speedLimitService } = require('../services/geo/speedLimit');
 const authMiddleware = require('../middleware/auth');
 const { requireOperator } = require('../middleware/authorization');
 
@@ -375,8 +376,26 @@ router.get(
  * @access Operator
  */
 router.get('/_stats', authMiddleware, requireOperator, (req, res) => {
-  res.json({ success: true, ...geoService.stats() });
+  res.json({ success: true, ...geoService.stats(), speedLimit: speedLimitService.stats() });
 });
+
+/**
+ * @route GET /api/maps/speed-limit
+ * @desc The posted speed limit at a spot in km/h, or null when OpenStreetMap has none for that road
+ * @access Private
+ */
+router.get(
+  '/speed-limit',
+  [
+    query('latitude').isFloat({ min: -90, max: 90 }),
+    query('longitude').isFloat({ min: -180, max: 180 }),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    const { kmh } = await speedLimitService.lookup(parseFloat(req.query.latitude), parseFloat(req.query.longitude));
+    res.json({ success: true, kmh });
+  }
+);
 
 /**
  * @route GET /api/places/nearby
