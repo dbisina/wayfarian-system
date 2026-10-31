@@ -21,13 +21,14 @@ const googleProvider = {
     return !!mapsService.googleMapsApiKey;
   },
   credits: () => 1,
-  canHandle: (op, args) => (op === 'details' ? !String(args.placeId).startsWith('geo:') : true),
+  // Google's Geocoding API is not enabled for the project, and its places APIs have no reverse
+  // lookup, so reverse geocoding stays with Geoapify.
+  canHandle: (op, args) => (op === 'reverseGeocode' ? false : op === 'details' ? !String(args.placeId).startsWith('geo:') : true),
   autocomplete: ({ input, latitude, longitude, radius, sessionToken }) =>
     mapsService.autocomplete(input, latitude, longitude, radius, sessionToken),
   nearby: ({ latitude, longitude, type, radius }) => mapsService.findNearbyPlaces(latitude, longitude, type, radius),
   details: ({ placeId, sessionToken }) => mapsService.getPlaceDetails(placeId, sessionToken),
   geocode: ({ address }) => mapsService.geocodeAddress(address),
-  reverseGeocode: ({ latitude, longitude }) => mapsService.reverseGeocode(latitude, longitude),
   directions: ({ origin, destination, mode }) => mapsService.getDirections(origin, destination, mode),
 };
 
@@ -38,6 +39,33 @@ const num = (v, fallback) => {
 
 // Lists shorter than this get topped up from the next provider.
 const ENOUGH = { autocomplete: 3, nearby: 3 };
+
+const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const wordsOf = (s) => fold(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+
+/**
+ * Does this prediction actually mention what the rider typed? Every typed word (3+ letters) must
+ * appear in it; the last may be half typed, and a substring covers that. Geoapify always returns
+ * its closest fuzzy matches, even for a place it has never heard of, so "a full list" does not mean
+ * "the right place": this is how a miss is noticed.
+ */
+function matchesQuery(input, prediction) {
+  const words = wordsOf(input);
+  if (!words.length) return true;
+  const text = fold(prediction.description || prediction.name);
+  return words.every((w) => text.includes(w));
+}
+
+/** The matches Geoapify found are enough on their own when at least two fit, or one fits among a full list. */
+function autocompleteSatisfied(input, list) {
+  const hits = list.filter((p) => matchesQuery(input, p)).length;
+  return hits >= 2 || (hits >= 1 && list.length >= ENOUGH.autocomplete);
+}
+
+/** Predictions that match what was typed come first (stable: each provider's own order is kept). */
+function rankByMatch(input, list) {
+  return [...list.filter((p) => matchesQuery(input, p)), ...list.filter((p) => !matchesQuery(input, p))];
+}
 
 class GeoService {
   constructor({ providers, guards, cache, chains } = {}) {
@@ -82,7 +110,8 @@ class GeoService {
         guard?.success(credits);
         if (!isList) return result;
         collected = mergePlaces(collected, result || []);
-        if (collected.length >= ENOUGH[op]) return collected;
+        const enough = op === 'autocomplete' ? autocompleteSatisfied(args.input, collected) : collected.length >= ENOUGH[op];
+        if (enough) return op === 'autocomplete' ? rankByMatch(args.input, collected) : collected;
         if (!collected.length) sawNoResults = true;
       } catch (err) {
         if (err?.code === 'NO_RESULTS') {
@@ -96,7 +125,7 @@ class GeoService {
       }
     }
 
-    if (isList && (collected.length || sawNoResults)) return collected;
+    if (isList && (collected.length || sawNoResults)) return op === 'autocomplete' ? rankByMatch(args.input, collected) : collected;
     if (sawNoResults) throw new GeoError('NO_RESULTS', 'Nothing found');
     throw new GeoError('UNAVAILABLE', lastError ? lastError.message : 'No map provider is available');
   }
@@ -173,4 +202,4 @@ function mergePlaces(list, more) {
 
 const geoService = new GeoService();
 
-module.exports = { GeoService, geoService, googleProvider, mergePlaces };
+module.exports = { GeoService, geoService, googleProvider, mergePlaces, matchesQuery, autocompleteSatisfied, rankByMatch };

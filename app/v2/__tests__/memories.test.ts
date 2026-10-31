@@ -53,3 +53,12 @@ describe('clockDuration', () => {
     expect(clockDuration(60)).toBe('0:01');
   });
 });
+
+describe('photos from the older journeys', () => {
+  test('a v1 photo clusters with v2 photos taken in the same spot', () => {
+    const v1: MapPhoto = { ...photo('v1-a', 6.5, 3.4), rideId: null, journeyId: 'j1' };
+    const out = clusterPhotos([photo('b', 6.5001, 3.4001), v1], 1);
+    expect(out).toHaveLength(1);
+    expect(out[0].photos.map((p) => p.id).sort()).toEqual(['b', 'v1-a']);
+  });
+});

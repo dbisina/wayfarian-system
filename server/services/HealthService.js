@@ -2,7 +2,6 @@
 
 const prismaSingleton = require('../prisma/client');
 const { adminStorage, adminAuth } = require('./Firebase');
-const mapsService = require('./MapsService');
 const { cacheService } = require('./CacheService');
 const logger = require('./Logger');
 const axios = require('axios');
@@ -227,31 +226,25 @@ class HealthService {
     const startTime = Date.now();
     
     try {
-      if (!process.env.GOOGLE_MAPS_API_KEY) {
+      // Reads the map providers' own state (keys, daily credits, pauses). It makes no request to
+      // Google or Geoapify: health checks are polled, and those calls are metered.
+      const { geoService } = require('./geo');
+      const stats = geoService.stats();
+      const usable = Object.entries(stats.providers).filter(([, p]) => p.configured && !p.paused);
+
+      if (usable.length === 0) {
         return {
           status: 'degraded',
           responseTime: Date.now() - startTime,
-          warning: 'Google Maps API key not configured',
+          warning: 'No map provider is available (keys missing or paused)',
+          details: { providers: stats.providers },
         };
       }
 
-      // Test a simple geocoding request with timeout
-      const geocodePromise = mapsService.reverseGeocode(37.7749, -122.4194); // San Francisco
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Geocoding timeout')), 3000)
-      );
-      
-      await Promise.race([geocodePromise, timeoutPromise]);
-      
-      const responseTime = Date.now() - startTime;
-      
       return {
-        status: 'healthy',
-        responseTime,
-        details: {
-          service: 'Google Maps API',
-          operations: 'geocoding successful',
-        },
+        status: usable.length === Object.keys(stats.providers).length ? 'healthy' : 'degraded',
+        responseTime: Date.now() - startTime,
+        details: { service: 'Map providers', providers: stats.providers, cache: stats.cache },
       };
     } catch (error) {
       const responseTime = Date.now() - startTime;

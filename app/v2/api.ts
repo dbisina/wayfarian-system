@@ -32,7 +32,10 @@ export interface V2ClientDeps {
 
 export interface MapPhoto {
   id: string;
-  rideId: string;
+  /** Set for photos from a v2 ride. */
+  rideId: string | null;
+  /** Set for photos from an older (v1) journey; null when that journey was deleted. */
+  journeyId?: string | null;
   takenAt: string;
   latitude: number;
   longitude: number;

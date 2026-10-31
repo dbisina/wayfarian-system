@@ -137,28 +137,65 @@ function createRidePhotoService({ prisma = defaultPrisma, storage, imaging, urlF
    * with its ride's title and stats so a pin can show where and when it was taken. `years` lists every
    * year that has a pinned photo, so the picker never offers an empty year.
    */
+  /**
+   * A photo from the older (v1) journeys, as the same item the v2 photos make. Its speed is stored in
+   * km/h and its distance in km; the map card shows metres and m/s like the rest. A v1 photo whose
+   * journey was deleted is kept but has no album to open (journeyId null).
+   */
+  const legacyItem = (p) => ({
+    id: `v1-${p.id}`,
+    rideId: null,
+    journeyId: p.journeyId,
+    takenAt: p.takenAt,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    speedMps: p.captureSpeed != null ? p.captureSpeed / 3.6 : null,
+    rideDistanceM: p.captureDistance != null ? p.captureDistance * 1000 : null,
+    imageUrl: urlFor(p.firebasePath),
+    thumbnailUrl: urlFor(p.thumbnailPath || p.firebasePath),
+    ride: {
+      title: p.journey ? p.journey.customTitle || p.journey.title || null : null,
+      startedAt: p.journey ? p.journey.startTime : p.takenAt,
+      distanceM: p.journey ? (p.journey.totalDistance || 0) * 1000 : 0,
+      elapsedTimeS: p.journey ? p.journey.totalTime || 0 : 0,
+    },
+  });
+
   async function listMapPhotos(userId, { year, limit = 300 } = {}) {
     const take = Math.min(Math.max(parseInt(limit, 10) || 300, 1), 500);
     const base = { userId, latitude: { not: null }, longitude: { not: null }, ride: { status: { not: 'DELETED' } } };
+    // v1 photos: skip those on journeys the rider hid.
+    const legacyBase = { userId, latitude: { not: null }, longitude: { not: null }, OR: [{ journeyId: null }, { journey: { isHidden: false } }] };
     const y = parseInt(year, 10);
-    const where = Number.isFinite(y) ? { ...base, takenAt: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) } } : base;
-    const [rows, dates] = await Promise.all([
+    const inYear = Number.isFinite(y) ? { takenAt: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) } } : {};
+    const [rows, dates, legacyRows, legacyDates] = await Promise.all([
       prisma.ridePhoto.findMany({
-        where,
+        where: { ...base, ...inYear },
         orderBy: [{ takenAt: 'desc' }, { id: 'asc' }],
         take,
         include: { ride: { select: { title: true, startedAt: true, distanceM: true, elapsedTimeS: true } } },
       }),
       prisma.ridePhoto.findMany({ where: base, select: { takenAt: true }, orderBy: { takenAt: 'desc' } }),
+      prisma.photo.findMany({
+        where: { ...legacyBase, ...inYear },
+        orderBy: [{ takenAt: 'desc' }, { id: 'asc' }],
+        take,
+        include: { journey: { select: { title: true, customTitle: true, startTime: true, totalDistance: true, totalTime: true } } },
+      }),
+      prisma.photo.findMany({ where: legacyBase, select: { takenAt: true }, orderBy: { takenAt: 'desc' } }),
     ]);
-    const years = [...new Set(dates.map((d) => d.takenAt.getUTCFullYear()))];
-    return {
-      years,
-      items: rows.map((p) => ({
+    const years = [...new Set([...dates, ...legacyDates].map((d) => d.takenAt.getUTCFullYear()))].sort((a, b) => b - a);
+    const items = [
+      ...rows.map((p) => ({
         ...view(p),
+        journeyId: null,
         ride: { title: p.ride.title, startedAt: p.ride.startedAt, distanceM: p.ride.distanceM, elapsedTimeS: p.ride.elapsedTimeS },
       })),
-    };
+      ...legacyRows.map(legacyItem),
+    ]
+      .sort((a, b) => new Date(b.takenAt) - new Date(a.takenAt) || (a.id < b.id ? -1 : 1))
+      .slice(0, take);
+    return { years, items };
   }
 
   return { putPhoto, listPhotos, listAlbums, listMapPhotos };
