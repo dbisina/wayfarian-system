@@ -12,6 +12,11 @@ const MIN_COVERAGE = 0.02; // a mask covering less than 2% of the photo means no
 const ISLAND_SHARE = 0.04; // a detached piece smaller than this share of the main subject is noise
 const WORK_SIDE = 400; // size used to find the connected pieces of the subject
 
+function resolveOrtThreads(value = process.env.ORT_THREADS) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 class NoSubjectError extends Error {
   constructor() {
     super('No subject found in the photo');
@@ -282,10 +287,12 @@ async function postprocess(mask, { rgb, width, height, size = Math.round(Math.sq
 /** Loads the model once and returns `cutout(buffer) -> png Buffer`. */
 async function createCutout(modelPath, model = MODELS[DEFAULT_MODEL]) {
   const ort = require('onnxruntime-node');
+  const threads = resolveOrtThreads();
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
-    intraOpNumThreads: Math.max(1, require('os').cpus().length),
+    intraOpNumThreads: threads,
+    interOpNumThreads: threads,
   });
   const inputName = session.inputNames[0];
   const outputName = session.outputNames[0];
@@ -300,5 +307,5 @@ async function createCutout(modelPath, model = MODELS[DEFAULT_MODEL]) {
 
 module.exports = {
   preprocess, postprocess, subjectBox, removeIslands, boxBlur, estimateForeground, maskToAlpha,
-  createCutout, NoSubjectError, MAX_SIDE, OUT_SIDE,
+  createCutout, resolveOrtThreads, NoSubjectError, MAX_SIDE, OUT_SIDE,
 };

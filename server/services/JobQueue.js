@@ -10,6 +10,9 @@ class JobQueue extends EventEmitter {
     this.workers = new Map();
     this.queues = new Map();
     this.isProcessing = false;
+    // Jobs handed to setImmediate have left the waiting queue but have not yet
+    // emitted job:start. Count them so a burst cannot oversubscribe concurrency.
+    this.pendingExecutions = 0;
     this.concurrency = parseInt(process.env.JOB_CONCURRENCY) || 5;
     this.retryAttempts = 3;
     this.retryDelay = 5000; // 5 seconds
@@ -133,15 +136,26 @@ class JobQueue extends EventEmitter {
     this.isProcessing = true;
     
     try {
-      while (this.stats.activeJobs < this.concurrency) {
+      while (this.stats.activeJobs + this.pendingExecutions < this.concurrency) {
         const job = this.getNextJob();
         
         if (!job) {
           break; // No jobs available
         }
         
-        // Process job in background
-        setImmediate(() => this.executeJob(job));
+        // Reserve capacity before yielding to the event loop. executeJob emits
+        // job:start synchronously, so releasing here cannot open a scheduling gap.
+        this.pendingExecutions++;
+        setImmediate(() => {
+          this.pendingExecutions--;
+          this.executeJob(job).catch((error) => {
+            logger.error('Unexpected job execution error', {
+              category: 'job_queue',
+              jobId: job.id,
+              error: error.message,
+            });
+          });
+        });
       }
     } finally {
       this.isProcessing = false;
@@ -443,3 +457,4 @@ const jobQueue = new JobQueue();
 // (app.js and index.js destructure `{ jobQueue }`).
 module.exports = jobQueue;
 module.exports.jobQueue = jobQueue;
+module.exports.JobQueue = JobQueue;

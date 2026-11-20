@@ -12,6 +12,8 @@ class ValkeyJobQueue extends EventEmitter {
     this.subscriber = null;
     this.workers = new Map();
     this.isProcessing = false;
+    // Jobs claimed from Valkey but not yet started still consume local capacity.
+    this.pendingExecutions = 0;
     this.concurrency = parseInt(process.env.JOB_CONCURRENCY) || 5;
     this.retryAttempts = 3;
     this.retryDelay = 5000; // 5 seconds
@@ -218,15 +220,26 @@ class ValkeyJobQueue extends EventEmitter {
     this.isProcessing = true;
     
     try {
-      while (this.activeJobs.size < this.concurrency) {
+      while (this.activeJobs.size + this.pendingExecutions < this.concurrency) {
         const job = await this.getNextJob();
         
         if (!job) {
           break; // No jobs available
         }
         
-        // Process job in background
-        setImmediate(() => this.executeJob(job));
+        // Reserve before yielding; otherwise one polling pass can claim the
+        // entire queue while activeJobs is still unchanged.
+        this.pendingExecutions++;
+        setImmediate(() => {
+          this.pendingExecutions--;
+          this.executeJob(job).catch((error) => {
+            logger.error('Unexpected Valkey job execution error', {
+              category: 'job_queue',
+              jobId: job.id,
+              error: error.message,
+            });
+          });
+        });
       }
     } catch (error) {
       logger.error('Error processing jobs', {
@@ -638,3 +651,4 @@ class ValkeyJobQueue extends EventEmitter {
 // Export singleton instance
 const valkeyJobQueue = new ValkeyJobQueue();
 module.exports = valkeyJobQueue;
+module.exports.ValkeyJobQueue = ValkeyJobQueue;

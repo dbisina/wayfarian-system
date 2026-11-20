@@ -239,9 +239,9 @@ const uploadVehiclePhoto = async (req, res) => {
     // Replace the photo with a transparent cut-out in the background. The upload has already been
     // answered, and any failure just leaves the original photo.
     if (process.env.CUTOUT_URL) {
-      const { applyCutout } = require('../services/vehicleCutout');
+      const { applyCutout, enqueueCutout } = require('../services/vehicleCutout');
       const { uploadToStorage: up, deleteFromStorage: remove } = getFirebase();
-      applyCutout({
+      enqueueCutout(() => applyCutout({
         prisma,
         storage: { upload: up, remove },
         vehicleId: id,
@@ -249,7 +249,8 @@ const uploadVehiclePhoto = async (req, res) => {
         originalURL: photoURL,
         jpeg: forCutout || processed,
         newId: uuidv4,
-      }).catch(() => {});
+      }))
+        .catch(() => {});
     }
   } catch (err) {
     console.error('[VehicleController] uploadVehiclePhoto error:', err);

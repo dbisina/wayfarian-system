@@ -46,4 +46,9 @@ describe('prepareVehiclePhotos', () => {
     expect(big.height).toBe(1600);
     expect(small.height).toBe(600);
   });
+
+  test('rejects images above the configured decoded-pixel ceiling', async () => {
+    const image = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#888' } }).jpeg().toBuffer();
+    await expect(prepareVehiclePhotos(image, { limitInputPixels: 100 })).rejects.toThrow(/pixel/i);
+  });
 });
