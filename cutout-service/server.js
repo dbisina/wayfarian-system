@@ -49,6 +49,7 @@ function createApp({ secret, getCutout, maxBytes = 10 * 1024 * 1024, maxQueue = 
   };
 
   return async function handler(req, res) {
+    let reserved = false;
     try {
       if (req.method === 'GET' && req.url === '/health') return send(res, 200, { ok: true });
       if (req.method !== 'POST' || req.url !== '/cutout') return send(res, 404, { error: 'not_found' });
@@ -58,22 +59,18 @@ function createApp({ secret, getCutout, maxBytes = 10 * 1024 * 1024, maxQueue = 
         return send(res, 401, { error: 'unauthorized' });
       }
       if (waiting >= maxQueue) return send(res, 503, { error: 'busy' });
+      waiting++;
+      reserved = true;
 
       const body = await readBody(req, maxBytes);
       if (!body.length) return send(res, 400, { error: 'empty_body' });
 
-      waiting++;
       const job = tail.then(async () => {
         const cutout = await getCutout();
         return cutout(body);
       });
       tail = job.catch(() => {}); // a failed job must not block the next one
-      let png;
-      try {
-        png = await job;
-      } finally {
-        waiting--;
-      }
+      const png = await job;
       return send(res, 200, png, 'image/png');
     } catch (err) {
       if (err.status === 413) {
@@ -84,6 +81,8 @@ function createApp({ secret, getCutout, maxBytes = 10 * 1024 * 1024, maxQueue = 
       if (err.code === 'no_subject') return send(res, 422, { error: 'no_subject' });
       console.error('[cutout] failed:', err.message);
       return send(res, 500, { error: 'cutout_failed' });
+    } finally {
+      if (reserved) waiting--;
     }
   };
 }
@@ -141,7 +140,7 @@ if (require.main === module) {
   console.log(`[cutout] model: ${model.name}`);
   let loading;
   const getCutout = () => {
-    // Loaded once on the first photo (or at boot below) and reused; a failed load is retried.
+    // Loaded once on the first photo and reused; a failed load is retried.
     if (!loading) {
       loading = ensureModel(model)
         .then((p) => require('./cutout').createCutout(p, model))
@@ -154,7 +153,6 @@ if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
   server.listen(port, '::', () => {
     console.log(`[cutout] listening on ${port}`);
-    getCutout().then(() => console.log('[cutout] model ready')).catch((e) => console.error('[cutout] model not ready:', e.message));
   });
 }
 

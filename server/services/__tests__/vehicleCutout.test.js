@@ -1,4 +1,4 @@
-const { requestCutout, applyCutout } = require('../vehicleCutout');
+const { requestCutout, applyCutout, createTaskQueue } = require('../vehicleCutout');
 
 const quiet = { warn: () => {} };
 const res = (status, body = '') => ({ status, arrayBuffer: async () => Buffer.from(body) });
@@ -82,5 +82,40 @@ describe('requestCutout timing', () => {
     await requestCutout(Buffer.from('x'), { url: 'http://c:3000', secret: 's', fetchImpl, retryDelayMs: 1, log: { warn: () => {} } });
     expect(spy).toHaveBeenCalledWith(90_000);
     spy.mockRestore();
+  });
+});
+
+describe('cut-out task queue', () => {
+  test('runs one cut-out at a time without dropping queued work', async () => {
+    const queue = createTaskQueue(1);
+    let releaseFirst;
+    const first = queue.add(() => new Promise((resolve) => { releaseFirst = resolve; }));
+    const secondTask = jest.fn().mockResolvedValue('second');
+    const second = queue.add(secondTask);
+
+    await Promise.resolve();
+    expect(queue.active).toBe(1);
+    expect(queue.queued).toBe(1);
+    expect(secondTask).not.toHaveBeenCalled();
+
+    releaseFirst('first');
+    await expect(first).resolves.toBe('first');
+    await expect(second).resolves.toBe('second');
+    expect(secondTask).toHaveBeenCalledTimes(1);
+  });
+
+  test('bounds waiting work so image buffers cannot accumulate without limit', async () => {
+    const queue = createTaskQueue(1, 1);
+    let releaseFirst;
+    const first = queue.add(() => new Promise((resolve) => { releaseFirst = resolve; }));
+    const second = queue.add(() => Promise.resolve('second'));
+
+    await expect(queue.add(() => Promise.resolve('third'))).rejects.toThrow(/queue is full/i);
+    expect(queue.active).toBe(1);
+    expect(queue.queued).toBe(1);
+
+    releaseFirst('first');
+    await expect(first).resolves.toBe('first');
+    await expect(second).resolves.toBe('second');
   });
 });

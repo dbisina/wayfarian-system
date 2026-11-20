@@ -7,6 +7,48 @@
 // attempt gets 90 s before it is given up on.
 const DEFAULT_TIMEOUT_MS = 90_000;
 
+function createTaskQueue(concurrency = 1, maxQueued = 2) {
+  const limit = Math.max(1, Number.parseInt(concurrency, 10) || 1);
+  const queueLimit = Math.max(0, Number.parseInt(maxQueued, 10) || 0);
+  const waiting = [];
+  let active = 0;
+
+  const drain = () => {
+    while (active < limit && waiting.length > 0) {
+      const { task, resolve, reject } = waiting.shift();
+      active++;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          active--;
+          drain();
+        });
+    }
+  };
+
+  return {
+    add(task) {
+      if (typeof task !== 'function') return Promise.reject(new TypeError('task must be a function'));
+      if (waiting.length >= queueLimit) {
+        return Promise.reject(new Error('cutout queue is full'));
+      }
+      return new Promise((resolve, reject) => {
+        waiting.push({ task, resolve, reject });
+        drain();
+      });
+    },
+    get active() { return active; },
+    get queued() { return waiting.length; },
+  };
+}
+
+const cutoutQueue = createTaskQueue(
+  process.env.CUTOUT_CONCURRENCY || 1,
+  process.env.CUTOUT_QUEUE_MAX || 2
+);
+const enqueueCutout = (task) => cutoutQueue.add(task);
+
 /**
  * Sends a JPEG to the cut-out service and returns the PNG, or null if the service is not set up,
  * is busy or found no subject. One retry covers the service waking from sleep.
@@ -58,4 +100,4 @@ async function applyCutout({ prisma, storage, request = requestCutout, vehicleId
   }
 }
 
-module.exports = { requestCutout, applyCutout };
+module.exports = { requestCutout, applyCutout, enqueueCutout, createTaskQueue };

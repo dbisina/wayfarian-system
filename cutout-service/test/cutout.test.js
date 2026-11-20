@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const sharp = require('sharp');
-const { preprocess, postprocess, subjectBox, removeIslands, boxBlur, estimateForeground, NoSubjectError, OUT_SIDE } = require('../cutout');
+const { preprocess, postprocess, subjectBox, removeIslands, boxBlur, estimateForeground, resolveOrtThreads, NoSubjectError, OUT_SIDE } = require('../cutout');
 const { MODELS, resolveModel } = require('../models');
 const { createApp, ensureModel } = require('../server');
 
@@ -34,6 +34,13 @@ test('models: isnet is the default, silueta stays selectable, unknown names fail
   assert.equal(resolveModel('silueta').size, 320);
   assert.equal(ISNET.size, 1024);
   assert.throws(() => resolveModel('nope'), /Unknown MODEL_NAME/);
+});
+
+test('ORT threads default to one and accept an explicit positive override', () => {
+  assert.equal(resolveOrtThreads(undefined), 1);
+  assert.equal(resolveOrtThreads('0'), 1);
+  assert.equal(resolveOrtThreads('invalid'), 1);
+  assert.equal(resolveOrtThreads('2'), 2);
 });
 
 test('preprocess builds a 3 x size x size tensor for each model and keeps the scaled-down photo', async () => {
@@ -157,6 +164,22 @@ function serve(opts) {
 }
 const post = (url, body, headers = {}) => fetch(`${url}/cutout`, { method: 'POST', body, headers });
 
+function openPost(url, headers = {}) {
+  const target = new URL(`${url}/cutout`);
+  let resolveResponse;
+  let rejectResponse;
+  const response = new Promise((resolve, reject) => {
+    resolveResponse = resolve;
+    rejectResponse = reject;
+  });
+  const req = http.request(target, { method: 'POST', headers }, (res) => {
+    res.resume();
+    res.on('end', () => resolveResponse(res));
+  });
+  req.on('error', rejectResponse);
+  return { req, response };
+}
+
 test('rejects missing or wrong secrets and answers health', async () => {
   const { server, url } = await serve({ secret: 's3cret', getCutout: async () => async (b) => b });
   try {
@@ -194,17 +217,21 @@ test('runs one photo at a time and turns requests away when the queue is full', 
   const { server, url } = await serve({ secret: 's', getCutout, maxQueue: 2 });
   try {
     const h = { authorization: 'Bearer s' };
-    const a = post(url, Buffer.from('1'), h);
-    const b = post(url, Buffer.from('2'), h);
-    await new Promise((r) => setTimeout(r, 100));
+    const a = openPost(url, h);
+    const b = openPost(url, h);
+    a.req.write('1');
+    b.req.write('2');
+    await new Promise((r) => setTimeout(r, 50));
     const c = await post(url, Buffer.from('3'), h);
     assert.equal(c.status, 503);
+    a.req.end();
+    b.req.end();
     while (release.length < 1) await new Promise((r) => setTimeout(r, 10));
     release.shift()();
     while (release.length < 1) await new Promise((r) => setTimeout(r, 10));
     release.shift()();
-    assert.equal((await a).status, 200);
-    assert.equal((await b).status, 200);
+    assert.equal((await a.response).statusCode, 200);
+    assert.equal((await b.response).statusCode, 200);
     assert.equal(peak, 1);
   } finally { server.close(); }
 });
